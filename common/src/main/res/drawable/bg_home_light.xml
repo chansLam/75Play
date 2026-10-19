@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 首页背景（浅色）：设计稿照片 bg-light.jpg 盖满 + 左上白亮光晕 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <bitmap
+            android:src="@drawable/bg_home_light_photo"
+            android:gravity="fill"/>
+    </item>
+    <item>
+        <shape>
+            <gradient
+                android:type="radial"
+                android:gradientRadius="650dp"
+                android:centerX="0.0"
+                android:centerY="0.0"
+                android:startColor="#66FFFFFF"
+                android:centerColor="#11F0F8FF"
+                android:endColor="#00000000"/>
+        </shape>
+    </item>
+</layer-list>

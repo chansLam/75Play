@@ -1,0 +1,38 @@
+name: Publish download site
+on:
+  push:
+    branches: [main, master, cs75plus-2020]
+    paths:
+      - 'site/**'
+      - 'scripts/build_site.py'
+      - 'CHANGELOG.md'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate localized download pages
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 scripts/build_site.py
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - uses: actions/deploy-pages@v4
+        id: deployment
+        with:
+          # First deploy auto-enables Pages as a GitHub Actions source, so the
+          # repository does not need a manual Settings → Pages setup.
+          enablement: true

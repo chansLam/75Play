@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="custom_resolution_hint">请输入 30–160 的百分比，应用后重新连接 CarPlay。</string>
+    <string name="custom_resolution_summary">%1$d%%</string>
+    <string name="resolution_canvas_unsupported" formatted="false">此车机无法解码放大的分辨率，将使用 100%。</string>
+</resources>

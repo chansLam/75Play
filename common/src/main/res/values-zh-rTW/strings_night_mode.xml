@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="carplay_night_time_note">CarPlay 外觀設為自動時，也會參考 iPhone 時間；即使選擇固定日間，夜間仍可能顯示深色外觀。</string>
+</resources>

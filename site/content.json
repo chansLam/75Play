@@ -1,0 +1,419 @@
+{
+  "zh-Hans": {
+    "name": "简体中文",
+    "dir": "ltr",
+    "tag": "长安 CS75 Plus 2020 · SoftAP",
+    "title": "把 iPhone 的 CarPlay\n无线投到车机。",
+    "intro": "开源无线 CarPlay 接收端。Wi‑Fi Direct / 车机热点 / 局域网，全屏沉浸，无需越狱、转接盒或账号。",
+    "download": "下载 APK",
+    "mirrors": "镜像",
+    "install": "安装步骤",
+    "requires": "请安装在车机上。非 Apple 认证；与 Apple / 长安无隶属关系。",
+    "setup": "装上车机并连接",
+    "steps": [
+      "停车后从 GitHub Releases 下载 APK（U 盘或 adb）。",
+      "卸载其他签名的 75Play，再用车机文件管理器安装。",
+      "打开 75Play，iPhone 保持蓝牙开启。Wi‑Fi Direct / 车机热点：切换方式会自动开 Wi‑Fi 或配置热点，再点「连接 CarPlay」。局域网：选网填密，连上 Wi‑Fi 后自动进 CarPlay。",
+      "在 iPhone 上允许 CarPlay。"
+    ],
+    "adb": "完整安装说明",
+    "bssid": "日常无需 ADB。三种方式细节见安装说明。",
+    "whats": "专为这台车做的",
+    "features": [
+      {
+        "title": "无线-only",
+        "text": "三种方式：Wi‑Fi Direct（默认）、车机热点（SoftAP）、局域网。本车无 TUN，已移除 USB 有线。"
+      },
+      {
+        "title": "全屏沉浸",
+        "text": "宽屏适配；CarPlay 内打开车机应用；悬浮小白点一键返回。"
+      },
+      {
+        "title": "玻璃双主题 UI",
+        "text": "主页与设置按司机目标分组，昼夜主题一致。"
+      },
+      {
+        "title": "一键连接",
+        "text": "切换 Wi‑Fi Direct / 车机热点会自动准备网络；局域网连上 Wi‑Fi 后自动连接 CarPlay。"
+      },
+      {
+        "title": "多语言",
+        "text": "简 / 繁中文、英文、阿拉伯语、西班牙语、俄语、乌克兰语。"
+      }
+    ],
+    "supportScope": "仅支持长安 CS75 Plus 2020（OS_S311-WT · API 19 · armeabi-v7a）。",
+    "update": "更新与签名",
+    "updateText": "v1+v2 签名，兼容 Android 4.4。相同签名可覆盖升级；应用内更新检查本仓库 Releases。",
+    "diagnosticsTitle": "反馈与诊断",
+    "diagnosticsText": "设置 → 诊断 → 保存报告，把 .txt 附到 Issue，并注明固件与复现步骤。勿上传热点密码。",
+    "notes": "发布说明",
+    "source": "源代码",
+    "feedback": "报告问题",
+    "privacy": "安全与隐私",
+    "newIssue": "新建 Issue",
+    "history": "版本历史",
+    "changelogTitle": "版本历史",
+    "changelogMore": "查看完整 CHANGELOG",
+    "footer": "独立开源项目（GPL-3.0）。CarPlay 归 Apple Inc. 所有。",
+    "shotsTitle": "实机截图",
+    "shotsSub": "75Play v2.0.0 车机实机截图。",
+    "shotHome": "连接中心主页",
+    "shotConnecting": "连接中",
+    "shotDisplay": "设置 · 显示/音频",
+    "shotVehicle": "设置 · 车辆/系统",
+    "shotConnected": "已连接 · 管理应用",
+    "shotApps": "车机应用管理",
+    "shotCarplay": "已连接 CarPlay 主页"
+  },
+  "zh-Hant": {
+    "name": "繁體中文",
+    "dir": "ltr",
+    "tag": "長安 CS75 Plus 2020 · SoftAP",
+    "title": "把 iPhone 的 CarPlay\n無線投到車機。",
+    "intro": "開源無線 CarPlay 接收端。Wi‑Fi Direct / 車機熱點 / 區域網路，全螢幕沉浸，無須越獄、轉接盒或帳號。",
+    "download": "下載 APK",
+    "mirrors": "鏡像",
+    "install": "安裝步驟",
+    "requires": "請安裝在車機上。非 Apple 認證；與 Apple / 長安無隸屬關係。",
+    "setup": "裝上車機並連線",
+    "steps": [
+      "停車後從 GitHub Releases 下載 APK（USB 或 adb）。",
+      "解除安裝其他簽章的 75Play，再用車機檔案管理員安裝。",
+      "開啟 75Play，iPhone 保持藍牙開啟。Wi‑Fi Direct / 車機熱點：切換方式會自動開 Wi‑Fi 或設定熱點，再點「連接 CarPlay」。區域網路：選網填密，連上 Wi‑Fi 後自動進入 CarPlay。",
+      "在 iPhone 上允許 CarPlay。"
+    ],
+    "adb": "完整安裝說明",
+    "bssid": "日常不需要 ADB。三種方式細節見安裝說明。",
+    "whats": "專為這台車做的",
+    "features": [
+      {
+        "title": "僅無線",
+        "text": "三種方式：Wi‑Fi Direct（預設）、車機熱點（SoftAP）、區域網路。本車無 TUN，已移除 USB 有線。"
+      },
+      {
+        "title": "全螢幕沉浸",
+        "text": "寬螢幕適配；CarPlay 內開啟車機應用；懸浮小白點返回。"
+      },
+      {
+        "title": "玻璃雙主題 UI",
+        "text": "主頁與設定依駕駛目標分組。"
+      },
+      {
+        "title": "一鍵連接",
+        "text": "切換 Wi‑Fi Direct / 車機熱點會自動準備網路；區域網路連上 Wi‑Fi 後自動連接 CarPlay。"
+      },
+      {
+        "title": "多語言",
+        "text": "簡 / 繁中文、英文、阿拉伯語、西班牙語、俄語、烏克蘭語。"
+      }
+    ],
+    "supportScope": "僅支援長安 CS75 Plus 2020（OS_S311-WT · API 19 · armeabi-v7a）。",
+    "update": "更新與簽章",
+    "updateText": "v1+v2 簽章，相容 Android 4.4。相同簽章可覆蓋升級；應用內更新檢查本倉庫 Releases。",
+    "diagnosticsTitle": "回報與診斷",
+    "diagnosticsText": "設定 → 診斷 → 儲存報告，把 .txt 附到 Issue。勿上傳熱點密碼。",
+    "notes": "版本說明",
+    "source": "原始碼",
+    "feedback": "回報問題",
+    "privacy": "安全與隱私",
+    "newIssue": "建立 Issue",
+    "history": "版本歷史",
+    "changelogTitle": "版本歷史",
+    "changelogMore": "查看完整 CHANGELOG",
+    "footer": "獨立開源專案（GPL-3.0）。CarPlay 歸 Apple Inc. 所有。",
+    "shotsTitle": "實機截圖",
+    "shotsSub": "75Play v2.0.0 車機實機截圖。",
+    "shotHome": "連線中心首頁",
+    "shotConnecting": "連線中",
+    "shotDisplay": "設定 · 顯示/音訊",
+    "shotVehicle": "設定 · 車輛/系統",
+    "shotConnected": "已連線 · 管理應用",
+    "shotApps": "車機應用管理",
+    "shotCarplay": "已連線 CarPlay 首頁"
+  },
+  "en": {
+    "name": "English",
+    "dir": "ltr",
+    "tag": "Changan CS75 Plus 2020 · SoftAP",
+    "title": "Wireless CarPlay\nfor your CS75 Plus.",
+    "intro": "Open-source wireless CarPlay receiver. Wi‑Fi Direct / car hotspot / existing Wi‑Fi (LAN), immersive display — no jailbreak, dongle, or account.",
+    "download": "Download APK",
+    "mirrors": "Mirror",
+    "install": "Install steps",
+    "requires": "Install on the head unit. Not Apple-certified; not affiliated with Apple or Changan.",
+    "setup": "Install and connect",
+    "steps": [
+      "While parked, download the APK from GitHub Releases (USB or adb).",
+      "Uninstall any differently signed 75Play, then install with the head-unit file manager.",
+      "Open 75Play; keep Bluetooth on. Wi‑Fi Direct / car hotspot: switching auto-enables Wi‑Fi or configures the hotspot — then tap Connect CarPlay. LAN: pick Wi‑Fi and enter the password; CarPlay starts automatically after Wi‑Fi joins.",
+      "Allow CarPlay on the iPhone."
+    ],
+    "adb": "Full install guide",
+    "bssid": "ADB is optional. See the install guide for mode details.",
+    "whats": "Built for this car",
+    "features": [
+      {
+        "title": "Wireless-only",
+        "text": "Three modes: Wi‑Fi Direct (default), car hotspot (SoftAP), and existing Wi‑Fi / LAN. USB wired removed — this unit has no TUN."
+      },
+      {
+        "title": "Immersive display",
+        "text": "Wide-screen layout; launch head-unit apps from CarPlay; floating ball to return."
+      },
+      {
+        "title": "Glass dual-theme UI",
+        "text": "Home and settings grouped by driver goals."
+      },
+      {
+        "title": "One-tap connect",
+        "text": "Switching to Wi‑Fi Direct or car hotspot prepares the link automatically; LAN starts CarPlay after Wi‑Fi connects."
+      },
+      {
+        "title": "Languages",
+        "text": "zh-Hans / zh-Hant / en / ar / es / ru / uk."
+      }
+    ],
+    "supportScope": "Changan CS75 Plus 2020 only (OS_S311-WT · API 19 · armeabi-v7a).",
+    "update": "Updates & signing",
+    "updateText": "Signed with v1+v2 for Android 4.4. Same-key updates overwrite; in-app update checks this repo’s Releases.",
+    "diagnosticsTitle": "Issues & diagnostics",
+    "diagnosticsText": "Settings → Diagnostics → Save report. Attach the .txt to a GitHub Issue with firmware and steps. Never post hotspot passwords.",
+    "notes": "Release notes",
+    "source": "Source code",
+    "feedback": "Report an issue",
+    "privacy": "Security & privacy",
+    "newIssue": "New issue",
+    "history": "Changelog",
+    "changelogTitle": "Changelog",
+    "changelogMore": "Full CHANGELOG on GitHub",
+    "footer": "Independent open-source project (GPL-3.0). CarPlay belongs to Apple Inc."
+  },
+  "es": {
+    "name": "Español",
+    "dir": "ltr",
+    "tag": "Changan CS75 Plus 2020 · SoftAP",
+    "title": "CarPlay inalámbrico\npara tu CS75 Plus.",
+    "intro": "Receptor CarPlay inalámbrico de código abierto. Wi‑Fi Direct / hotspot del coche / Wi‑Fi existente (LAN), pantalla inmersiva — sin jailbreak, dongle ni cuenta.",
+    "download": "Descargar APK",
+    "mirrors": "Espejo",
+    "install": "Pasos de instalación",
+    "requires": "Instala en la unidad del coche. No certificado por Apple; sin vínculo con Apple o Changan.",
+    "setup": "Instalar y conectar",
+    "steps": [
+      "Con el coche aparcado, descarga el APK desde GitHub Releases.",
+      "Desinstala cualquier 75Play con otra firma e instala este APK.",
+      "Abre 75Play; mantén Bluetooth activo. Wi‑Fi Direct / hotspot: al cambiar se activa o configura solo — luego pulsa Conectar CarPlay. LAN: elige el Wi‑Fi y la contraseña; CarPlay arranca solo al unirse.",
+      "Permite CarPlay en el iPhone."
+    ],
+    "adb": "Guía completa",
+    "bssid": "ADB es opcional. Detalles de cada modo en la guía de instalación.",
+    "whats": "Hecho para este coche",
+    "features": [
+      {
+        "title": "Solo inalámbrico",
+        "text": "Tres modos: Wi‑Fi Direct (por defecto), hotspot del coche (SoftAP) y Wi‑Fi existente / LAN. Sin USB cableado (sin TUN)."
+      },
+      {
+        "title": "Pantalla inmersiva",
+        "text": "Pantalla ancha; apps del coche desde CarPlay; bola flotante."
+      },
+      {
+        "title": "UI de cristal",
+        "text": "Inicio y ajustes agrupados por objetivos del conductor."
+      },
+      {
+        "title": "Conexión rápida",
+        "text": "Cambiar a Wi‑Fi Direct o hotspot prepara el enlace solo; en LAN, CarPlay arranca tras unirse al Wi‑Fi."
+      },
+      {
+        "title": "Idiomas",
+        "text": "zh-Hans / zh-Hant / en / ar / es / ru / uk."
+      }
+    ],
+    "supportScope": "Solo Changan CS75 Plus 2020 (OS_S311-WT · API 19 · armeabi-v7a).",
+    "update": "Actualizaciones y firma",
+    "updateText": "Firma v1+v2 para Android 4.4. Misma clave permite actualizar; la app consulta Releases de este repo.",
+    "diagnosticsTitle": "Incidencias y diagnóstico",
+    "diagnosticsText": "Ajustes → Diagnóstico → Guardar informe. Adjunta el .txt a un Issue. No publiques contraseñas del hotspot.",
+    "notes": "Notas de versión",
+    "source": "Código fuente",
+    "feedback": "Informar de un problema",
+    "privacy": "Seguridad y privacidad",
+    "newIssue": "Nueva incidencia",
+    "history": "Historial",
+    "changelogTitle": "Historial",
+    "changelogMore": "CHANGELOG completo en GitHub",
+    "footer": "Proyecto independiente de código abierto (GPL-3.0). CarPlay pertenece a Apple Inc."
+  },
+  "ar": {
+    "name": "العربية",
+    "dir": "rtl",
+    "tag": "شانجان CS75 Plus 2020 · SoftAP",
+    "title": "كار بلاي لاسلكي\nلشاشتك CS75 Plus.",
+    "intro": "عميل كار بلاي لاسلكي مفتوح المصدر. Wi‑Fi Direct / نقطة اتصال السيارة / شبكة Wi‑Fi موجودة (LAN)، عرض غامر — بلا جيلبريك أو قطعة أو حساب.",
+    "download": "تنزيل APK",
+    "mirrors": "مرآة",
+    "install": "خطوات التثبيت",
+    "requires": "ثبّت على شاشة السيارة. غير معتمد من Apple؛ غير تابع لـ Apple أو شانجان.",
+    "setup": "التثبيت والاتصال",
+    "steps": [
+      "والسيارة متوقفة، نزّل APK من إصدارات GitHub.",
+      "أزل أي 75Play بتوقيع مختلف ثم ثبّت هذا الملف.",
+      "افتح 75Play وأبقِ البلوتوث مفعّلاً. Wi‑Fi Direct / نقطة الاتصال: التبديل يجهّز الشبكة تلقائيًا ثم اضغط توصيل CarPlay. الشبكة المحلية: اختر الشبكة وأدخل كلمة المرور؛ يبدأ كار بلاي تلقائيًا بعد الاتصال.",
+      "اسمح بكار بلاي على الآيفون."
+    ],
+    "adb": "دليل التثبيت الكامل",
+    "bssid": "ADB اختياري. تفاصيل الأوضاع في دليل التثبيت.",
+    "whats": "مصمّم لهذه السيارة",
+    "features": [
+      {
+        "title": "لاسلكي فقط",
+        "text": "ثلاثة أوضاع: Wi‑Fi Direct (افتراضي)، نقطة اتصال السيارة (SoftAP)، وشبكة Wi‑Fi موجودة / LAN. بدون USB سلكي (لا TUN)."
+      },
+      {
+        "title": "عرض غامر",
+        "text": "شاشة عريضة؛ تطبيقات السيارة من كار بلاي؛ كرة عائمة."
+      },
+      {
+        "title": "واجهة زجاجية",
+        "text": "الرئيسية والإعدادات حسب أهداف السائق."
+      },
+      {
+        "title": "اتصال سريع",
+        "text": "التبديل إلى Wi‑Fi Direct أو نقطة الاتصال يجهّز الرابط تلقائيًا؛ في الشبكة المحلية يبدأ كار بلاي بعد الاتصال بـ Wi‑Fi."
+      },
+      {
+        "title": "لغات",
+        "text": "zh-Hans / zh-Hant / en / ar / es / ru / uk."
+      }
+    ],
+    "supportScope": "شانجان CS75 Plus 2020 فقط (OS_S311-WT · API 19 · armeabi-v7a).",
+    "update": "التحديثات والتوقيع",
+    "updateText": "توقيع v1+v2 لأندرويد 4.4. نفس المفتاح يسمح بالتحديث؛ التطبيق يتحقق من Releases.",
+    "diagnosticsTitle": "التقارير والتشخيص",
+    "diagnosticsText": "الإعدادات → التشخيص → حفظ التقرير. أرفق .txt بمشكلة على GitHub. لا تنشر كلمة مرور نقطة الاتصال.",
+    "notes": "ملاحظات الإصدار",
+    "source": "الكود المصدري",
+    "feedback": "الإبلاغ عن مشكلة",
+    "privacy": "الأمان والخصوصية",
+    "newIssue": "مشكلة جديدة",
+    "history": "سجل الإصدارات",
+    "changelogTitle": "سجل الإصدارات",
+    "changelogMore": "CHANGELOG الكامل على GitHub",
+    "footer": "مشروع مستقل مفتوح المصدر (GPL-3.0). كار بلاي ملك لـ Apple Inc."
+  },
+  "ru": {
+    "name": "Русский",
+    "dir": "ltr",
+    "tag": "Changan CS75 Plus 2020 · SoftAP",
+    "title": "Беспроводной CarPlay\nдля вашего CS75 Plus.",
+    "intro": "Открытый беспроводной клиент CarPlay. Wi‑Fi Direct / точка доступа авто / существующая Wi‑Fi (LAN), иммерсивный экран — без джейлбрейка, адаптера и аккаунта.",
+    "download": "Скачать APK",
+    "mirrors": "Зеркало",
+    "install": "Шаги установки",
+    "requires": "Устанавливайте на ГУ. Не сертифицировано Apple; не связано с Apple или Changan.",
+    "setup": "Установка и подключение",
+    "steps": [
+      "На стоянке скачайте APK из GitHub Releases.",
+      "Удалите 75Play с другой подписью и установите этот APK.",
+      "Откройте 75Play; Bluetooth включён. Wi‑Fi Direct / точка доступа: переключение само готовит сеть — затем нажмите «Подключить CarPlay». LAN: выберите Wi‑Fi и пароль; CarPlay запустится автоматически после подключения.",
+      "Разрешите CarPlay на iPhone."
+    ],
+    "adb": "Полная инструкция",
+    "bssid": "ADB не обязателен. Подробности режимов — в инструкции по установке.",
+    "whats": "Сделано для этой машины",
+    "features": [
+      {
+        "title": "Только беспроводной",
+        "text": "Три режима: Wi‑Fi Direct (по умолчанию), точка доступа авто (SoftAP) и существующая Wi‑Fi / LAN. USB убран — нет TUN."
+      },
+      {
+        "title": "Иммерсивный экран",
+        "text": "Широкий дисплей; приложения ГУ из CarPlay; плавающий шарик."
+      },
+      {
+        "title": "Стеклянный UI",
+        "text": "Главная и настройки по целям водителя."
+      },
+      {
+        "title": "Быстрое подключение",
+        "text": "Переключение на Wi‑Fi Direct или точку доступа готовит связь само; в LAN CarPlay стартует после подключения к Wi‑Fi."
+      },
+      {
+        "title": "Языки",
+        "text": "zh-Hans / zh-Hant / en / ar / es / ru / uk."
+      }
+    ],
+    "supportScope": "Только Changan CS75 Plus 2020 (OS_S311-WT · API 19 · armeabi-v7a).",
+    "update": "Обновления и подпись",
+    "updateText": "Подпись v1+v2 для Android 4.4. Тем же ключом можно обновлять; приложение проверяет Releases.",
+    "diagnosticsTitle": "Обратная связь",
+    "diagnosticsText": "Настройки → Диагностика → Сохранить отчёт. Приложите .txt к issue. Не публикуйте пароль точки доступа.",
+    "notes": "Заметки к релизу",
+    "source": "Исходный код",
+    "feedback": "Сообщить о проблеме",
+    "privacy": "Безопасность и конфиденциальность",
+    "newIssue": "Создать issue",
+    "history": "История версий",
+    "changelogTitle": "История версий",
+    "changelogMore": "Полный CHANGELOG на GitHub",
+    "footer": "Независимый проект с открытым кодом (GPL-3.0). CarPlay принадлежит Apple Inc."
+  },
+  "uk": {
+    "name": "Українська",
+    "dir": "ltr",
+    "tag": "Changan CS75 Plus 2020 · SoftAP",
+    "title": "Бездротовий CarPlay\nдля вашого CS75 Plus.",
+    "intro": "Відкритий бездротовий клієнт CarPlay. Wi‑Fi Direct / точка доступу авто / наявна Wi‑Fi (LAN), імерсивний екран — без джейлбрейка, адаптера й облікового запису.",
+    "download": "Завантажити APK",
+    "mirrors": "Дзеркало",
+    "install": "Кроки встановлення",
+    "requires": "Встановлюйте на магнітолу. Не сертифіковано Apple; не пов’язано з Apple чи Changan.",
+    "setup": "Встановлення та підключення",
+    "steps": [
+      "На стоянці завантажте APK з GitHub Releases.",
+      "Видаліть 75Play з іншим підписом і встановіть цей APK.",
+      "Відкрийте 75Play; Bluetooth увімкнено. Wi‑Fi Direct / точка доступу: перемикання само готує мережу — потім натисніть «Підключити CarPlay». LAN: оберіть Wi‑Fi і пароль; CarPlay запуститься автоматично після підключення.",
+      "Дозвольте CarPlay на iPhone."
+    ],
+    "adb": "Повна інструкція",
+    "bssid": "ADB не обов’язковий. Деталі режимів — в інструкції з встановлення.",
+    "whats": "Зроблено для цієї машини",
+    "features": [
+      {
+        "title": "Лише бездротовий",
+        "text": "Три режими: Wi‑Fi Direct (за замовчуванням), точка доступу авто (SoftAP) і наявна Wi‑Fi / LAN. USB прибрано — немає TUN."
+      },
+      {
+        "title": "Імерсивний екран",
+        "text": "Широкий дисплей; програми ГУ з CarPlay; плаваюча кулька."
+      },
+      {
+        "title": "Скляний UI",
+        "text": "Головна й налаштування за цілями водія."
+      },
+      {
+        "title": "Швидке підключення",
+        "text": "Перемикання на Wi‑Fi Direct або точку доступу готує зв’язок само; у LAN CarPlay стартує після підключення до Wi‑Fi."
+      },
+      {
+        "title": "Мови",
+        "text": "zh-Hans / zh-Hant / en / ar / es / ru / uk."
+      }
+    ],
+    "supportScope": "Лише Changan CS75 Plus 2020 (OS_S311-WT · API 19 · armeabi-v7a).",
+    "update": "Оновлення та підпис",
+    "updateText": "Підпис v1+v2 для Android 4.4. Тим самим ключем можна оновлювати; застосунок перевіряє Releases.",
+    "diagnosticsTitle": "Зворотний зв’язок",
+    "diagnosticsText": "Налаштування → Діагностика → Зберегти звіт. Додайте .txt до issue. Не публікуйте пароль точки доступу.",
+    "notes": "Нотатки до релізу",
+    "source": "Вихідний код",
+    "feedback": "Повідомити про проблему",
+    "privacy": "Безпека та конфіденційність",
+    "newIssue": "Створити issue",
+    "history": "Історія версій",
+    "changelogTitle": "Історія версій",
+    "changelogMore": "Повний CHANGELOG на GitHub",
+    "footer": "Незалежний проєкт з відкритим кодом (GPL-3.0). CarPlay належить Apple Inc."
+  }
+}

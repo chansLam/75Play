@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_display">Pantalla</string>
+    <string name="settings_navigation">Navegación</string>
+    <string name="settings_vehicle">Vehículo</string>
+    <string name="settings_advanced">Avanzado</string>
+    <string name="settings_open_category">Abrir ajustes de %1$s</string>
+    <string name="settings_wheel_keys">Botones del volante</string>
+    <string name="settings_floating_ball">Bola flotante</string>
+    </resources>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 首页背景（暗色）：设计稿照片 bg-dark.jpg 盖满 + 左上淡蓝光晕（API19 无 blur，以照片+光晕模拟氛围） -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <bitmap
+            android:src="@drawable/bg_home_photo"
+            android:gravity="fill"/>
+    </item>
+    <item>
+        <shape>
+            <gradient
+                android:type="radial"
+                android:gradientRadius="650dp"
+                android:centerX="0.0"
+                android:centerY="0.0"
+                android:startColor="#33223A66"
+                android:centerColor="#11101020"
+                android:endColor="#00000000"/>
+        </shape>
+    </item>
+</layer-list>

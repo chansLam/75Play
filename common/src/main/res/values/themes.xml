@@ -1,0 +1,14 @@
+<resources>
+    <!-- windowBackground must be a drawable REFERENCE, not a color literal: Freescale
+         i.MX6 head-unit ROMs resolve the resource name in PhoneWindow.generateLayout and
+         crash with NotFoundException(0x0) on a color-only value. -->
+    <style name="Theme.Xcertplay" parent="android:style/Theme.Holo.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowBackground">@drawable/window_background</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+    <!-- CarPlay 全屏宿主：纯深色窗口背景，切换瞬间不闪 DiPlay 启动背景图。 -->
+    <style name="Theme.Xcertplay.CarPlayHost" parent="Theme.Xcertplay">
+        <item name="android:windowBackground">@drawable/window_background_solid</item>
+    </style>
+</resources>

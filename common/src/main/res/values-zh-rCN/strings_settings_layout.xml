@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_display">显示</string>
+    <string name="settings_navigation">导航</string>
+    <string name="settings_vehicle">车辆</string>
+    <string name="settings_advanced">高级</string>
+    <string name="settings_open_category">打开%1$s设置</string>
+    <string name="settings_wheel_keys">方向盘按键</string>
+    <string name="settings_floating_ball">悬浮小白点</string>
+    </resources>

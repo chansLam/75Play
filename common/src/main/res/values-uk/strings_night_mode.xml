@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="carplay_night_time_note">Автоматичне оформлення CarPlay також враховує час iPhone: уночі навіть режим «Завжди денний» може залишатися темним.</string>
+</resources>

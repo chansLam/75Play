@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="custom_resolution_hint">Enter 30–160 percent. Apply to reconnect CarPlay.</string>
+    <string name="custom_resolution_summary">%1$d%%</string>
+    <string name="resolution_canvas_unsupported" formatted="false">This head unit cannot decode the enlarged resolution. Using 100%.</string>
+</resources>

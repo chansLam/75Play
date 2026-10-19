@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 软件图标磁贴底（暗）：仅极淡底，无描边（描边会在图标外再套一圈边） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#14FFFFFF"/>
+    <corners android:radius="18dp"/>
+</shape>

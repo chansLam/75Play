@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Referenced as android:windowBackground so kits like the i.MX6 head-unit ROM that call
+     Resources.getResourceName on the theme's background ID never see 0 (a color literal).
+     启动画面：暗黑主题全屏背景图（避免 multidex/慢 CPU 启动期纯黑屏）；不再叠加 DiPlay logo。 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <bitmap
+            android:src="@drawable/bg_home_photo"
+            android:gravity="fill" />
+    </item>
+</layer-list>
