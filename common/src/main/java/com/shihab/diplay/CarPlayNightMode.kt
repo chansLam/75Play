@@ -43,6 +43,22 @@ internal object SystemNightTimeSource : NightTimeSource {
     }
 }
 
+/**
+ * Shell and Host share one light source and the main-looper scheduler.
+ * Callers still supply [onNightChanged]; that callback is the only product difference.
+ */
+internal fun bindCarPlayNightMode(
+    context: android.content.Context,
+    initialNight: Boolean,
+    onNightChanged: (Boolean) -> Unit,
+    scheduler: CarPlayNightModeController.Scheduler = MainThreadNightModeScheduler(),
+): CarPlayNightModeController = CarPlayNightModeController(
+    light = AndroidAmbientLight(context),
+    scheduler = scheduler,
+    initialNight = initialNight,
+    onNightChanged = onNightChanged,
+)
+
 /** Main-thread controller. Only its output is sent to CarPlay; Android theme is never changed. */
 internal class CarPlayNightModeController(
     private val light: LightSource,

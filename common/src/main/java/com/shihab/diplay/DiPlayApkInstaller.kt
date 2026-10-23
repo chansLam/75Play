@@ -6,11 +6,12 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
-import android.util.Log
 import androidx.core.content.FileProvider
+import com.shihab.diplay.compat.realSdkInt
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
+import com.shihab.diplay.util.AppLog
 
 /**
  * Launches an OEM package installer without silently installing an APK.
@@ -51,7 +52,7 @@ internal object DiPlayApkInstaller {
      * The destination digest must match the source, and the caller validates its APK signature.
      */
     fun createPublicCopy(context: Context, verifiedApk: File, verify: (File) -> Unit): File? {
-        if (!supportsFileInstall(Build.VERSION.SDK_INT, Build.VERSION.RELEASE.orEmpty()) &&
+        if (!supportsFileInstall(realSdkInt(), Build.VERSION.RELEASE.orEmpty()) &&
             !Build.VERSION.RELEASE.orEmpty().startsWith("4.") &&
             !Build.VERSION.RELEASE.orEmpty().startsWith("5.")) return null
         if (Environment.getExternalStorageState() != Environment.MEDIA_MOUNTED) return null
@@ -91,7 +92,7 @@ internal object DiPlayApkInstaller {
             verify(target)
             return target
         } catch (error: Exception) {
-            Log.w(TAG, "Unable to make a verified public Downloads copy", error)
+            AppLog.w(TAG, "Unable to make a verified public Downloads copy", error)
             destination?.delete()
             return null
         }
@@ -109,10 +110,10 @@ internal object DiPlayApkInstaller {
                 it.clipData = ClipData.newUri(context.contentResolver, "DiPlay update", uri)
             }
         } catch (error: Exception) {
-            Log.w(TAG, "FileProvider update URI unavailable", error)
+            AppLog.w(TAG, "FileProvider update URI unavailable", error)
         }
         // Android 4.4's PackageInstaller often understands file:// but not content://.
-        if (publicCopy?.isFile == true && supportsFileInstall(Build.VERSION.SDK_INT,
+        if (publicCopy?.isFile == true && supportsFileInstall(realSdkInt(),
                 Build.VERSION.RELEASE.orEmpty())) {
             intents.addAll(0, fileIntents(publicCopy))
         }
@@ -122,7 +123,7 @@ internal object DiPlayApkInstaller {
                 context.startActivity(intent)
                 return LaunchResult(true)
             } catch (error: Exception) {
-                Log.w(TAG, "System installer rejected ${intent.action} (${intent.data?.scheme})", error)
+                AppLog.w(TAG, "System installer rejected ${intent.action} (${intent.data?.scheme})", error)
                 if (failure == null) failure = error else failure.addSuppressed(error)
             }
         }

@@ -1,9 +1,9 @@
 package com.shihab.diplay.network
 
-import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.system.Os
 import android.system.OsConstants
+import com.shihab.diplay.compat.realSdkInt
 import java.net.Socket
 
 /** Detect a vanished peer, without treating a legitimately idle CarPlay screen as a failure. */
@@ -15,7 +15,12 @@ internal object TcpLiveness {
     fun configure(socket: Socket, diagnostic: (String) -> Unit) {
         socket.keepAlive = true
         // Before 29, fromSocket owns the original descriptor rather than a duplicate.
-        if (Build.VERSION.SDK_INT < 29) return
+        // Os lives in a separate method so Dalvik does not verify it on KitKat.
+        if (realSdkInt() < 29) return
+        tuneKeepalive(socket, diagnostic)
+    }
+
+    private fun tuneKeepalive(socket: Socket, diagnostic: (String) -> Unit) {
         try {
             ParcelFileDescriptor.fromSocket(socket).use { duplicate ->
                 val fd = duplicate.fileDescriptor

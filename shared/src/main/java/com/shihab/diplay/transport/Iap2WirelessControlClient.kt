@@ -303,14 +303,10 @@ class Iap2WirelessControlClient(
     }
 }
 
-/** Wireless 0x5703 security values. */
-enum class Iap2WirelessSecurity(val wireValue: Int) {
-    NONE(0),
-    WEP(1),
-    WPA_WPA2(2),
-    WPA3_TRANSITION(3),
-    WPA3_ONLY(4),
-}
+// Wireless security enum moved to [com.shihab.diplay.model] to break the
+// transport <-> network package cycle. Typealias keeps the historical
+// `transport.Iap2WirelessSecurity` import path working.
+typealias Iap2WirelessSecurity = com.shihab.diplay.model.Iap2WirelessSecurity
 
 /** Wireless hotspot and AirPlay endpoint sent in 0x5703 and 0x4301. */
 class Iap2WirelessCarPlayEndpoint(

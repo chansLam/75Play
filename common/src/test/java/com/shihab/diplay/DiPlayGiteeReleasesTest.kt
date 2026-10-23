@@ -17,7 +17,7 @@ import java.io.IOException
 class DiPlayGiteeReleasesTest {
     private val tag = "v0.2.36"
     private val repo = "https://gitee.com/JingRuirui/DiPlay-Legacy-Android"
-    private val apk = "DiPlay-$tag-release.apk"
+    private val apk = "75Play-$tag-release.apk"
     private val prefix = "$repo/releases/download/$tag/"
 
     @Test fun matchesPublishedAttachmentsNotAutomaticSourceArchives() {

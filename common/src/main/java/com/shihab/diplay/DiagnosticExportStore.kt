@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import com.shihab.diplay.compat.realSdkInt
 import androidx.annotation.RequiresApi
 import androidx.core.content.FileProvider
 import java.io.File
@@ -23,7 +24,7 @@ internal object DiagnosticExportStore {
 
     /** Android 9 and OEMs without working Downloads storage can still export privately. */
     fun saveWithoutPicker(context: Context, fileName: String, report: String, preferredRoot: File? = null): SavedReport {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (realSdkInt() >= Build.VERSION_CODES.Q) {
             try {
                 return SavedReport(saveToDownloads(context.contentResolver, fileName, report))
             } catch (_: Exception) {

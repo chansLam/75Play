@@ -5,6 +5,13 @@ import com.shihab.diplay.transport.Iap2IdentificationConfig
 import java.net.Inet6Address
 import java.net.InetAddress
 
+// Shared hotspot enums were moved to [com.shihab.diplay.model] to break the
+// orchestration <-> network package cycle. Typealiases keep the historical
+// `orchestration.*` import path working for callers outside the shared module.
+typealias WirelessHotspotMode = com.shihab.diplay.model.WirelessHotspotMode
+typealias ManualHotspotBand = com.shihab.diplay.model.ManualHotspotBand
+typealias ManualHotspotSecurity = com.shihab.diplay.model.ManualHotspotSecurity
+
 enum class CarPlayTransport {
     WIRED,
     WIRELESS,
@@ -14,26 +21,6 @@ enum class MfiTarget {
     LOCAL,
     I2C,
     REMOTE,
-}
-
-enum class WirelessHotspotMode {
-    WIFI_P2P,
-    LOCAL_ONLY_HOTSPOT,
-    MANUAL,
-    EXISTING_WIFI,
-}
-
-enum class ManualHotspotBand {
-    AUTO,
-    GHZ_2_4,
-    GHZ_5,
-}
-
-enum class ManualHotspotSecurity {
-    OPEN,
-    WPA2,
-    WPA3_TRANSITION,
-    WPA3,
 }
 
 /**

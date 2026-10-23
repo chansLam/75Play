@@ -1,26 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 玻璃卡（暗）：slate-navy 半透 20–35% + cyan 描边 + 顶高光 -->
+<!-- 卡片（暗）：深蓝玻璃，青细边，照片从底下透出来。 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
         <shape>
             <gradient
-                android:type="linear"
                 android:angle="270"
-                android:startColor="#593A5F8A"
-                android:centerColor="#3D1C2A40"
-                android:endColor="#33141E30" />
-            <corners android:radius="18dp" />
-            <stroke android:width="1dp" android:color="#7322D3EE" />
+                android:startColor="#B30C1830"
+                android:endColor="#99081424" />
+            <corners android:radius="16dp" />
+            <stroke android:width="1dp" android:color="#4D7EB8FF" />
         </shape>
     </item>
     <item>
         <shape>
             <gradient
-                android:type="linear"
-                android:angle="90"
-                android:startColor="#00FFFFFF"
-                android:endColor="#2EFFFFFF" />
-            <corners android:radius="18dp" />
+                android:angle="270"
+                android:startColor="#147EB8FF"
+                android:centerColor="#00000000"
+                android:endColor="#00000000"
+                android:centerY="0.16" />
+            <corners android:radius="16dp" />
         </shape>
     </item>
 </layer-list>

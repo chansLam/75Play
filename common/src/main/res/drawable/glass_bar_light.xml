@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 导航 / 顶栏（浅）：霜玻璃，日景还在。 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape>
+            <gradient
+                android:angle="270"
+                android:startColor="#D6FFFFFF"
+                android:endColor="#A6FFFFFF" />
+        </shape>
+    </item>
+    <item>
+        <shape>
+            <gradient
+                android:angle="270"
+                android:startColor="#66FFFFFF"
+                android:centerColor="#00000000"
+                android:endColor="#00000000"
+                android:centerY="0.22" />
+        </shape>
+    </item>
+</layer-list>

@@ -5,13 +5,26 @@ import android.content.Context
 /**
  * 车载 HMI 尺寸令牌（目标 **12.3″ 1920×720** SoftAP 车机）。
  *
- * 短屏/超宽一律按「驾驶触控」：≥56dp 触控、18sp+ 正文、少列大图标。
- * 玻璃材质仍由 [GlassColors] / drawable 负责，本类只管尺度与间距。
+ * 短屏/超宽按驾驶舱：左侧窄导航 + 顶栏（页名 / 状态 / 时钟），竖屏改成底栏导航。
+ * 1920×720 三列并排、可点行至少 48dp，放不下的设置列自己滚动。其它短屏仍用大触控行。
+ * 面板与强调色由 [GlassColors] 负责：底图上的玻璃面板，青蓝只留给主操作和选中。
  *
  * Dimension getters return **px**（已乘 density）。Text-size getters return **sp**。
  */
 object LayoutMetrics {
     private const val SHORT_HEIGHT_DP = 560
+
+    /**
+     * 横屏且够宽（车机 1920×720）才并排。竖屏平板改成上内容、下导航，避免三列被挤成手机设置。
+     */
+    fun isWide(context: Context): Boolean {
+        val cfg = context.resources.configuration
+        val w = cfg.screenWidthDp
+        val h = cfg.screenHeightDp
+        if (w > 0 && h > 0) return w >= h && w >= 720
+        val dm = context.resources.displayMetrics
+        return dm.widthPixels > dm.heightPixels && dm.widthPixels >= 1200
+    }
 
     fun isShort(context: Context): Boolean {
         val cfg = context.resources.configuration
@@ -24,92 +37,117 @@ object LayoutMetrics {
         return false
     }
 
+    /**
+     * 12.3″ 1920×720 @160dpi：宽且矮。这一档把行高和字号收进一屏，
+     * 而不是沿用短屏的大触控尺寸。
+     */
+    fun isCockpit(context: Context): Boolean = isWide(context) && isShort(context)
+
+    private fun <T> tier(context: Context, cockpit: T, short: T, regular: T): T = when {
+        isCockpit(context) -> cockpit
+        isShort(context) -> short
+        else -> regular
+    }
+
     private fun px(context: Context, dp: Int): Int =
         (dp * context.resources.displayMetrics.density + 0.5f).toInt()
 
     // ---- 页 / 卡 ----
-    fun pagePad(context: Context): Int = px(context, if (isShort(context)) 12 else 24)
-    fun cardPadH(context: Context): Int = px(context, if (isShort(context)) 20 else 22)
-    fun cardPadV(context: Context): Int = px(context, if (isShort(context)) 16 else 20)
-    fun colGap(context: Context): Int = px(context, if (isShort(context)) 12 else 16)
-    fun headerBottom(context: Context): Int = px(context, if (isShort(context)) 8 else 16)
-    /** 行上下内边距：车载触控空隙。 */
-    fun rowPadV(context: Context): Int = px(context, if (isShort(context)) 12 else 10)
-    /** 行最小高度：车载 ≥56dp。 */
-    fun rowMinH(context: Context): Int = px(context, if (isShort(context)) 60 else 48)
-    fun cardTitleGap(context: Context): Int = px(context, if (isShort(context)) 12 else 12)
-    fun dividerGap(context: Context): Int = px(context, if (isShort(context)) 12 else 14)
+    fun pagePad(context: Context): Int = px(context, tier(context, 8, 18, 20))
+    fun cardPadH(context: Context): Int = px(context, tier(context, 12, 20, 22))
+    fun cardPadV(context: Context): Int = px(context, tier(context, 6, 16, 20))
+    fun colGap(context: Context): Int = px(context, tier(context, 8, 12, 16))
+    fun headerBottom(context: Context): Int = px(context, tier(context, 4, 8, 16))
+    /** 行上下内边距：车载触控空隙。驾驶舱收紧，好让整列落在 720px 里。 */
+    fun rowPadV(context: Context): Int = px(context, tier(context, 2, 12, 10))
+    /** 行最小高度。驾驶舱 48dp，点得到；列超出后滚动。 */
+    fun rowMinH(context: Context): Int = px(context, tier(context, 48, 64, 56))
+    fun cardTitleGap(context: Context): Int = px(context, tier(context, 4, 12, 12))
+    fun dividerGap(context: Context): Int = px(context, tier(context, 4, 12, 14))
 
-    fun settingsRowTextSize(context: Context): Float = if (isShort(context)) 20f else 16f
-    fun settingsCapTextSize(context: Context): Float = if (isShort(context)) 16f else 14f
-    fun capPadH(context: Context): Int = px(context, if (isShort(context)) 16 else 12)
+    fun settingsRowTextSize(context: Context): Float = tier(context, 15f, 20f, 16f)
+    fun settingsCapTextSize(context: Context): Float = tier(context, 13f, 16f, 14f)
+    fun capPadH(context: Context): Int = px(context, tier(context, 8, 16, 12))
     /** 含 font padding 的垂直内边距，避免汉字底被裁。 */
-    fun capPadV(context: Context): Int = px(context, if (isShort(context)) 10 else 6)
-    fun capMinH(context: Context): Int = px(context, if (isShort(context)) 40 else 34)
+    fun capPadV(context: Context): Int = px(context, tier(context, 2, 6, 4))
+    /** 值胶囊和次级按钮的高度。按字高收，不再用 48dp 触控行。 */
+    fun capMinH(context: Context): Int = px(context, tier(context, 32, 36, 32))
 
-    fun ghostTextSize(context: Context): Float = if (isShort(context)) 17f else 14f
-    fun ghostPadH(context: Context): Int = px(context, if (isShort(context)) 18 else 14)
-    fun ghostPadV(context: Context): Int = px(context, if (isShort(context)) 12 else 8)
+    fun ghostTextSize(context: Context): Float = tier(context, 13f, 17f, 14f)
+    fun ghostPadH(context: Context): Int = px(context, tier(context, 10, 18, 14))
+    fun ghostPadV(context: Context): Int = px(context, tier(context, 2, 6, 4))
 
     /** 开关（dp 数值，调用方再 dp()）。 */
-    fun switchW(context: Context): Int = if (isShort(context)) 64 else 48
-    fun switchH(context: Context): Int = if (isShort(context)) 38 else 28
-    fun switchKnob(context: Context): Int = if (isShort(context)) 30 else 22
+    fun switchW(context: Context): Int = tier(context, 52, 64, 48)
+    fun switchH(context: Context): Int = tier(context, 28, 38, 28)
+    fun switchKnob(context: Context): Int = tier(context, 22, 30, 22)
 
-    fun appIconDp(context: Context): Int = if (isShort(context)) 72 else 56
-    fun appLabelSize(context: Context): Float = if (isShort(context)) 14f else 12f
-    fun appTilePadH(context: Context): Int = px(context, if (isShort(context)) 8 else 8)
-    fun appTilePadT(context: Context): Int = px(context, if (isShort(context)) 14 else 14)
-    fun appTilePadB(context: Context): Int = px(context, if (isShort(context)) 10 else 10)
-    fun appTileMargin(context: Context): Int = px(context, if (isShort(context)) 6 else 6)
-    /** 车机少列放大格子：短屏 3 列。 */
-    fun appColumns(context: Context): Int = if (isShort(context)) 3 else 4
+    fun appIconDp(context: Context): Int = tier(context, 44, 72, 56)
+    fun appLabelSize(context: Context): Float = tier(context, 12f, 14f, 12f)
+    fun appTilePadH(context: Context): Int = px(context, tier(context, 4, 8, 8))
+    fun appTilePadT(context: Context): Int = px(context, tier(context, 4, 14, 14))
+    fun appTilePadB(context: Context): Int = px(context, tier(context, 2, 10, 10))
+    fun appTileMargin(context: Context): Int = px(context, tier(context, 2, 6, 6))
+    /** 驾驶舱用 4 列，少占高度。短屏仍 3 列大图标。 */
+    fun appColumns(context: Context): Int = tier(context, 4, 3, 4)
 
-    // ---- 侧栏 ----
-    fun navWidth(context: Context): Int = px(context, if (isShort(context)) 128 else 132)
-    fun navPadV(context: Context): Int = px(context, if (isShort(context)) 14 else 16)
-    fun navPadH(context: Context): Int = px(context, if (isShort(context)) 10 else 14)
-    fun navEntryMinH(context: Context): Int = px(context, if (isShort(context)) 88 else 72)
-    fun navLogoSize(context: Context): Int = px(context, if (isShort(context)) 52 else 48)
-    fun navIconSize(context: Context): Int = px(context, if (isShort(context)) 34 else 28)
-    fun navVersionSize(context: Context): Float = if (isShort(context)) 12f else 11f
+    // ---- 左侧窄导航 / 顶栏 ----
+    /** 贴左的窄轨。宽度够放下选中胶囊和两个字的短标签。 */
+    fun navWidth(context: Context): Int = px(context, tier(context, 84, 92, 100))
+    fun statusBarH(context: Context): Int = px(context, tier(context, 44, 56, 60))
+    fun statusClockSize(context: Context): Float = tier(context, 20f, 28f, 26f)
+    fun statusDateSize(context: Context): Float = tier(context, 12f, 15f, 14f)
+    fun navEntryMinH(context: Context): Int = px(context, tier(context, 52, 64, 60))
+    fun navIconSize(context: Context): Int = px(context, tier(context, 20, 22, 22))
+    fun navLogoSize(context: Context): Int = px(context, tier(context, 28, 30, 32))
+    fun navVersionSize(context: Context): Float = 10f
 
     // ---- 主页 Hero / 分段 Tab ----
-    fun heroPad(context: Context): Int = px(context, if (isShort(context)) 18 else 18)
-    fun heroGap(context: Context): Int = px(context, if (isShort(context)) 12 else 14)
-    fun heroPlaySize(context: Context): Float = if (isShort(context)) 18f else 17f
-    fun heroSubSize(context: Context): Float = if (isShort(context)) 14f else 13f
-    fun showHeroSubtitle(context: Context): Boolean = true
-    fun heroRadiusDp(context: Context): Int = if (isShort(context)) 16 else 20
+    /** 主页主按钮高度。连接球另算。 */
+    fun heroMinH(context: Context): Int = px(context, tier(context, 32, 40, 36))
+    /** 主页圆形连接按钮边长，含外围进度环。 */
+    fun connectOrbSize(context: Context): Int = px(context, tier(context, 128, 168, 152))
+    /** 连接按钮下五步流程的高度，含圆点和短标签。 */
+    fun connectFlowH(context: Context): Int = px(context, tier(context, 40, 52, 46))
+    fun heroPad(context: Context): Int = px(context, tier(context, 8, 18, 18))
+    fun heroGap(context: Context): Int = px(context, tier(context, 6, 12, 14))
+    fun heroSubSize(context: Context): Float = tier(context, 12f, 14f, 13f)
+    fun heroRadiusDp(context: Context): Int = 10
 
-    fun modeTabTextSize(context: Context): Float = if (isShort(context)) 17f else 14f
-    fun modeTabPadV(context: Context): Int = px(context, if (isShort(context)) 14 else 11)
-    fun modeTabRadiusDp(context: Context): Int = if (isShort(context)) 14 else 12
-    fun modeTabMinH(context: Context): Int = px(context, if (isShort(context)) 56 else 44)
+    fun modeTabTextSize(context: Context): Float = tier(context, 14f, 17f, 14f)
+    fun modeTabPadV(context: Context): Int = px(context, tier(context, 2, 6, 4))
+    fun modeTabRadiusDp(context: Context): Int = 10
+    fun modeTabMinH(context: Context): Int = px(context, tier(context, 32, 40, 36))
 
-    fun statusPillTextSize(context: Context): Float = if (isShort(context)) 14f else 13f
-    fun statusPillPadH(context: Context): Int = px(context, if (isShort(context)) 12 else 11)
-    fun statusPillPadV(context: Context): Int = px(context, if (isShort(context)) 6 else 4)
-    fun homeBodyTextSize(context: Context): Float = if (isShort(context)) 18f else 15f
-    fun homeMutedTextSize(context: Context): Float = if (isShort(context)) 16f else 14f
-    fun manageBtnTextSize(context: Context): Float = if (isShort(context)) 16f else 15f
-    fun manageBtnMinW(context: Context): Int = px(context, if (isShort(context)) 72 else 64)
-    fun manageBtnMinH(context: Context): Int = px(context, if (isShort(context)) 44 else 40)
-    fun disconnectBtnH(context: Context): Int = px(context, if (isShort(context)) 52 else 48)
-    fun homeWifiListH(context: Context): Int = px(context, if (isShort(context)) 160 else 240)
+    fun statusPillTextSize(context: Context): Float = tier(context, 12f, 14f, 13f)
+    fun statusPillPadH(context: Context): Int = px(context, tier(context, 8, 12, 11))
+    fun statusPillPadV(context: Context): Int = px(context, tier(context, 2, 6, 4))
+    fun homeBodyTextSize(context: Context): Float = tier(context, 14f, 18f, 15f)
+    fun homeMutedTextSize(context: Context): Float = tier(context, 12f, 16f, 14f)
+    fun manageBtnTextSize(context: Context): Float = tier(context, 13f, 16f, 15f)
+    fun manageBtnMinW(context: Context): Int = px(context, tier(context, 56, 72, 64))
+    fun manageBtnMinH(context: Context): Int = px(context, tier(context, 32, 36, 32))
+    fun disconnectBtnH(context: Context): Int = px(context, tier(context, 32, 40, 36))
+    fun homeWifiListH(context: Context): Int = px(context, tier(context, 112, 160, 240))
 
     // ---- 字号 ----
-    fun headerTitleSize(context: Context): Float = if (isShort(context)) 22f else 24f
-    fun headerSubtitleSize(context: Context): Float = if (isShort(context)) 15f else 14f
+    fun headerTitleSize(context: Context): Float = tier(context, 18f, 22f, 24f)
+    fun headerSubtitleSize(context: Context): Float = tier(context, 12f, 15f, 14f)
     fun showHeaderSubtitle(context: Context): Boolean = !isShort(context)
-    fun cardTitleSize(context: Context): Float = if (isShort(context)) 22f else 20f
-    fun navLabelSize(context: Context): Float = if (isShort(context)) 15f else 13f
-    fun navBrandSize(context: Context): Float = if (isShort(context)) 15f else 14f
-    fun heroMainSize(context: Context): Float = if (isShort(context)) 24f else 22f
+    fun cardTitleSize(context: Context): Float = tier(context, 16f, 22f, 20f)
+    fun navLabelSize(context: Context): Float = 12f
+    fun heroMainSize(context: Context): Float = tier(context, 18f, 24f, 22f)
 
-    /** 主页左右栏权重（连接 : 应用）。短屏略偏连接，主操作更醒目。 */
-    fun homeConnectWeight(context: Context): Float = if (isShort(context)) 5.5f else 5f
-    fun homeAppsWeight(context: Context): Float = if (isShort(context)) 5.5f else 6f
+    /**
+     * 主页左右栏权重（连接 : 应用）。连接是主舞台，应用格退后，仍保持 3 列大图标。
+     */
+    fun homeConnectWeight(context: Context): Float = tier(context, 5.2f, 6.4f, 5.6f)
+    fun homeAppsWeight(context: Context): Float = tier(context, 4.8f, 3.6f, 4.4f)
+    /** 主页两栏之间的空隙，比设置列距更开。 */
+    fun homeColumnGap(context: Context): Int = px(context, tier(context, 8, 20, 24))
+
+    /** 竖屏主页底部应用条高度，只留一行大图标。 */
+    fun homeAppsStripH(context: Context): Int = px(context, tier(context, 120, 148, 168))
 
     enum class DialogSize { NARROW, STANDARD, WIDE }
 
@@ -130,4 +168,12 @@ object LayoutMetrics {
         val inset = pagePad(context) + px(context, 4)
         return (h - inset * 2).coerceAtLeast(px(context, 200))
     }
+
+    /**
+     * 统一 dp→px 入口（四舍五入）。替代各文件本地重复的 dp()。
+     */
+    fun dp(context: Context, value: Int): Int = px(context, value)
 }
+
+/** 便捷扩展：在 Context（Activity / View 上下文）内直接 dp(n)。 */
+fun Context.dp(value: Int): Int = LayoutMetrics.dp(this, value)

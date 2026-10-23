@@ -3,6 +3,7 @@ package com.shihab.diplay
 import android.app.ActivityManager
 import android.content.Context
 import android.os.Build
+import com.shihab.diplay.compat.realSdkInt
 
 /** Own-app numeric exit metadata only; never read traces, descriptions or process state blobs. */
 internal object ProcessExitDiagnostics {
@@ -19,8 +20,8 @@ internal object ProcessExitDiagnostics {
     )
 
     fun report(context: Context): String {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return UNSUPPORTED
-        return report(Build.VERSION.SDK_INT, System.currentTimeMillis()) {
+        if (realSdkInt() < Build.VERSION_CODES.R) return UNSUPPORTED
+        return report(realSdkInt(), System.currentTimeMillis()) {
             val manager = context.getSystemService(ActivityManager::class.java)
                 ?: throw IllegalStateException()
             manager.getHistoricalProcessExitReasons(context.packageName, 0, MAX_RECORDS).take(MAX_RECORDS).map {

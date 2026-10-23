@@ -1,6 +1,5 @@
 package com.shihab.diplay.airplay
 
-import android.util.Log
 import com.shihab.diplay.transport.BlockingDuplexByteStream
 import java.io.Closeable
 import java.io.File
@@ -14,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
+import com.shihab.diplay.util.AppLog
 
 /** Identity of one CarPlay audio stream: the stream type plus its CarPlay audio type. */
 data class AudioStreamId(val type: Int, val audioType: String)
@@ -133,7 +133,7 @@ class CarPlayMediaEngine(
     override fun onScreen(session: AirPlaySession, type: Int, stream: Map<String, Any?>): Int? {
         val key = outputKey(session, stream) ?: return null
         val streamKey = StreamKey(session, type)
-        Log.i(TAG, "airplay screen key connectionID=${unsignedPlistDecimal(stream["streamConnectionID"])}")
+        AppLog.i(TAG, "airplay screen key connectionID=${unsignedPlistDecimal(stream["streamConnectionID"])}")
         val screen = ScreenStream(key, session::logDebug, session.localAddress)
         sink.setVideoDiagnosticHandler(type) {
             if (it == "first frame rendered") session.videoFrameRendered()
@@ -155,7 +155,7 @@ class CarPlayMediaEngine(
             object : ScreenStream.Listener by currentScreenListener(type, sink, isCurrent = { streams[streamKey] === screen }) {
                 override fun onClosed(cause: Throwable?) {
                     val reason = cause?.message ?: "peer EOF"
-                    Log.w(TAG, "screen stream ended type=$type reason=$reason")
+                    AppLog.w(TAG, "screen stream ended type=$type reason=$reason")
                     session.logDebug("screen stream ended type=$type reason=$reason")
                     if (streams.remove(streamKey, screen)) {
                         sink.onScreenStreamActive(type, false)
@@ -218,7 +218,7 @@ class CarPlayMediaEngine(
             type,
             audioType,
         )
-        Log.i(
+        AppLog.i(
             TAG,
             "airplay audio format type=$type audioType=$audioType codec=${format.codec} " +
                 "rate=${format.sampleRate} channels=${format.channels} " +
@@ -272,24 +272,24 @@ class CarPlayMediaEngine(
         val streamKey = StreamKey(session, type, "media")
         val key = stream["shk"] as? ByteArray
         if (key == null || key.size != 32) {
-            Log.w(TAG, "buffered audio SETUP without a 32-byte shk; declined")
+            AppLog.w(TAG, "buffered audio SETUP without a 32-byte shk; declined")
             return null
         }
         val format = AudioStreamCodec.fromFormatBits((stream["audioFormat"] as? Number)?.toLong() ?: 0L, type, "media")
         if (format.codec != AudioCodecKind.AAC_LC) {
-            Log.w(TAG, "buffered audio format ${stream["audioFormat"]} is not AAC-LC; declined")
+            AppLog.w(TAG, "buffered audio format ${stream["audioFormat"]} is not AAC-LC; declined")
             return null
         }
         if (stream["ct"]?.let { it !is Number || it.toInt() != 4 } == true ||
             stream["spf"]?.let { it !is Number || it.toInt() != 1024 } == true) {
-            Log.w(TAG, "buffered audio requires AAC and 1024 samples per frame; declined")
+            AppLog.w(TAG, "buffered audio requires AAC and 1024 samples per frame; declined")
             return null
         }
         val peer = session.remoteAddress ?: return null
         val buffered = try {
             BufferedAudioStream(key, format, sink, session::logDebug, expectedPeer = peer)
         } catch (error: Exception) {
-            Log.w(TAG, "buffered audio listener failed", error)
+            AppLog.w(TAG, "buffered audio listener failed", error)
             return null
         }
         // Validate before retiring a healthy owner. Detach its registry entries first, but
@@ -333,7 +333,7 @@ class CarPlayMediaEngine(
         }
         buffered.start()
         if (bufferedStreams[session] !== candidate) return null
-        Log.i(TAG, "buffered audio stream client=${stream["clientID"]} rate=${format.sampleRate} port=${buffered.port}")
+        AppLog.i(TAG, "buffered audio stream client=${stream["clientID"]} rate=${format.sampleRate} port=${buffered.port}")
         return linkedMapOf(
             "type" to type,
             "dataPort" to buffered.port,
@@ -408,7 +408,7 @@ class CarPlayMediaEngine(
                         override fun onIap(bytes: ByteArray) = sink.onIapMessage(bytes)
 
                         override fun onClosed(cause: Throwable?) {
-                            Log.w(
+                            AppLog.w(
                                 TAG,
                                 "iAP tunnel ended reason=${cause?.message ?: "peer EOF"}",
                             )
@@ -463,11 +463,11 @@ class CarPlayMediaEngine(
         val attached = try {
             pending.handler(pending.bridge)
         } catch (error: Throwable) {
-            Log.w(TAG, "iAP tunnel relay attachment failed", error)
+            AppLog.w(TAG, "iAP tunnel relay attachment failed", error)
             false
         }
         if (!attached) {
-            Log.w(TAG, "iAP tunnel relay attachment was rejected after SETUP")
+            AppLog.w(TAG, "iAP tunnel relay attachment was rejected after SETUP")
             pending.bridge.close()
             session.close()
         }

@@ -1,5 +1,4 @@
 package com.shihab.diplay
-import java.util.concurrent.TimeUnit
 import com.shihab.diplay.host.CarPlayBackgroundSession
 
 import android.accessibilityservice.AccessibilityService
@@ -10,7 +9,6 @@ import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
-import android.util.Log
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
@@ -21,6 +19,7 @@ import com.shihab.diplay.adb.LocalAdb
 import com.shihab.diplay.airplay.AirPlayKnobState
 import com.shihab.diplay.glance.CarPlayGlance
 import com.shihab.diplay.host.R
+import com.shihab.diplay.util.AppLog
 
 /**
  * Optional: steering-wheel keys zoom CarPlay's dashboard map and work as a CarPlay joystick.
@@ -93,7 +92,7 @@ class WheelKeyService : AccessibilityService() {
                 "WheelKeySvc: connected=true enabledList=${enabledList ?: "n/a"}",
             )
         }
-        Log.i(TAG, "wheel key service connected")
+        AppLog.i(TAG, "wheel key service connected")
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
@@ -168,11 +167,11 @@ class WheelKeyService : AccessibilityService() {
                     clearLearning(notify = false)
                     val taken = WheelZoomSettings.conflict(this, role, key)
                     if (taken != null) {
-                        Log.i(TAG, "$role key $key refused: it is the $taken key")
+                        AppLog.i(TAG, "$role key $key refused: it is the $taken key")
                         refused?.invoke(taken)
                     } else {
                         WheelZoomSettings.assign(this, role, key)
-                        Log.i(TAG, "$role key is now $key")
+                        AppLog.i(TAG, "$role key is now $key")
                         done?.invoke(role, key)
                     }
                     WheelZoomKeys.Action.CONSUME
@@ -204,7 +203,7 @@ class WheelKeyService : AccessibilityService() {
     // Without a CarPlay session, or in a call, the key keeps the car's own action.
     private fun siriPress(role: WheelZoomSettings.Role?, calling: Boolean, eventTime: Long): WheelZoomKeys.Action? {
         if (role != WheelZoomSettings.Role.SIRI || calling || session() == null) return null
-        if (siriKey.opens(eventTime)) Log.i(TAG, "Siri key sent=${requestSiri()}")
+        if (siriKey.opens(eventTime)) AppLog.i(TAG, "Siri key sent=${requestSiri()}")
         return WheelZoomKeys.Action.CONSUME
     }
 
@@ -261,7 +260,7 @@ class WheelKeyService : AccessibilityService() {
     // A toast with the keys at a glance on the centre screen; on the dashboard only the state (its font
     // is limited).
     private fun announceJoystick(on: Boolean) {
-        Log.i(TAG, "joystick ${if (on) "on" else "off"}")
+        AppLog.i(TAG, "joystick ${if (on) "on" else "off"}")
         val text = getString(if (on) R.string.wheel_joystick_on else R.string.wheel_joystick_off)
         handler.post {
             if (on) DiPlayDialog.toast(this, "$text\n${getString(R.string.wheel_joystick_hint)}", true)
@@ -298,7 +297,7 @@ class WheelKeyService : AccessibilityService() {
     // On the centre screen, and where the song shows on the dashboard: zoom with BYD's Bluetooth-music
     // icon (source 6), volume with the song's usual icon.
     private fun announce(zoomOn: Boolean) {
-        Log.i(TAG, "zoom mode ${if (zoomOn) "on" else "off"}")
+        AppLog.i(TAG, "zoom mode ${if (zoomOn) "on" else "off"}")
         handler.post {
             DiPlayDialog.toast(this, getString(if (zoomOn) R.string.wheel_zoom_mode_on else R.string.wheel_zoom_mode_off))
         }
@@ -348,20 +347,10 @@ class WheelKeyService : AccessibilityService() {
         }
 
         /** True when `su` can elevate to uid 0 (a rooted head unit). */
-        private fun hasRoot(): Boolean = runCatching {
-            val p = ProcessBuilder("su", "-c", "id").redirectErrorStream(true).start()
-            val ok = p.waitFor(3000, TimeUnit.MILLISECONDS)
-            val out = if (ok) p.inputStream.bufferedReader().use { it.readText() } else ""
-            if (!ok) p.destroy()
-            ok && out.contains("uid=0")
-        }.getOrDefault(false)
+        private fun hasRoot(): Boolean = RootShell.available()
 
-        /** Runs [command] as root via su; returns its output on exit 0, or null on any failure. */
-        private fun suShell(command: String): String? = runCatching {
-            val p = ProcessBuilder("su", "-c", command).redirectErrorStream(true).start()
-            if (!p.waitFor(3000, TimeUnit.MILLISECONDS)) { p.destroy(); return@runCatching null }
-            p.inputStream.bufferedReader().use { it.readText() }
-        }.getOrNull()
+        /** Runs [command] as root via su; returns its output, or null on any failure. */
+        private fun suShell(command: String): String? = RootShell.exec(command, timeoutMs = 3_000L)
 
         /**
          * Enables the wheel-key accessibility service. A rooted head unit is preferred: su can change
@@ -369,10 +358,17 @@ class WheelKeyService : AccessibilityService() {
          * adb (allowed once on the car screen). Services already in the list stay there.
          */
         fun enableOverAdb(context: Context, mayAsk: Boolean = true): LocalAdb.Access {
-            if (hasRoot()) {
+            // mayAsk=false is the silent cold-start restore path: never call hasRoot()/su — that
+            // pops the OEM grant dialog on every launch. Use a process-cached su only, else adb.
+            val rootOk = if (mayAsk) {
+                hasRoot()
+            } else {
+                RootShell.peekSu() != null
+            }
+            if (rootOk) {
                 val allowed = applyServiceSettings(context, ::suShell) { mayAsk || wanted(context) }
                 if (allowed) {
-                    Log.i(TAG, "wheel key service enabled over su(root)")
+                    AppLog.i(TAG, "wheel key service enabled over su(root)")
                     return LocalAdb.Access.READY
                 }
             }
@@ -383,7 +379,7 @@ class WheelKeyService : AccessibilityService() {
                 val allowed = applyServiceSettings(context, adb::shell) {
                     mayAsk || wanted(context)
                 }
-                if (allowed) Log.i(TAG, "wheel key service allowed over adb")
+                if (allowed) AppLog.i(TAG, "wheel key service allowed over adb")
                 if (allowed) access else LocalAdb.Access.UNREACHABLE
             }
         }
@@ -439,9 +435,9 @@ class WheelKeyService : AccessibilityService() {
             Thread({
                 try {
                     Thread.sleep(RESTORE_GRACE_MILLIS)
-                    if (needsRestore(app)) Log.i(TAG, "wheel key service not running; restoring over adb: ${enableOverAdb(app, mayAsk = false)}")
+                    if (needsRestore(app)) AppLog.i(TAG, "wheel key service not running; restoring over adb: ${enableOverAdb(app, mayAsk = false)}")
                 } catch (error: Exception) {
-                    Log.w(TAG, "wheel key service restore failed", error)
+                    AppLog.w(TAG, "wheel key service restore failed", error)
                 } finally {
                     restoring.set(false)
                 }

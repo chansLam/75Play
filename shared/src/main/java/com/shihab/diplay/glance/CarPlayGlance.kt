@@ -21,7 +21,7 @@ object CarPlayGlance {
         val playing: Boolean = false,
     )
 
-    private val route = BydHudRouteState()
+    private val route = GlanceRouteState()
     private val song = NowPlayingState()
     private var connected = false
     private var last = Snapshot()
@@ -39,7 +39,7 @@ object CarPlayGlance {
     fun onFrame(frame: Iap2Frame) {
         val changed = synchronized(this) {
             when (frame.messageId) {
-                BydHudRouteState.ROUTE_GUIDANCE_UPDATE, BydHudRouteState.ROUTE_GUIDANCE_MANEUVER_UPDATE ->
+                GlanceRouteState.ROUTE_GUIDANCE_UPDATE, GlanceRouteState.ROUTE_GUIDANCE_MANEUVER_UPDATE ->
                     runCatching { route.accept(frame.messageId, frame.payload) }
                 NowPlayingState.NOW_PLAYING_UPDATE -> runCatching { song.accept(frame) }
                 else -> return

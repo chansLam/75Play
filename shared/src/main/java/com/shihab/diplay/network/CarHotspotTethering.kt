@@ -36,10 +36,12 @@ object CarHotspotTethering {
         isCancelled: () -> Boolean,
         timeoutMillis: Long = WirelessStartupPolicy.SOFTAP_ENABLE_MILLIS,
         log: (String) -> Unit,
+        ssid: String? = null,
+        passphrase: String? = null,
     ): Result {
         val deadline = System.nanoTime() + timeoutMillis * 1_000_000L
         val observedAdbState = AtomicReference<Boolean?>()
-        // KitKat SoftAP (CS75 Plus OS_S311-WT): prefer setWifiApEnabled before startTethering/ADB.
+        // KitKat SoftAP (CS75 Plus OS_S311-WT): one enable path, with the saved credentials.
         if (realSdkInt() < Build.VERSION_CODES.O) {
             when (CarHotspotStatus.isEnabled(context)) {
                 true -> {
@@ -48,9 +50,15 @@ object CarHotspotTethering {
                 }
                 else -> Unit
             }
-            val softAp = CarHotspotStatus.enableIfPossible(context)
-            log("car hotspot kitkat SoftAP request: $softAp")
-            if (softAp == true) {
+            val softAp = CarHotspotEnable.enable(
+                context = context,
+                ssid = ssid,
+                passphrase = passphrase,
+                waitUntilReadyMs = 0L,
+                log = log,
+            )
+            log("car hotspot kitkat SoftAP request: ${softAp.diagnostic}")
+            if (softAp.ok) {
                 while (System.nanoTime() < deadline) {
                     if (isCancelled() || Thread.currentThread().isInterrupted) return Result.CANCELLED
                     if (CarHotspotStatus.isEnabled(context) == true) {
@@ -67,8 +75,8 @@ object CarHotspotTethering {
             }
         }
         val startReflection: (ResultReceiver) -> Unit = { receiver ->
-            if (Build.VERSION.SDK_INT >= 37) throw NoSuchMethodException("Hidden tethering service is unavailable on API 37+")
-            val conn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (realSdkInt() >= 37) throw NoSuchMethodException("Hidden tethering service is unavailable on API 37+")
+            val conn = if (realSdkInt() >= Build.VERSION_CODES.M) {
                 context.getSystemService(ConnectivityManager::class.java)
             } else {
                 @Suppress("DEPRECATION")

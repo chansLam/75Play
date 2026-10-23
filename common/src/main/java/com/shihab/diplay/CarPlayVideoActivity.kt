@@ -1,16 +1,14 @@
 package com.shihab.diplay
 
 import android.app.Activity
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
+import com.shihab.diplay.compat.realSdkInt
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -39,9 +37,12 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import com.shihab.diplay.airplay.VideoInCar
 import com.shihab.diplay.host.R
+import com.shihab.diplay.ui.FocusSupport
+import com.shihab.diplay.ui.dp
 import java.util.Locale
 import androidx.media3.ui.R as Media3R
 import kotlin.math.roundToInt
+import com.shihab.diplay.util.AppLog
 
 /**
  * The car's own player for iOS 27 video in car (see [CarPlayVideo]). Full screen over CarPlay, which
@@ -55,6 +56,14 @@ import kotlin.math.roundToInt
  */
 @OptIn(UnstableApi::class)
 class CarPlayVideoActivity : Activity() {
+    private val playerHost = object : CarPlayVideo.PlayerHost {
+        override fun applyRate() = this@CarPlayVideoActivity.applyRate()
+        override fun applySeek() = this@CarPlayVideoActivity.applySeek()
+        override fun skip(deltaMillis: Int) = this@CarPlayVideoActivity.skip(deltaMillis)
+        override fun load() = this@CarPlayVideoActivity.load()
+        override fun state() = this@CarPlayVideoActivity.state()
+        override fun finish() = this@CarPlayVideoActivity.finish()
+    }
     private val main = Handler(Looper.getMainLooper())
     private lateinit var player: ExoPlayer
     private lateinit var controls: View
@@ -91,14 +100,14 @@ class CarPlayVideoActivity : Activity() {
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_READY && !prepared) {
                     prepared = true
-                    Log.i(TAG, "prepared duration=${player.duration} ms size=${player.videoSize.width}x${player.videoSize.height}")
+                    AppLog.i(TAG, "prepared duration=${player.duration} ms size=${player.videoSize.width}x${player.videoSize.height}")
                 }
             }
 
             override fun onTimelineChanged(timeline: Timeline, reason: Int) = logEncryption()
 
             override fun onPlayerError(error: PlaybackException) {
-                Log.w(TAG, "player error ${error.errorCodeName}: ${causes(error)}")
+                AppLog.w(TAG, "player error ${error.errorCodeName}: ${causes(error)}")
                 CarPlayVideo.onPlayerFailed(
                     when (error.errorCode) {
                         in 2000..2999 -> VideoInCar.ERROR_NETWORK // IO
@@ -120,7 +129,7 @@ class CarPlayVideoActivity : Activity() {
             addView(controls, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         })
         view.setOnClickListener { showControls() }
-        CarPlayVideo.activity = this
+        CarPlayVideo.activity = playerHost
         load()
         showControls()
     }
@@ -134,7 +143,14 @@ class CarPlayVideoActivity : Activity() {
             minHeight = dp(64)
             minWidth = dp(64)
             setPadding(dp(24), 0, dp(24), 0)
-            background = GradientDrawable().apply { cornerRadius = dp(32).toFloat(); setColor(0xB3000000.toInt()) }
+            val bg = GradientDrawable().apply {
+                cornerRadius = dp(32).toFloat()
+                setColor(0xCC0C1830.toInt())
+                setStroke(maxOf(1, dp(1)), 0x667EB8FF)
+            }
+            background = compatibleRipple(ColorStateList.valueOf(0x33FFFFFF), bg, null)
+            isFocusable = true
+            FocusSupport.attachStrokeOverlay(this, 32)
             setOnClickListener { finish() }
         }
         fun round(icon: Int, label: String, onClick: () -> Unit) = ImageView(this).apply {
@@ -143,10 +159,17 @@ class CarPlayVideoActivity : Activity() {
             contentDescription = label
             scaleType = ImageView.ScaleType.FIT_CENTER
             setPadding(dp(18), dp(18), dp(18), dp(18))
-            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0x80000000.toInt()) }
+            val bg = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0xCC0C1830.toInt())
+                setStroke(maxOf(1, dp(1)), 0x667EB8FF)
+            }
+            background = compatibleRipple(ColorStateList.valueOf(0x33FFFFFF), bg, null)
+            isFocusable = true
+            FocusSupport.attachStrokeOverlay(this, 10)
             setOnClickListener { onClick(); showControls() }
         }
-        playPause = round(Media3R.drawable.exo_icon_play, "") { CarPlayVideo.setPlaying(!CarPlayVideo.playing) }
+        playPause = round(Media3R.drawable.exo_icon_play, getString(R.string.video_play)) { CarPlayVideo.setPlaying(!CarPlayVideo.playing) }
         val buttons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -164,6 +187,7 @@ class CarPlayVideoActivity : Activity() {
         length = timeText()
         timeBar = SeekBar(this).apply {
             minimumHeight = dp(48)
+            isFocusable = true
             setPadding(dp(20), dp(16), dp(20), dp(16))
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(bar: SeekBar, progress: Int, fromUser: Boolean) {
@@ -192,7 +216,7 @@ class CarPlayVideoActivity : Activity() {
         val bottom = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(32), dp(48), dp(32), dp(24))
-            background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xCC000000.toInt(), 0))
+            background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xE60C1830.toInt(), 0x000C1830))
             addView(buttons)
             addView(timeRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                 .apply { topMargin = dp(16) })
@@ -263,7 +287,7 @@ class CarPlayVideoActivity : Activity() {
         loadedUrl = url
         prepared = false
         encryptionLogged = false
-        Log.i(TAG, "loading video scheme=${Uri.parse(url).scheme.orEmpty()} ${playbackNetworkSummary()}")
+        AppLog.i(TAG, "loading video scheme=${Uri.parse(url).scheme.orEmpty()} ${playbackNetworkSummary()}")
         val item = MediaItem.Builder().setUri(url)
             .apply { if (CarPlayVideo.streaming) setMimeType(MimeTypes.APPLICATION_M3U8) }
             .build()
@@ -303,7 +327,7 @@ class CarPlayVideoActivity : Activity() {
             (0 until init.schemeDataCount).map { init.get(it).uuid }
         }
         val sessionKeys = manifest.multivariantPlaylist.sessionKeyDrmInitData.map { it.schemeType }
-        Log.i(TAG, "HLS encryption aes128KeyScheme=$keyScheme sampleAesSchemeType=${media.protectionSchemes?.schemeType} " +
+        AppLog.i(TAG, "HLS encryption aes128KeyScheme=$keyScheme sampleAesSchemeType=${media.protectionSchemes?.schemeType} " +
             "drmUuids=$drm sessionKeys=$sessionKeys segments=${media.segments.size}")
     }
 
@@ -311,34 +335,24 @@ class CarPlayVideoActivity : Activity() {
         .joinToString(" <- ") { "${it.javaClass.simpleName}(${it.message?.replace(Regex("\\w+://\\S+"), "<url>")})" }
 
     private fun playbackNetworkSummary(): String {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return "network=legacy"
-        val manager = getSystemService(ConnectivityManager::class.java)
-        val network = manager?.activeNetwork
-        val capabilities = network?.let(manager::getNetworkCapabilities)
-        if (network == null || capabilities == null) return "network=none"
-        val transports = buildList {
-            if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) add("wifi")
-            if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) add("cellular")
-            if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) add("ethernet")
-            if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) add("vpn")
-        }
-        return "network=${transports.ifEmpty { listOf("other") }.joinToString("+")} " +
-            "internet=${capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)} " +
-            "validated=${capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)}"
+        if (realSdkInt() < 23) return "network=legacy"
+        return runCatching {
+            Class.forName("com.shihab.diplay.VideoPlaybackNetwork")
+                .getMethod("summary", android.content.Context::class.java)
+                .invoke(null, this) as String
+        }.getOrDefault("network=unavailable")
     }
 
     override fun onDestroy() {
         main.removeCallbacks(hideControls)
         main.removeCallbacks(tick)
-        if (CarPlayVideo.activity === this) {
+        if (CarPlayVideo.activity === playerHost) {
             CarPlayVideo.activity = null
             CarPlayVideo.onPlayerClosed(if (prepared) player.currentPosition.toInt() else null)
         }
         player.release()
         super.onDestroy()
     }
-
-    private fun dp(value: Int) = (value * resources.displayMetrics.density).roundToInt()
 
     private companion object {
         const val TAG = "DiPlay-Video"

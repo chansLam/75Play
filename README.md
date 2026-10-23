@@ -6,7 +6,7 @@
 
 > 独立实现，**非** Apple 认证，与 Apple / 长安无隶属关系。请在安全停车后操作。
 >
-> 基于 [DiPlay-Legacy-Android](https://github.com/programmerguohuajing/DiPlay-Legacy-Android) 修改优化。当前 **v2.0.0**，见 [CHANGELOG](CHANGELOG.md)。
+> 基于 [DiPlay-Legacy-Android](https://github.com/programmerguohuajing/DiPlay-Legacy-Android) 修改优化。当前 **v2.0.1**，见 [CHANGELOG](CHANGELOG.md)。
 
 [下载 APK](https://github.com/chansLam/75Play/releases) · [项目主页](https://chansLam.github.io/75Play/) · [English](README.en.md)
 
@@ -21,7 +21,7 @@
 - **多语言** — 简 / 繁中文、英文、阿拉伯语、西班牙语、俄语、乌克兰语
 - **安卓终端**（实验性）
 
-## 实机截图 · v2.0.0
+## 实机截图 · v2.0.1
 
 长安 CS75 Plus 2020 车机实机效果：
 

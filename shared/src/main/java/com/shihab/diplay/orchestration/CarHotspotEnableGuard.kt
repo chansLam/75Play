@@ -2,8 +2,8 @@ package com.shihab.diplay.orchestration
 
 import android.content.Context
 import com.shihab.diplay.network.CarHotspotStatus
-import com.shihab.diplay.network.WirelessStartupException
-import com.shihab.diplay.network.WirelessStartupFailure
+import com.shihab.diplay.model.WirelessStartupException
+import com.shihab.diplay.model.WirelessStartupFailure
 import com.shihab.diplay.network.WirelessStartupPolicy
 
 /**

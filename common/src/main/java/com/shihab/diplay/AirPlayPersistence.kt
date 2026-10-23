@@ -1,7 +1,6 @@
 package com.shihab.diplay
 
 import android.content.Context
-import android.os.Build
 import com.shihab.diplay.airplay.AirPlayDisplaySettings
 import com.shihab.diplay.airplay.AirPlayPhysicalSizeBasis
 import com.shihab.diplay.airplay.CarPlayDisplayScale
@@ -9,6 +8,7 @@ import com.shihab.diplay.airplay.CarPlayUiScale
 import com.shihab.diplay.airplay.AirPlayIdentity
 import com.shihab.diplay.airplay.PairingStore
 import com.shihab.diplay.airplay.AirPlaySafeArea
+import com.shihab.diplay.compat.realSdkInt
 import com.shihab.diplay.airplay.SafeAreaCodec
 import com.shihab.diplay.airplay.SafeAreaRect
 import com.shihab.diplay.network.WifiP2pChannels
@@ -600,7 +600,7 @@ object AirPlayPersistence {
      */
     fun loadDirectSurfaceView(context: Context): Boolean {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val defaultMode = android.os.Build.VERSION.SDK_INT <= android.os.Build.VERSION_CODES.M
+        val defaultMode = realSdkInt() <= android.os.Build.VERSION_CODES.M
         return prefs.getBoolean(KEY_DIRECT_SURFACE_VIEW, defaultMode)
     }
 

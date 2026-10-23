@@ -1,7 +1,7 @@
 package com.shihab.diplay.media
 
-import android.util.Log
 import java.io.Closeable
+import com.shihab.diplay.util.AppLog
 
 /** NDK libopus fallback for legacy head units with no MediaCodec Opus encoder. */
 internal class NativeOpusEncoder private constructor(private var handle: Long) : Closeable {
@@ -10,7 +10,7 @@ internal class NativeOpusEncoder private constructor(private var handle: Long) :
     @Synchronized fun encode(pcm: ByteArray): List<ByteArray> {
         if (!available) return emptyList()
         return runCatching { nativeEncode(handle, pcm)?.let(::listOf) ?: emptyList() }
-            .onFailure { Log.w(TAG, "Native Opus encode failed", it) }
+            .onFailure { AppLog.w(TAG, "Native Opus encode failed", it) }
             .getOrDefault(emptyList())
     }
 
@@ -25,7 +25,7 @@ internal class NativeOpusEncoder private constructor(private var handle: Long) :
         private const val DEFAULT_COMPLEXITY = 3
         private val loaded: Boolean by lazy {
             runCatching { System.loadLibrary("opus_microphone"); true }
-                .onFailure { Log.w(TAG, "Software Opus library unavailable", it) }
+                .onFailure { AppLog.w(TAG, "Software Opus library unavailable", it) }
                 .getOrDefault(false)
         }
 
@@ -34,7 +34,7 @@ internal class NativeOpusEncoder private constructor(private var handle: Long) :
         fun create(bitrate: Int): NativeOpusEncoder? {
             if (!loaded) return null
             val handle = runCatching { nativeCreate(bitrate.coerceIn(6_000, 128_000), DEFAULT_COMPLEXITY) }
-                .onFailure { Log.w(TAG, "Software Opus initialization failed", it) }
+                .onFailure { AppLog.w(TAG, "Software Opus initialization failed", it) }
                 .getOrDefault(0L)
             return if (handle != 0L) NativeOpusEncoder(handle) else null
         }

@@ -1,8 +1,8 @@
 package com.shihab.diplay.bluetooth
 
 import android.content.Context
-import android.util.Log
 import com.shihab.diplay.transport.BlockingDuplexByteStream
+import com.shihab.diplay.util.AppLog
 
 class HybridBluetoothAdapter(
     val hsae: HsaeBluetoothAdapter,
@@ -56,10 +56,10 @@ class HybridBluetoothAdapter(
         }
         if (hsae.isSupported()) {
             runCatching { putAll(hsae.getPairedDevices()) }
-                .onFailure { Log.w(TAG, "HSAE getPairedDevices failed", it) }
+                .onFailure { AppLog.w(TAG, "HSAE getPairedDevices failed", it) }
         }
         runCatching { putAll(android.getPairedDevices()) }
-            .onFailure { Log.w(TAG, "Android getPairedDevices failed", it) }
+            .onFailure { AppLog.w(TAG, "Android getPairedDevices failed", it) }
         return byAddress.values.toList()
     }
 
@@ -87,7 +87,7 @@ class HybridBluetoothAdapter(
             val stream = result.getOrNull()
             if (stream != null) return stream
             val hsaeError = result.exceptionOrNull()!!
-            Log.w(TAG, "HSAE RFCOMM stream failed, trying Android", hsaeError)
+            AppLog.w(TAG, "HSAE RFCOMM stream failed, trying Android", hsaeError)
             if (android.isSupported() && android.isEnabled()) {
                 return android.openRfcommStream(deviceAddress, uuid)
             }

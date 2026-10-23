@@ -1,25 +1,9 @@
 package com.shihab.diplay.host
 
-import com.shihab.diplay.CarPlayViewAreas
+import com.shihab.diplay.CarPlayHostActivity
 import com.shihab.diplay.media.AndroidMediaSink
 import com.shihab.diplay.orchestration.CarPlayController
-
-/**
- * P7: session display descriptor and the process-local background session hand-off,
- * relocated verbatim from CarPlayHostActivity.
- */
-internal data class CarPlaySessionDisplay(
-    val width: Int,
-    val height: Int,
-    val rotation: Int,
-    val hideTopBar: Boolean,
-    val hideBottomBar: Boolean,
-    // Compare unscaled startup window dimensions, not the scaled video canvas.
-    val windowWidth: Int,
-    val windowHeight: Int,
-    /** The view areas this session declared, or null for the whole screen as one area. */
-    val viewAreas: CarPlayViewAreas? = null,
-)
+import com.shihab.diplay.session.CarPlaySessionDisplay
 
 /** Process-local hand-off for keeping the CarPlay session alive while no Activity is visible. */
 internal object CarPlayBackgroundSession {
@@ -61,6 +45,8 @@ internal object CarPlayBackgroundSession {
     private var width = 0
     private var height = 0
     private var display: CarPlaySessionDisplay? = null
+    /** Owner after the host Activity has left. The controller stays up for the next host. */
+    private val parkedOwner = Any()
 
     @Synchronized
     fun snapshot(): Snapshot? {
@@ -95,21 +81,44 @@ internal object CarPlayBackgroundSession {
     }
 
     /**
-     * Drop session bookkeeping immediately (UI cancel path). Does not close the controller;
-     * the connect service still tears that down. Clears [stopping] so [hasSession] is false
-     * before an async [stop] callback finishes.
+     * The host Activity is going away. Keep the controller so the next host can adopt it,
+     * but this Activity must not stay the owner or reconnect on the shared radio.
+     * Shell disconnect still closes the controller through the replacement stop action.
      */
     @Synchronized
+    fun park(previousOwner: Any) {
+        if (owner !== previousOwner) return
+        val current = controller ?: return
+        owner = parkedOwner
+        stopAction = { completion ->
+            runCatching { current.close() }
+            clear(current)
+            completion()
+        }
+    }
+
+    /**
+     * Drop session bookkeeping immediately (UI cancel path). Does not close the controller;
+     * the connect service still tears that down. A host that already adopted the session is
+     * left alone. Clears [stopping] so [hasSession] is false before an async [stop] finishes,
+     * and runs anyone already waiting on [stop].
+     */
     fun forceReset() {
-        stopAction = null
-        stopping = false
-        stopWaiters.clear()
-        controller = null
-        sink = null
-        owner = null
-        active = false
-        width = 0
-        height = 0
-        display = null
+        val callbacks = synchronized(this) {
+            if (owner is CarPlayHostActivity) return
+            val pending = stopWaiters.toList()
+            stopWaiters.clear()
+            stopAction = null
+            stopping = false
+            controller = null
+            sink = null
+            owner = null
+            active = false
+            width = 0
+            height = 0
+            display = null
+            pending
+        }
+        callbacks.forEach { runCatching { it() } }
     }
 }

@@ -1,8 +1,6 @@
 package com.shihab.diplay
 
 import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.BroadcastReceiver
@@ -13,11 +11,13 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
-import android.util.Log
 import com.shihab.diplay.airplay.AirPlaySession
 import com.shihab.diplay.airplay.AirPlaySessionListener
+import com.shihab.diplay.compat.realSdkInt
+import com.shihab.diplay.connect.ConnectBroadcasts
 import com.shihab.diplay.host.CarPlayBackgroundSession
 import com.shihab.diplay.host.R
+import com.shihab.diplay.util.AppLog
 
 /**
  * Drives the wireless CarPlay handshake in the background (replacing the old connect-only
@@ -55,7 +55,7 @@ class CarPlayConnectService : Service() {
         controlReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 when (intent?.action) {
-                    DiPlayActivity.ACTION_CONNECT_CANCEL, ACTION_CANCEL -> cancelConnect()
+                    ConnectBroadcasts.ACTION_CONNECT_CANCEL, ACTION_CANCEL -> cancelConnect()
                 }
             }
         }
@@ -63,7 +63,7 @@ class CarPlayConnectService : Service() {
             registerReceiver(
                 controlReceiver,
                 IntentFilter().apply {
-                    addAction(DiPlayActivity.ACTION_CONNECT_CANCEL)
+                    addAction(ConnectBroadcasts.ACTION_CONNECT_CANCEL)
                     addAction(ACTION_CANCEL)
                 },
             )
@@ -88,12 +88,12 @@ class CarPlayConnectService : Service() {
         if (CarPlayBackgroundSession.hasSession()) {
             succeeded = true
             connecting = false
-            runCatching { sendBroadcast(Intent(DiPlayActivity.ACTION_CONNECTED)) }
+            runCatching { sendBroadcast(ConnectBroadcasts.connected(this)) }
             stopSelf()
             return
         }
         started = true
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        if (realSdkInt() >= Build.VERSION_CODES.M) {
             val missingPermission = listOf(
                 android.Manifest.permission.RECORD_AUDIO,
                 android.Manifest.permission.ACCESS_FINE_LOCATION,
@@ -112,10 +112,7 @@ class CarPlayConnectService : Service() {
                 listener = forwardingListener,
                 onStage = { stage ->
                     runCatching {
-                        sendBroadcast(
-                            Intent(DiPlayActivity.ACTION_CONNECT_PROGRESS)
-                                .putExtra(DiPlayActivity.EXTRA_CONNECT_STAGE, stage),
-                        )
+                        sendBroadcast(ConnectBroadcasts.progress(this, stage))
                     }
                 },
                 onFailed = { message ->
@@ -125,7 +122,7 @@ class CarPlayConnectService : Service() {
                 },
             )
         }.getOrElse { error ->
-            Log.w(TAG, "stack build failed", error)
+            AppLog.w(TAG, "stack build failed", error)
             broadcastFailed(getString(R.string.could_not_start_carplay_return_to_diplay_and_check_app_per))
             stopSelf()
             return
@@ -151,7 +148,7 @@ class CarPlayConnectService : Service() {
             // handshake succeeds, in onSessionActive — not during connecting.
             built.controller.start()
         } catch (error: RuntimeException) {
-            Log.w(TAG, "controller start failed", error)
+            AppLog.w(TAG, "controller start failed", error)
             broadcastFailed(getString(R.string.could_not_start_carplay_return_to_diplay_and_check_app_per))
             teardown()
             stopSelf()
@@ -165,7 +162,7 @@ class CarPlayConnectService : Service() {
             succeeded = true
             connecting = false
             runCatching { startService(Intent(this@CarPlayConnectService, DiPlaySessionService::class.java)) }
-            runCatching { sendBroadcast(Intent(DiPlayActivity.ACTION_CONNECTED)) }
+            runCatching { sendBroadcast(ConnectBroadcasts.connected(this@CarPlayConnectService)) }
             // Keep running: the host adopts the controller next and stops us with stopService().
         }
 
@@ -188,12 +185,26 @@ class CarPlayConnectService : Service() {
         }
 
         override fun onDebugLog(message: String) {
-            Log.i(TAG, message)
+            AppLog.i(TAG, message)
         }
     }
 
+    /** True once the host Activity stored this controller and replaced us as owner. */
+    private fun hostAdopted(): Boolean {
+        val current = controller ?: return false
+        val snap = CarPlayBackgroundSession.snapshot() ?: return false
+        return snap.controller === current && !CarPlayBackgroundSession.isOwner(this)
+    }
+
     private fun cancelConnect() {
-        if (succeeded) return // session belongs to the host now
+        // Handshake success is not adoption. Cancel before the host takes the session
+        // must still close the wireless stack. After adoption, leave the live session.
+        if (hostAdopted()) {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+            stopSelf()
+            return
+        }
         teardown()
         @Suppress("DEPRECATION")
         stopForeground(true)
@@ -201,34 +212,27 @@ class CarPlayConnectService : Service() {
     }
 
     private fun teardown() {
-        CarPlayBackgroundSession.clear(controller)
-        runCatching { controller?.close() }
+        val current = controller
+        if (current != null) {
+            CarPlayBackgroundSession.clear(current)
+            runCatching { current.close() }
+        }
         controller = null
         // Allow a fresh startConnectFlow to begin after a cancel/failure.
         started = false
+        succeeded = false
+        runCatching { stopService(Intent(this, DiPlaySessionService::class.java)) }
     }
 
     private fun broadcastFailed(message: String) {
         // 必须在广播前清掉 connecting：否则 DiPlay 收到失败、刷新主页时仍读到 true，
         // 会一直停在「连接中 / 正在连接 iPhone…」（onDestroy 清标志太晚，且主页不会再刷）。
         markIdle()
-        runCatching {
-            sendBroadcast(
-                Intent(DiPlayActivity.ACTION_CONNECT_FAILED)
-                    .putExtra(DiPlayActivity.EXTRA_FAILURE_MESSAGE, message),
-            )
-        }
+        runCatching { sendBroadcast(ConnectBroadcasts.failed(this, message)) }
     }
 
     @Suppress("DEPRECATION")
     private fun buildNotification(): Notification {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-            val channel = NotificationChannel(
-                CHANNEL_ID, "CarPlay", NotificationManager.IMPORTANCE_LOW,
-            )
-            manager.createNotificationChannel(channel)
-        }
         val contentIntent = PendingIntent.getActivity(
             this, 0, Intent(this, DiPlayActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT,
         )
@@ -237,9 +241,8 @@ class CarPlayConnectService : Service() {
             Intent(this, CarPlayConnectService::class.java).setAction(ACTION_CANCEL),
             PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val builder =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) Notification.Builder(this, CHANNEL_ID)
-            else Notification.Builder(this)
+        // The channel class is loaded by name so Dalvik does not verify it on KitKat.
+        val builder = if (realSdkInt() >= Build.VERSION_CODES.O) oreoBuilder() else Notification.Builder(this)
         return builder
             .setSmallIcon(R.drawable.ic_carplay)
             .setContentTitle(getString(R.string.connecting_to_your_iphone))
@@ -250,10 +253,15 @@ class CarPlayConnectService : Service() {
             .build()
     }
 
+    private fun oreoBuilder(): Notification.Builder {
+        val type = Class.forName("com.shihab.diplay.OreoConnectNotification")
+        return type.getMethod("builder", Context::class.java).invoke(null, this) as Notification.Builder
+    }
+
     override fun onDestroy() {
-        // stopService without ACTION_CANCEL used to leave the background session hanging
-        // (hasSession stayed true → home still showed「已连接」). Tear down if we never handed off.
-        if (!succeeded) teardown()
+        // stopService after the host adopts must not close the live controller.
+        // A cancel or a service death before adoption still tears the wireless stack down.
+        if (!hostAdopted()) teardown()
         runCatching { controlReceiver?.let { unregisterReceiver(it) } }
         controlReceiver = null
         runCatching { wakeLock?.let { if (it.isHeld) it.release() } }
@@ -279,7 +287,6 @@ class CarPlayConnectService : Service() {
 
         private const val TAG = "CarPlayConnect"
         private const val NOTIF_ID = 4711
-        private const val CHANNEL_ID = "carplay_connect"
         private const val CONNECT_WAKELOCK_TIMEOUT_MILLIS = 10 * 60 * 1000L
     }
 }

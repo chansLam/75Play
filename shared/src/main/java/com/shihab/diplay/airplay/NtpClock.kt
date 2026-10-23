@@ -96,13 +96,23 @@ class NtpClock(private val bindReference: InetAddress? = null) : Closeable {
 
     private fun runReceiver() {
         val buffer = ByteArray(RECEIVE_BUFFER_BYTES)
+        var failures = 0
         while (running.get()) {
             val sock = currentSocket() ?: return
             val packet = DatagramPacket(buffer, buffer.size)
             try {
                 sock.receive(packet)
+                failures = 0
             } catch (_: Exception) {
-                if (running.get()) continue else return
+                if (!running.get()) return
+                failures += 1
+                val pause = (25L * failures).coerceAtMost(250L)
+                try {
+                    Thread.sleep(pause)
+                } catch (_: InterruptedException) {
+                    if (!running.get()) return
+                }
+                continue
             }
             val message = packet.data.copyOf(packet.length)
             val address = packet.address

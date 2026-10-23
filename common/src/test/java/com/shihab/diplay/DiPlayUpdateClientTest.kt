@@ -12,7 +12,7 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
 class DiPlayUpdateClientTest {
-    private val name = "DiPlay-v1.0.0-release.apk"
+    private val name = "75Play-v1.0.0-release.apk"
     private val prefix = "https://github.com/chansLam/75Play/releases/download/v1.0.0/"
 
     @Test fun legacyHttpOnlyAllowsTls12NeverSsl3() {

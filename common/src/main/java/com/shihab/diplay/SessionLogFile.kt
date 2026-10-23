@@ -1,6 +1,6 @@
 package com.shihab.diplay
 
-import android.os.Build
+import com.shihab.diplay.compat.realSdkInt
 import java.io.Closeable
 import java.io.File
 import java.util.concurrent.CountDownLatch
@@ -92,7 +92,7 @@ internal class SessionLogFile(val file: File) : Closeable {
         const val MAX_BYTES = 512 * 1024L
         // KitKat flash + 2 GB RAM: fewer rotated copies (each rotate copies whole files).
         private val ARCHIVE_NAMES: List<String> =
-            if (Build.VERSION.SDK_INT < 21) {
+            if (realSdkInt() < 21) {
                 listOf("previous.log", "previous-2.log")
             } else {
                 listOf("previous.log") + (2..7).map { "previous-$it.log" }

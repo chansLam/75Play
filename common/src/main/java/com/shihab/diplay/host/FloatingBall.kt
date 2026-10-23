@@ -9,7 +9,6 @@ import android.graphics.PixelFormat
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -18,6 +17,7 @@ import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.core.content.ContextCompat
 import kotlin.math.abs
+import com.shihab.diplay.util.AppLog
 
 /**
  * A small white floating ball shown while the DiPlay app is in front AND while CarPlay is in
@@ -108,6 +108,8 @@ internal object FloatingBall {
             }
             c.restore()
             background = android.graphics.drawable.BitmapDrawable(context.resources, bmp)
+            // 悬浮球是系统悬浮窗（FLAG_NOT_FOCUSABLE），方向盘焦点进不来，只补无障碍文案。
+            contentDescription = context.getString(com.shihab.diplay.host.R.string.cd_floating_ball)
             setOnTouchListener { view, event ->
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
@@ -146,10 +148,10 @@ internal object FloatingBall {
         return try {
             windowManager.addView(ball, params)
             root = ball
-            Log.i(TAG, "ball shown ${size}x$size at ${params.x},${params.y}")
+            AppLog.i(TAG, "ball shown ${size}x$size at ${params.x},${params.y}")
             true
         } catch (error: RuntimeException) {
-            Log.w(TAG, "ball failed", error)
+            AppLog.w(TAG, "ball failed", error)
             false
         }
     }
@@ -161,7 +163,7 @@ internal object FloatingBall {
         @Suppress("DEPRECATION")
         val windowManager = view.context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
         runCatching { windowManager?.removeViewImmediate(view) }
-        Log.i(TAG, "ball hidden")
+        AppLog.i(TAG, "ball hidden")
     }
 
     /** Returns to the CarPlay screen from anywhere (application context). */

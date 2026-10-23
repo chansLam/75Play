@@ -2,12 +2,13 @@ package com.shihab.diplay.network
 
 import android.content.Context
 import android.os.Build
-import android.util.Log
+import com.shihab.diplay.compat.realSdkInt
 import java.lang.reflect.Field
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
+import com.shihab.diplay.util.AppLog
 
 /**
  * Pauses the head unit's automatic Wi-Fi network search while wireless CarPlay runs.
@@ -50,7 +51,7 @@ internal class WifiScanPause(
     internal companion object {
         internal const val TAG = "DiPlayWifiScan"
 
-        fun eligible(backend: WirelessHotspotBackend, sdk: Int = Build.VERSION.SDK_INT): Boolean =
+        fun eligible(backend: WirelessHotspotBackend, sdk: Int = realSdkInt()): Boolean =
             sdk == Build.VERSION_CODES.Q && backend != WirelessHotspotBackend.EXISTING_WIFI
 
         fun restoreIfNeeded(context: Context) = ProcessWifiScanPause.recover(context.applicationContext)
@@ -69,7 +70,7 @@ internal class WifiScanPause(
          * attempted, which is what DiLink 3 runs.
          */
         fun enableConnectivityManagerTransaction(): Int? {
-            if (Build.VERSION.SDK_INT != Build.VERSION_CODES.Q) return null
+            if (realSdkInt() != Build.VERSION_CODES.Q) return null
             return runCatching {
                 val stub = Class.forName("android.net.wifi.IWifiManager\$Stub")
                 val lookup = Class::class.java.getDeclaredMethod("getDeclaredField", String::class.java)
@@ -107,14 +108,14 @@ private object ProcessWifiScanPause : WifiScanPauseControl {
 
     fun recover(app: Context) {
         enqueue(app) { state ->
-            if (state.recoveryPending()) Log.i(WifiScanPause.TAG, "Wi-Fi scan recovery restored=${state.recover()}")
+            if (state.recoveryPending()) AppLog.i(WifiScanPause.TAG, "Wi-Fi scan recovery restored=${state.recover()}")
         }
     }
 
     private fun enqueue(app: Context, action: (WifiScanPauseSession) -> Unit) {
         worker.execute {
             val state = state(app)
-            runCatching { action(state) }.onFailure { Log.w(WifiScanPause.TAG, "Wi-Fi scan recovery will retry", it) }
+            runCatching { action(state) }.onFailure { AppLog.w(WifiScanPause.TAG, "Wi-Fi scan recovery will retry", it) }
             if (state.recoveryPending()) {
                 if (retry == null) retry = worker.schedule({
                     retry = null

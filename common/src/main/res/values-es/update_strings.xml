@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="update_checking">Buscando actualizaciones…</string>
+    <string name="update_up_to_date">Estás usando la versión más reciente.</string>
+    <string name="update_no_notes">No hay notas de la versión disponibles.</string>
+    <string name="update_parked_notice">Estaciónate con seguridad y desconecta CarPlay antes de instalar. Android te pedirá confirmar la instalación.</string>
+    <string name="update_download">Descargar actualización</string>
+    <string name="update_downloading">Descargando y verificando el APK…</string>
+    <string name="update_install_notice">El APK descargado ha superado la verificación de SHA-256, nombre de paquete y certificado de firma. ¿Abrir el instalador de Android ahora?</string>
+    <string name="update_install">Abrir instalador</string>
+    <string name="update_disconnect_first">Desconecta CarPlay y estaciónate con seguridad antes de descargar o instalar una actualización.</string>
+    <string name="update_install_unavailable">El instalador del sistema no está disponible en este dispositivo.</string>
+    <string name="update_failed">Error de actualización</string>
+    <string name="update_verifying">Verificando SHA-256 del APK y certificado de firma…</string>
+    <string name="update_downloading_phase">Descargando el paquete de actualización firmado</string>
+    <string name="update_manual_saved">También se guardó una copia verificada para instalación manual:
+%1$s</string>
+    <string name="update_manual_install_help">Esta unidad principal no aceptó el intento del instalador de APK del sistema. El APK descargado y verificado se guardó en:
+
+%1$s
+
+Estando detenido, abre el administrador de archivos y selecciona este APK desde Descargas. Si el dispositivo no tiene instalador, usa un PC con ADB o el instalador del fabricante.</string>
+    <string name="update_manual_install_no_copy">La unidad principal no aceptó el intento del instalador de APK del sistema, y el almacenamiento público de Descargas no estaba disponible. Descarga el APK en un ordenador desde la Release oficial de 75Play en GitHub e instálalo con ADB o el instalador de tu unidad principal mientras estés detenido.</string>
+    <string name="update_notes_heading">Novedades</string>
+    <string name="update_available_heading">Actualización disponible</string>
+    <string name="update_available_subtitle">%1$s disponible</string>
+    <string name="update_available_description">Nuevas funciones y correcciones listas para descargar.</string>
+    <string name="update_ready_heading">El paquete de actualización está listo</string>
+    <string name="update_ready_subtitle">%1$s · Descarga y verificación completadas</string>
+    <string name="update_dialog_subtitle">Actualización de software de 75Play</string>
+    <string name="update_progress_step_download">Descargando el paquete de actualización</string>
+    <string name="update_progress_step_verify">Verificar SHA-256 y certificado de firma</string>
+    <string name="update_progress_step_prepare">Preparar el paquete de instalación</string>
+    <string name="update_preparing">Preparando el paquete de instalación…</string>
+    <string name="update_continue_background">Continuar en segundo plano</string>
+    <string name="update_tls_unavailable">Este dispositivo no puede establecer una conexión TLS segura con el servidor de actualizaciones. Descarga el APK desde la Release oficial de GitHub con otro navegador o un ordenador e instálalo manualmente.</string>
+</resources>

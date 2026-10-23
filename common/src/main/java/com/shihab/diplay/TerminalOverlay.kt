@@ -23,6 +23,7 @@ import com.shihab.diplay.host.ImmersiveBars
 import jackpal.androidterm.ShellTermSession
 import jackpal.androidterm.emulatorview.EmulatorView
 import jackpal.androidterm.util.TermSettings
+import com.shihab.diplay.util.AppLog
 
 /**
  * Hidden developer terminal (root) rendered as a glass overlay dialog directly on the current
@@ -121,7 +122,7 @@ object TerminalOverlay {
             termContainer.addView(emulator, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         } catch (e: Exception) {
-            android.util.Log.e("DevTerm", "shell start failed", e)
+            AppLog.e("DevTerm", "shell start failed", e)
             val where = e.stackTrace.firstOrNull()
                 ?.let { "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" }
                 ?: ctx.getString(R.string.terminal_unknown)

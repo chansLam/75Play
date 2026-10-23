@@ -1,5 +1,5 @@
 package com.shihab.diplay
-import com.shihab.diplay.host.CarPlaySessionDisplay
+import com.shihab.diplay.session.CarPlaySessionDisplay
 import com.shihab.diplay.host.CarPlaySurfaceBounds
 
 import android.view.Surface

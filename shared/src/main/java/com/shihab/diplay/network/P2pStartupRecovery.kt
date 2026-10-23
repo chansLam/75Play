@@ -42,6 +42,8 @@ internal object P2pStartupRecovery {
         // for 0.6-2 s and starved music. A 2.4 GHz group runs alongside without switching.
         val stationOnFiveGhz = stationFrequency != null && stationFrequency in 5150..5895
         val remembered = preferred?.frequencyMHz?.let(::rememberedFrequency)
+        // remembered is non-null only when rememberedFrequency returned a FIXED_* request, which always
+        // carries a non-null frequencyMHz; the !! sites below are therefore contract-guarded, not unchecked.
         val rememberedSwitches = stationOnFiveGhz && remembered != null &&
             remembered.frequencyMHz!! in 5150..5895 && remembered.frequencyMHz != stationFrequency
         // The default API does not pin a channel. A cached success cannot prove it will avoid
@@ -57,7 +59,7 @@ internal object P2pStartupRecovery {
         // explicit non-DFS 5 GHz, then channels 6/1/11, except next to a 5 GHz station, where
         // 2.4 GHz comes first (see above). The platform enforces regulatory limits.
         if (aligned24 || stationOnFiveGhz) { twoGhz(); fiveGhz() } else { fiveGhz(); twoGhz() }
-        if (rememberedSwitches) channel(remembered!!.mode, remembered.frequencyMHz!!)
+        if (rememberedSwitches) channel(remembered!!.mode, remembered.frequencyMHz!!) // rememberedSwitches implies remembered != null
         // Some vendors only implement the default-configuration API. Use it last, after every
         // explicit-frequency option has been rejected, never before the 2.4 GHz attempts.
         if (none { it.mode == P2pCreationMode.SYSTEM_DEFAULT }) add(P2pCreationRequest(P2pCreationMode.SYSTEM_DEFAULT))

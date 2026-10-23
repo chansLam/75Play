@@ -6,18 +6,19 @@ import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.AudioEffect
 import android.media.audiofx.NoiseSuppressor
-import android.util.Log
 import com.shihab.diplay.airplay.AirPlaySocketBinder
 import com.shihab.diplay.airplay.AudioCodecKind
 import com.shihab.diplay.airplay.MicrophoneConfig
 import com.shihab.diplay.airplay.MicrophoneCounters
 import com.shihab.diplay.airplay.MicrophonePacketizer
+import com.shihab.diplay.compat.realSdkInt
 import java.io.Closeable
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicBoolean
+import com.shihab.diplay.util.AppLog
 
 /**
  * Captures one PCM microphone stream and sends it back to the phone as sealed CarPlay RTP.
@@ -36,10 +37,12 @@ internal class MicrophoneUplink(
 ) : Closeable {
     private val running = AtomicBoolean(false)
     private val stats = MicrophoneCaptureStats(config, report = { message ->
-        Log.i(TAG, message)
+        AppLog.i(TAG, message)
         onDiagnostic(message)
     })
     @Volatile private var recorder: AudioRecord? = null
+    /** Logged-once guard for the recorder==null restore path so logcat is not spammed. */
+    private var recorderNullWarned = false
     @Volatile private var socket: DatagramSocket? = null
     @Volatile private var opusEncoder: OpusEncoder? = null
     @Volatile private var effects: List<AudioEffect> = emptyList()
@@ -62,7 +65,7 @@ internal class MicrophoneUplink(
             AndroidAudioFormat.ENCODING_PCM_16BIT,
         )
         if (minBuffer <= 0) {
-            Log.w(TAG, "microphone unavailable rate=${config.sampleRate} channels=${config.channels}")
+            AppLog.w(TAG, "microphone unavailable rate=${config.sampleRate} channels=${config.channels}")
             stats.failure(MicrophoneFailureStage.MIN_BUFFER, code = minBuffer)
             running.set(false)
             return false
@@ -74,11 +77,11 @@ internal class MicrophoneUplink(
             // The call-speakerphone setting makes this manual: hands-free MIC always wins.
             "telephony" -> when {
                 config.speakerphoneCall -> {
-                    Log.i(TAG, "microphone telephony using MIC (call speakerphone enabled)")
+                    AppLog.i(TAG, "microphone telephony using MIC (call speakerphone enabled)")
                     MediaRecorder.AudioSource.MIC
                 }
                 voiceCommunicationSilentBroken -> {
-                    Log.i(TAG, "microphone telephony using MIC (VOICE_COMMUNICATION silent-broken on this device)")
+                    AppLog.i(TAG, "microphone telephony using MIC (VOICE_COMMUNICATION silent-broken on this device)")
                     MediaRecorder.AudioSource.MIC
                 }
                 else -> MediaRecorder.AudioSource.VOICE_COMMUNICATION
@@ -92,7 +95,7 @@ internal class MicrophoneUplink(
             null
         }
         if (config.codec == AudioCodecKind.OPUS && nextEncoder == null) {
-            Log.w(TAG, "microphone Opus encoder is unavailable")
+            AppLog.w(TAG, "microphone Opus encoder is unavailable")
             stats.failure(MicrophoneFailureStage.ENCODER)
             running.set(false)
             return false
@@ -115,7 +118,7 @@ internal class MicrophoneUplink(
         val nextSocket = try {
             AirPlaySocketBinder.datagram(config.host, "CarPlay microphone uplink")
         } catch (error: Exception) {
-            Log.e(TAG, "microphone socket creation failed", error)
+            AppLog.e(TAG, "microphone socket creation failed", error)
             stats.failure(MicrophoneFailureStage.SOCKET_CREATION, error)
             nextRecorder.release()
             nextEncoder?.close()
@@ -124,6 +127,7 @@ internal class MicrophoneUplink(
         }
 
         recorder = nextRecorder
+        recorderNullWarned = false
         usedSource = source
         socket = nextSocket
         opusEncoder = nextEncoder
@@ -132,7 +136,7 @@ internal class MicrophoneUplink(
                 echoCanceller = createEchoCanceller()
                 effects = voiceEffects(nextRecorder.audioSessionId)
                 if (echoReference != null) {
-                    Log.i(TAG, "microphone echo canceller enabled=${echoCanceller != null} tail=${ECHO_TAIL_MILLIS}ms")
+                    AppLog.i(TAG, "microphone echo canceller enabled=${echoCanceller != null} tail=${ECHO_TAIL_MILLIS}ms")
                 }
             }
             nextRecorder.startRecording()
@@ -143,12 +147,12 @@ internal class MicrophoneUplink(
             }
             true
         } catch (error: SecurityException) {
-            Log.e(TAG, "microphone permission denied", error)
+            AppLog.e(TAG, "microphone permission denied", error)
             stats.failure(MicrophoneFailureStage.RECORDING, error)
             release()
             false
         } catch (error: Exception) {
-            Log.e(TAG, "microphone recording failed", error)
+            AppLog.e(TAG, "microphone recording failed", error)
             stats.failure(MicrophoneFailureStage.RECORDING, error)
             release()
             false
@@ -157,7 +161,7 @@ internal class MicrophoneUplink(
 
     private fun createRecorder(source: Int, channelMask: Int, bufferSize: Int): AudioRecord? {
         val recorder = try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            if (realSdkInt() >= android.os.Build.VERSION_CODES.M) {
                 AudioRecord.Builder()
                     .setAudioSource(source)
                     .setAudioFormat(
@@ -180,16 +184,16 @@ internal class MicrophoneUplink(
                 )
             }
         } catch (error: SecurityException) {
-            Log.e(TAG, "microphone permission denied source=$source", error)
+            AppLog.e(TAG, "microphone permission denied source=$source", error)
             stats.failure(MicrophoneFailureStage.RECORDER_CREATION, error)
             return null
         } catch (error: Exception) {
-            Log.e(TAG, "microphone recorder creation failed source=$source", error)
+            AppLog.e(TAG, "microphone recorder creation failed source=$source", error)
             stats.failure(MicrophoneFailureStage.RECORDER_CREATION, error)
             return null
         }
         if (recorder.state != AudioRecord.STATE_INITIALIZED) {
-            Log.w(TAG, "microphone recorder failed to initialize source=$source")
+            AppLog.w(TAG, "microphone recorder failed to initialize source=$source")
             stats.failure(MicrophoneFailureStage.RECORDER_INITIALIZATION, code = recorder.state)
             recorder.release()
             return null
@@ -200,7 +204,7 @@ internal class MicrophoneUplink(
     private fun createEchoCanceller(): CallEchoCanceller? {
         val reference = echoReference ?: return null
         if (config.channels != 1 || config.sampleRate != reference.sampleRate) {
-            Log.i(TAG, "microphone echo canceller skipped rate=${config.sampleRate} channels=${config.channels}")
+            AppLog.i(TAG, "microphone echo canceller skipped rate=${config.sampleRate} channels=${config.channels}")
             return null
         }
         return echoCancellerFactory(config.frameBytes / 2, config.sampleRate, ECHO_TAIL_MILLIS)
@@ -217,7 +221,7 @@ internal class MicrophoneUplink(
                 if (aec == null) {
                     echoCanceller?.close()
                     echoCanceller = null
-                    Log.w(TAG, "microphone native echo canceller skipped: platform AEC could not be disabled")
+                    AppLog.w(TAG, "microphone native echo canceller skipped: platform AEC could not be disabled")
                 }
             }
         }
@@ -242,15 +246,15 @@ internal class MicrophoneUplink(
             if (effect != null) {
                 val status = effect.setEnabled(enabled)
                 if (status == AudioEffect.SUCCESS && effect.enabled == enabled) {
-                    Log.i(TAG, "microphone effect=$name enabled=$enabled")
+                    AppLog.i(TAG, "microphone effect=$name enabled=$enabled")
                     return effect
                 }
-                Log.w(TAG, "microphone effect=$name could not be ${if (enabled) "enabled" else "disabled"} status=$status")
+                AppLog.w(TAG, "microphone effect=$name could not be ${if (enabled) "enabled" else "disabled"} status=$status")
             } else {
-                Log.i(TAG, "microphone effect=$name unavailable")
+                AppLog.i(TAG, "microphone effect=$name unavailable")
             }
         } catch (error: RuntimeException) {
-            Log.w(TAG, "microphone effect=$name unavailable; continuing without it", error)
+            AppLog.w(TAG, "microphone effect=$name unavailable; continuing without it", error)
         }
         effect?.let(::releaseEffect)
         return null
@@ -260,7 +264,7 @@ internal class MicrophoneUplink(
         try {
             effect.release()
         } catch (error: RuntimeException) {
-            Log.w(TAG, "microphone effect release failed", error)
+            AppLog.w(TAG, "microphone effect release failed", error)
         }
     }
 
@@ -276,7 +280,7 @@ internal class MicrophoneUplink(
         try {
             while (running.get()) {
                 stats.reading()
-                val count = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                val count = if (realSdkInt() >= android.os.Build.VERSION_CODES.M) {
                     recorder.read(readBuffer, 0, readBuffer.size, AudioRecord.READ_BLOCKING)
                 } else {
                     recorder.read(readBuffer, 0, readBuffer.size)
@@ -285,7 +289,7 @@ internal class MicrophoneUplink(
                 if (count > 0) clock?.read(recorder, count / 2)
                 if (count < 0) {
                     if (running.get()) {
-                        Log.e(TAG, "microphone read failed code=$count")
+                        AppLog.e(TAG, "microphone read failed code=$count")
                         stats.failure(MicrophoneFailureStage.READ, code = count)
                     }
                     return
@@ -307,10 +311,10 @@ internal class MicrophoneUplink(
                             val processed = try {
                                 canceller.process(frame, reference)
                             } catch (error: RuntimeException) {
-                                Log.w(TAG, "microphone native echo processing failed; restoring platform AEC", error)
+                                AppLog.w(TAG, "microphone native echo processing failed; restoring platform AEC", error)
                                 false
                             } catch (error: LinkageError) {
-                                Log.w(TAG, "microphone native echo processing unavailable; restoring platform AEC", error)
+                                AppLog.w(TAG, "microphone native echo processing unavailable; restoring platform AEC", error)
                                 false
                             }
                             if (!processed) {
@@ -326,7 +330,7 @@ internal class MicrophoneUplink(
             }
         } catch (error: Exception) {
             if (running.get()) {
-                Log.e(TAG, "microphone capture failed", error)
+                AppLog.e(TAG, "microphone capture failed", error)
                 stats.failure(MicrophoneFailureStage.CAPTURE, error)
             }
         } finally {
@@ -376,7 +380,7 @@ internal class MicrophoneUplink(
         }
     }
 
-    private fun routeType(recorder: AudioRecord): Int? = if (android.os.Build.VERSION.SDK_INT >= 23)
+    private fun routeType(recorder: AudioRecord): Int? = if (realSdkInt() >= 23)
         runCatching { recorder.routedDevice?.type }.getOrNull() else null
 
     /** Capture can continue with the same recorder if the optional native processor stops working. */
@@ -386,20 +390,29 @@ internal class MicrophoneUplink(
         echoCanceller = null
         current.close()
         if (!running.get()) return // close/release already owns all recorder effects.
+        val activeRecorder = recorder ?: run {
+            // close/release nulled the recorder while we waited for this lock; nothing left to
+            // restore. Log once (throttled) so a regression surfaces without spamming logcat.
+            if (!recorderNullWarned) {
+                recorderNullWarned = true
+                AppLog.w(TAG, "microphone echo restore skipped: recorder already released")
+            }
+            return
+        }
         val aec = effects.filterIsInstance<AcousticEchoCanceler>().firstOrNull()
         if (aec != null) {
             val enabled = runCatching { aec.setEnabled(true) == AudioEffect.SUCCESS && aec.enabled }.getOrDefault(false)
             if (enabled) {
-                Log.i(TAG, "microphone native echo processing stopped; platform AEC restored")
+                AppLog.i(TAG, "microphone native echo processing stopped; platform AEC restored")
                 return
             }
             effects = effects - aec
             releaseEffect(aec)
         }
         enabledEffect("AEC") {
-            if (AcousticEchoCanceler.isAvailable()) AcousticEchoCanceler.create(recorder!!.audioSessionId) else null
+            if (AcousticEchoCanceler.isAvailable()) AcousticEchoCanceler.create(activeRecorder.audioSessionId) else null
         }?.let { effects = effects + it }
-        Log.i(TAG, "microphone native echo processing stopped; using platform effects")
+        AppLog.i(TAG, "microphone native echo processing stopped; using platform effects")
     }
 
     override fun close() {
@@ -419,7 +432,7 @@ internal class MicrophoneUplink(
             voiceCommunicationSilentBroken = true
             val msg = "microphone telephony VOICE_COMMUNICATION captured only silence" +
                 " (${stats.silentFrameCount()} frames); future telephony uplinks will use MIC"
-            Log.w(TAG, msg)
+            AppLog.w(TAG, msg)
             onDiagnostic(msg)
         }
         try {
@@ -492,7 +505,7 @@ internal class MicrophoneUplink(
  * timestamp when the platform has one, otherwise assumes the newest sample arrived [FALLBACK_LATENCY_NS] ago.
  */
 internal class CaptureClock(private val sampleRate: Int) {
-    private val timestamp = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N)
+    private val timestamp = if (realSdkInt() >= android.os.Build.VERSION_CODES.N)
         android.media.AudioTimestamp() else null
     private var samplesRead = 0L
     private var lastReadSamples = 0
@@ -503,7 +516,7 @@ internal class CaptureClock(private val sampleRate: Int) {
         lastReadSamples = samples
         val now = System.nanoTime()
         val ts = timestamp
-        val stamped = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N && ts != null) {
+        val stamped = if (realSdkInt() >= android.os.Build.VERSION_CODES.N && ts != null) {
             runCatching {
                 recorder.getTimestamp(ts, android.media.AudioTimestamp.TIMEBASE_MONOTONIC) == AudioRecord.SUCCESS
             }.getOrDefault(false)

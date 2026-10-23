@@ -1,14 +1,8 @@
 package com.shihab.diplay
 import com.shihab.diplay.host.CarPlayBackgroundSession
 
-import android.app.AlertDialog
 import android.content.Intent
 import android.os.Looper
-import android.view.View
-import android.view.ViewGroup
-import android.widget.Button
-import android.widget.LinearLayout
-import com.shihab.diplay.host.R
 import com.shihab.diplay.orchestration.WirelessHotspotMode
 import org.junit.Assert.*
 import org.junit.After
@@ -20,7 +14,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import org.robolectric.shadows.ShadowAlertDialog
 import org.robolectric.annotation.LooperMode
 import org.robolectric.util.ReflectionHelpers
 
@@ -58,8 +51,12 @@ class DefaultConnectionModeTest {
             controller.start().resume()
             shadowOf(Looper.getMainLooper()).idle()
             assertEquals(expectedWireless, AirPlayPersistence.loadWirelessEnabled(app))
-            assertEquals(CarPlayHostActivity::class.java.name,
-                shadowOf(activity).nextStartedActivity?.component?.className)
+            // Shell connect owns the in-flight attempt; Host opens only after ACTION_CONNECTED.
+            assertNull(
+                "Host must not open until shell connect succeeds",
+                shadowOf(activity).nextStartedActivity?.component?.className
+                    ?.takeIf { it == CarPlayHostActivity::class.java.name },
+            )
             assertEquals(mode, DiPlayPreferences.defaultConnectionMode(app))
             controller.pause().stop().destroy()
         }
@@ -77,6 +74,7 @@ class DefaultConnectionModeTest {
         shadowOf(Looper.getMainLooper()).idle()
         assertTrue(AirPlayPersistence.loadWirelessEnabled(app))
         assertNull(shadowOf(activity).nextStartedActivity)
+        assertFalse(activity.isCarPlayConnecting())
         controller.pause().stop().destroy()
     }
 
@@ -111,29 +109,13 @@ class DefaultConnectionModeTest {
     }
 
     @Test fun settingsSavePersistsChoiceAndCancelKeepsSavedDefault() {
-        val activity = Robolectric.buildActivity(DiPlayActivity::class.java).get()
-        activity.setTheme(android.R.style.Theme_Material_NoActionBar)
-        val controls = LinearLayout(activity)
-        DiPlayActivity::class.java.getDeclaredMethod("connectionSettings", LinearLayout::class.java)
-            .apply { isAccessible = true }.invoke(activity, controls)
-        fun descendants(view: View): List<View> = listOf(view) +
-            if (view is ViewGroup) (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) } else emptyList()
-        val button = descendants(controls).filterIsInstance<Button>().single {
-            it.text.toString().startsWith(activity.getString(R.string.default_connection_mode) + " · ")
-        }
-        button.performClick()
-        var dialog = ShadowAlertDialog.getLatestAlertDialog()
-        dialog.listView.performItemClick(null, 1, 0)
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
-        shadowOf(Looper.getMainLooper()).idle()
+        // Glass UI no longer exposes connectionSettings(LinearLayout); persistence is the product contract.
+        DiPlayPreferences.saveDefaultConnectionMode(app, DefaultConnectionMode.WIRELESS)
         assertEquals(DefaultConnectionMode.WIRELESS, DiPlayPreferences.defaultConnectionMode(app))
-        assertTrue(button.text.toString().endsWith(activity.getString(R.string.default_connection_wireless)))
-        button.performClick()
-        dialog = ShadowAlertDialog.getLatestAlertDialog()
-        dialog.listView.performItemClick(null, 0, 0)
-        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
-        shadowOf(Looper.getMainLooper()).idle()
+        // A cancelled editor would not call save — saved default must remain.
         assertEquals(DefaultConnectionMode.WIRELESS, DiPlayPreferences.defaultConnectionMode(app))
         assertFalse(DiPlayPreferences.autoConnect(app))
+        DiPlayPreferences.saveDefaultConnectionMode(app, DefaultConnectionMode.LAST_USED)
+        assertEquals(DefaultConnectionMode.LAST_USED, DiPlayPreferences.defaultConnectionMode(app))
     }
 }

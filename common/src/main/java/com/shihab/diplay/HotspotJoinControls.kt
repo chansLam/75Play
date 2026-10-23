@@ -7,6 +7,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import com.shihab.diplay.host.R
 import com.shihab.diplay.network.HotspotJoinRepair
+import com.shihab.diplay.ui.dp
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Opt-in controls for the saved car hotspot. Rendering/resuming never runs privileged work. */
@@ -49,10 +50,10 @@ internal class HotspotJoinControls(private val activity: Activity, private val s
         view.removeAllViews()
         fun text(id: Int) { view.addView(labelFactory(activity.getString(id)).apply {
             if (id == R.string.hotspot_join_title) textSize = 22f
-            setPadding(0, dp(12), 0, dp(12))
+            setPadding(0, activity.dp(12), 0, activity.dp(12))
         }) }
         fun button(id: Int, action: () -> Unit) { view.addView(buttonFactory(activity.getString(id), action)
-            .apply { isEnabled = !busy }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) }) }
+            .apply { isEnabled = !busy }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = activity.dp(8) }) }
         text(R.string.hotspot_join_title)
         text(R.string.hotspot_join_description)
         if (busy) text(R.string.hotspot_join_working) else result?.let { text(message(it.code)) }
@@ -62,7 +63,7 @@ internal class HotspotJoinControls(private val activity: Activity, private val s
         if (result?.rollback == true && result?.token != null)
             button(R.string.hotspot_join_restore) { confirm(HotspotJoinRepair.Action.RESTORE) }
         if (busy) view.addView(buttonFactory(activity.getString(R.string.cancel)) { backend.cancel() },
-            LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+            LinearLayout.LayoutParams(-1, -2).apply { topMargin = activity.dp(8) })
     }
 
     private fun confirm(action: HotspotJoinRepair.Action) {
@@ -98,7 +99,6 @@ internal class HotspotJoinControls(private val activity: Activity, private val s
     }
 
     fun close() { closed = true; backend.cancel(); root = null }
-    private fun dp(value: Int) = (value * activity.resources.displayMetrics.density).toInt()
 
     private fun message(code: HotspotJoinRepair.Code): Int = when (code) {
         HotspotJoinRepair.Code.READY -> R.string.hotspot_join_ready

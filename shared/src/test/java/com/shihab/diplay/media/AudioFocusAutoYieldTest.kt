@@ -46,9 +46,13 @@ class AudioFocusAutoYieldTest {
         coordinator.acquire(navigation, AudioChannel.NAVIGATION, attributes)
         manager.setStreamVolume(AudioManager.STREAM_MUSIC, 3, 0)
         val userVolume = manager.getStreamVolume(AudioManager.STREAM_MUSIC)
-        coordinator.listener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
+        // A phone track is primary, so media is muted before any system focus callback.
         assertEquals(listOf(0f), volumes(media))
+        coordinator.listener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
         coordinator.listener.onAudioFocusChange(AudioManager.AUDIOFOCUS_GAIN)
+        assertEquals(listOf(0f), volumes(media))
+        coordinator.release(assistant)
+        coordinator.release(phone)
         assertEquals(listOf(0f, 1f), volumes(media))
         assertTrue(volumes(phone).isEmpty())
         assertTrue(volumes(assistant).isEmpty())
@@ -66,6 +70,9 @@ class AudioFocusAutoYieldTest {
         assertEquals(listOf(0f), volumes(second))
         assertTrue(volumes(phone).isEmpty())
         coordinator.listener.onAudioFocusChange(AudioManager.AUDIOFOCUS_GAIN)
+        assertEquals(listOf(0f), volumes(first))
+        assertEquals(listOf(0f), volumes(second))
+        coordinator.release(phone)
         assertEquals(listOf(0f, 1f), volumes(first))
         assertEquals(listOf(0f, 1f), volumes(second))
     }
@@ -74,11 +81,13 @@ class AudioFocusAutoYieldTest {
         val coordinator = coordinator()
         val first = track(); val second = track(); val phone = track()
         coordinator.acquire(first, AudioChannel.MEDIA, attributes)
-        coordinator.acquire(phone, AudioChannel.PHONE, attributes)
         coordinator.listener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK)
         coordinator.acquire(second, AudioChannel.MEDIA, attributes)
         assertEquals(listOf(0.2f), volumes(first))
         assertEquals(listOf(0.2f), volumes(second))
+        coordinator.acquire(phone, AudioChannel.PHONE, attributes)
+        assertEquals(listOf(0.2f, 0f), volumes(first))
+        assertEquals(listOf(0.2f, 0f), volumes(second))
         assertTrue(volumes(phone).isEmpty())
     }
 
@@ -123,6 +132,8 @@ class AudioFocusAutoYieldTest {
         assertEquals(listOf(0f), volumes(second))
         assertTrue(volumes(phone).isEmpty())
         coordinator.onExternalFocusChange(AudioManager.AUDIOFOCUS_GAIN)
+        assertEquals(listOf(0f), volumes(second))
+        coordinator.release(phone)
         assertEquals(listOf(0f, 1f), volumes(second))
     }
 

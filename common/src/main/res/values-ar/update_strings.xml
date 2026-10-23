@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="update_checking">جارٍ البحث عن تحديثات…</string>
+    <string name="update_up_to_date">أنت تستخدم أحدث إصدار.</string>
+    <string name="update_no_notes">لا تتوفر ملاحظات الإصدار.</string>
+    <string name="update_parked_notice">توقّف بأمان وافصل CarPlay قبل التثبيت. سيطلب منك Android تأكيد التثبيت.</string>
+    <string name="update_download">تنزيل التحديث</string>
+    <string name="update_downloading">جارٍ تنزيل APK والتحقق منه…</string>
+    <string name="update_install_notice">اجتاز APK الذي تم تنزيله التحقق من SHA-256 واسم الحزمة وشهادة التوقيع. هل تريد فتح مُثبِّت Android الآن؟</string>
+    <string name="update_install">فتح المُثبِّت</string>
+    <string name="update_disconnect_first">افصل CarPlay وتوقّف بأمان قبل تنزيل التحديث أو تثبيته.</string>
+    <string name="update_install_unavailable">مُثبِّت النظام غير متوفر على هذا الجهاز.</string>
+    <string name="update_failed">فشل التحديث</string>
+    <string name="update_verifying">جارٍ التحقق من SHA-256 لملف APK وشهادة التوقيع…</string>
+    <string name="update_downloading_phase">جارٍ تنزيل حزمة التحديث الموقّعة</string>
+    <string name="update_manual_saved">تم أيضًا حفظ نسخة تم التحقق منها للتثبيت اليدوي:
+%1$s</string>
+    <string name="update_manual_install_help">لم تقبل وحدة الرأس هذه نية مُثبِّت APK في النظام. تم حفظ APK الذي تم تنزيله والتحقق منه في:
+
+%1$s
+
+أثناء التوقّف، افتح مدير الملفات واختر ملف APK هذا من التنزيلات. إذا لم يكن على الجهاز تطبيق مُثبِّت، فاستخدم جهاز كمبيوتر مع ADB أو مُثبِّت الشركة المصنّعة.</string>
+    <string name="update_manual_install_no_copy">لم تقبل وحدة الرأس نية مُثبِّت APK في النظام، وكان تخزين التنزيلات العام غير متوفر. نزّل APK على جهاز كمبيوتر من إصدار 75Play الرسمي على GitHub وثبّته باستخدام ADB أو مُثبِّت وحدة الرأس أثناء التوقّف.</string>
+    <string name="update_notes_heading">ما الجديد</string>
+    <string name="update_available_heading">يتوفر تحديث</string>
+    <string name="update_available_subtitle">%1$s متوفر</string>
+    <string name="update_available_description">ميزات وإصلاحات جديدة جاهزة للتنزيل.</string>
+    <string name="update_ready_heading">حزمة التحديث جاهزة</string>
+    <string name="update_ready_subtitle">%1$s · اكتمل التنزيل والتحقق</string>
+    <string name="update_dialog_subtitle">تحديث برنامج 75Play</string>
+    <string name="update_progress_step_download">جارٍ تنزيل حزمة التحديث</string>
+    <string name="update_progress_step_verify">التحقق من SHA-256 وشهادة التوقيع</string>
+    <string name="update_progress_step_prepare">إعداد حزمة التثبيت</string>
+    <string name="update_preparing">جارٍ إعداد حزمة التثبيت…</string>
+    <string name="update_continue_background">متابعة في الخلفية</string>
+    <string name="update_tls_unavailable">لا يستطيع هذا الجهاز إنشاء اتصال TLS آمن بخادم التحديثات. نزّل APK من إصدار GitHub الرسمي باستخدام متصفح آخر أو جهاز كمبيوتر ثم ثبّته يدويًا.</string>
+</resources>

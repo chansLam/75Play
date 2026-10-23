@@ -63,6 +63,59 @@ object ImmersiveBars {
     }
 
     /**
+     * Hide only the status bar, only the navigation bar, or neither.
+     * Both hidden uses [applyToWindow]; Harman firmware stays on [com.shihab.diplay.HarmanFullscreenCompat].
+     */
+    @Suppress("DEPRECATION")
+    fun applyPartial(window: Window, hideTop: Boolean, hideBottom: Boolean) {
+        val immersive = hideTop || hideBottom
+        WindowCompat.setDecorFitsSystemWindows(window, !immersive)
+        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        if (hideTop) controller.hide(WindowInsetsCompat.Type.statusBars())
+        else controller.show(WindowInsetsCompat.Type.statusBars())
+        if (hideBottom) controller.hide(WindowInsetsCompat.Type.navigationBars())
+        else controller.show(WindowInsetsCompat.Type.navigationBars())
+        controller.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+
+        val attrs = window.attributes
+        if (immersive) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+            window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN)
+            window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
+            attrs.flags = attrs.flags or
+                WindowManager.LayoutParams.FLAG_FULLSCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+            window.clearFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
+            attrs.flags = attrs.flags and
+                WindowManager.LayoutParams.FLAG_FULLSCREEN.inv() and
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS.inv()
+        }
+        window.attributes = attrs
+        window.decorView.systemUiVisibility = partialVisibilityFlags(hideTop, hideBottom)
+    }
+
+    /** KitKat flags for one bar hidden. Both hidden is [visibilityFlags]. */
+    @Suppress("DEPRECATION")
+    fun partialVisibilityFlags(hideTop: Boolean, hideBottom: Boolean): Int {
+        var flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        if (hideTop) {
+            flags = flags or View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+        }
+        if (hideBottom) {
+            flags = flags or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        }
+        if (hideTop || hideBottom) {
+            flags = flags or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        }
+        return flags
+    }
+
+    /**
      * 监听系统栏被边滑/焦点切换/ROM 拉出后自动再藏。
      * 覆盖「非弹窗」交互：点 Tab、开关、启动应用返回前的残留、IMMERSIVE_STICKY 临时露出等。
      * 勿装到 CarPlayHostActivity（它有自己的会话期守卫逻辑）。

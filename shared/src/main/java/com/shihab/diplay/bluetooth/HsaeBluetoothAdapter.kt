@@ -7,12 +7,12 @@ import android.content.ServiceConnection
 import android.os.IBinder
 import android.os.RemoteException
 import android.provider.Settings
-import android.util.Log
 import com.hsae.bluetoothsdk.IBluetoothCallback
 import com.hsae.bluetoothsdk.IBluetoothManager
 import com.shihab.diplay.transport.BlockingDuplexByteStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import com.shihab.diplay.util.AppLog
 
 class HsaeBluetoothAdapter(
     private val context: Context
@@ -30,15 +30,15 @@ class HsaeBluetoothAdapter(
 
     private val callback = object : IBluetoothCallback.Stub() {
         override fun onPowerStateChanged(state: Int) {
-            Log.i(TAG, "HSAE onPowerStateChanged: $state")
+            AppLog.i(TAG, "HSAE onPowerStateChanged: $state")
         }
 
         override fun onConnectStateChanged(profile: Int, state: Int, reason: Int) {
-            Log.i(TAG, "HSAE onConnectStateChanged profile=$profile state=$state reason=$reason")
+            AppLog.i(TAG, "HSAE onConnectStateChanged profile=$profile state=$state reason=$reason")
         }
 
         override fun onPairStateChanged(address: String?, state: Int) {
-            Log.i(TAG, "HSAE onPairStateChanged address=$address state=$state")
+            AppLog.i(TAG, "HSAE onPairStateChanged address=$address state=$state")
         }
 
         override fun onDeviceConnectRequest(address: String?, name: String?, cod: Int, profile: Int) {}
@@ -54,7 +54,7 @@ class HsaeBluetoothAdapter(
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            Log.i(TAG, "HSAE BluetoothService connected")
+            AppLog.i(TAG, "HSAE BluetoothService connected")
             synchronized(lock) {
                 val mgr = IBluetoothManager.Stub.asInterface(binder)
                 service = mgr
@@ -66,7 +66,7 @@ class HsaeBluetoothAdapter(
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
-            Log.w(TAG, "HSAE BluetoothService disconnected")
+            AppLog.w(TAG, "HSAE BluetoothService disconnected")
             synchronized(lock) {
                 service = null
                 initLatch = CountDownLatch(1)
@@ -99,9 +99,9 @@ class HsaeBluetoothAdapter(
                 setPackage("com.hsae.bluetoothservice")
             }
             val bound = context.bindService(intent, connection, Context.BIND_AUTO_CREATE)
-            Log.i(TAG, "bindService to HSAE BluetoothService result=$bound")
+            AppLog.i(TAG, "bindService to HSAE BluetoothService result=$bound")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to bind to HSAE BluetoothService", e)
+            AppLog.e(TAG, "Failed to bind to HSAE BluetoothService", e)
             synchronized(lock) {
                 isBinding = false
             }
@@ -129,10 +129,10 @@ class HsaeBluetoothAdapter(
         val mgr = ensureService() ?: return false
         return try {
             val status = mgr.powerStatus
-            Log.i(TAG, "HSAE getPowerStatus=$status")
+            AppLog.i(TAG, "HSAE getPowerStatus=$status")
             status == 1
         } catch (e: RemoteException) {
-            Log.e(TAG, "RemoteException reading HSAE power status", e)
+            AppLog.e(TAG, "RemoteException reading HSAE power status", e)
             false
         }
     }
@@ -143,7 +143,7 @@ class HsaeBluetoothAdapter(
             mgr.btPowerOn()
             true
         } catch (e: RemoteException) {
-            Log.e(TAG, "RemoteException calling HSAE btPowerOn", e)
+            AppLog.e(TAG, "RemoteException calling HSAE btPowerOn", e)
             false
         }
     }
@@ -155,7 +155,7 @@ class HsaeBluetoothAdapter(
         return try {
             val paired = mgr.pairedDevices ?: emptyList()
             val connectedMac = runCatching { mgr.connectDeviceAddress }.getOrNull()
-            Log.i(TAG, "HSAE getPairedDevices count=${paired.size} connectedMac=$connectedMac")
+            AppLog.i(TAG, "HSAE getPairedDevices count=${paired.size} connectedMac=$connectedMac")
             paired.map { dev ->
                 val mac = dev.mac ?: ""
                 val name = dev.name?.takeIf { it.isNotBlank() } ?: "iPhone"
@@ -167,7 +167,7 @@ class HsaeBluetoothAdapter(
                 )
             }
         } catch (e: RemoteException) {
-            Log.e(TAG, "RemoteException calling HSAE getPairedDevices", e)
+            AppLog.e(TAG, "RemoteException calling HSAE getPairedDevices", e)
             emptyList()
         }
     }
@@ -183,7 +183,7 @@ class HsaeBluetoothAdapter(
                 isConnected = true
             )
         } catch (e: RemoteException) {
-            Log.e(TAG, "RemoteException calling HSAE getConnectedDevice", e)
+            AppLog.e(TAG, "RemoteException calling HSAE getConnectedDevice", e)
             null
         }
     }

@@ -5,19 +5,24 @@ android {
     namespace = 'com.shihab.diplay.shared'
     compileSdk = 37
 
+    buildFeatures {
+        buildConfig true
+    }
+
     defaultConfig {
         minSdk = 19
         targetSdk = 19
         multiDexEnabled true
 
         ndk {
-            // CS75 Plus car: armeabi-v7a only.
-            abiFilters 'armeabi-v7a'
+            // CS75 Plus car: armeabi-v7a. Override with -PnativeAbi=x86 for an emulator package.
+            abiFilters (findProperty('nativeAbi') ?: 'armeabi-v7a')
         }
 
         externalNativeBuild {
             ndkBuild {
                 arguments 'APP_PLATFORM=android-19'
+                arguments "APP_ABI=${findProperty('nativeAbi') ?: 'armeabi-v7a'}"
                 if (org.gradle.internal.os.OperatingSystem.current().isWindows()) {
                     arguments 'HOST_OS=windows'
                 }

@@ -3,6 +3,7 @@ import com.shihab.diplay.host.HomeScreenMonitor
 
 import android.content.Context
 import android.provider.Settings
+import com.shihab.diplay.compat.realSdkInt
 import com.shihab.diplay.adb.AdbKeys
 import com.shihab.diplay.adb.LocalAdb
 import java.io.Closeable
@@ -18,7 +19,7 @@ internal object HeadUnitPermissionSetup {
         fun granted(context: Context): Boolean = runCatching {
             when (this) {
                 USAGE -> HomeScreenMonitor.hasAccess(context)
-                OVERLAY -> android.os.Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(context)
+                OVERLAY -> realSdkInt() < 23 || Settings.canDrawOverlays(context)
             }
         }.getOrDefault(false)
     }

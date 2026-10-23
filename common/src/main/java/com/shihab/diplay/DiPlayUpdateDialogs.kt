@@ -3,6 +3,7 @@ package com.shihab.diplay
 import com.shihab.diplay.ui.GlassColors
 import android.app.Activity
 import android.app.Dialog
+import android.content.res.ColorStateList
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -31,22 +32,11 @@ import java.util.Locale
  * The platform package installer itself is owned by Android and cannot be themed here.
  */
 internal object DiPlayUpdateDialogs {
-    private val CYAN = Color.rgb(14, 205, 250)
-    private val BLUE = Color.rgb(0, 150, 244)
-    private val WHITE = Color.rgb(224, 245, 255)
-    private val MUTED = Color.rgb(164, 191, 220)
-    private val FADED = Color.rgb(105, 133, 164)
-    private val DIVIDER = Color.rgb(15, 82, 120)
-    private val DARK = Color.rgb(1, 17, 37)
-
-    private fun dp(activity: Activity, value: Int) =
-        (value * activity.resources.displayMetrics.density + 0.5f).toInt()
-
     private fun rounded(activity: Activity, colors: IntArray, radius: Int,
                         strokeColor: Int = Color.TRANSPARENT, strokeWidth: Int = 1) =
         GradientDrawable(GradientDrawable.Orientation.TL_BR, colors).apply {
-            cornerRadius = dp(activity, radius).toFloat()
-            if (strokeColor != Color.TRANSPARENT) setStroke(dp(activity, strokeWidth), strokeColor)
+            cornerRadius = com.shihab.diplay.ui.LayoutMetrics.dp(activity, radius).toFloat()
+            if (strokeColor != Color.TRANSPARENT) setStroke(com.shihab.diplay.ui.LayoutMetrics.dp(activity, strokeWidth), strokeColor)
         }
 
     private fun solid(activity: Activity, color: Int, radius: Int, outline: Int = Color.TRANSPARENT) =
@@ -63,11 +53,11 @@ internal object DiPlayUpdateDialogs {
     }
 
     private fun space(activity: Activity, height: Int) =
-        View(activity).apply { layoutParams = LinearLayout.LayoutParams(1, dp(activity, height)) }
+        View(activity).apply { layoutParams = LinearLayout.LayoutParams(1, com.shihab.diplay.ui.LayoutMetrics.dp(activity, height)) }
 
     private fun line(activity: Activity) = View(activity).apply {
-        setBackgroundColor(DIVIDER)
-        layoutParams = LinearLayout.LayoutParams(-1, dp(activity, 1))
+        setBackgroundColor(GlassColors.UPDATE_DIVIDER)
+        layoutParams = LinearLayout.LayoutParams(-1, com.shihab.diplay.ui.LayoutMetrics.dp(activity, 1))
     }
 
     private fun button(activity: Activity, label: String, primary: Boolean,
@@ -80,14 +70,15 @@ internal object DiPlayUpdateDialogs {
         minHeight = 0
         minimumWidth = 0
         minimumHeight = 0
-        setPadding(dp(activity, 8), 0, dp(activity, 8), 0)
-        setTextColor(if (primary) DARK else WHITE)
-        background = if (primary)
+        setPadding(com.shihab.diplay.ui.LayoutMetrics.dp(activity, 8), 0, com.shihab.diplay.ui.LayoutMetrics.dp(activity, 8), 0)
+        setTextColor(if (primary) GlassColors.UPDATE_DARK else GlassColors.UPDATE_WHITE)
+        val bg = if (primary)
             rounded(activity, intArrayOf(Color.rgb(14, 229, 244), Color.rgb(0, 155, 253)),
-                17, Color.rgb(80, 233, 255), 1)
+                10, Color.rgb(80, 233, 255), 1)
         else
             rounded(activity, intArrayOf(Color.rgb(6, 42, 66), Color.rgb(4, 31, 57)),
-                17, BLUE, 1)
+                10, GlassColors.UPDATE_BLUE, 1)
+        background = compatibleRipple(ColorStateList.valueOf(0x33FFFFFF), bg, null)
         setOnClickListener { onClick() }
     }
 
@@ -97,17 +88,17 @@ internal object DiPlayUpdateDialogs {
             orientation = LinearLayout.HORIZONTAL
             if (secondary != null) {
                 addView(button(activity, secondary, false, onSecondary),
-                    LinearLayout.LayoutParams(0, dp(activity, 53), 1f).apply {
-                        rightMargin = dp(activity, 12)
+                    LinearLayout.LayoutParams(0, com.shihab.diplay.ui.LayoutMetrics.disconnectBtnH(activity), 1f).apply {
+                        rightMargin = com.shihab.diplay.ui.LayoutMetrics.dp(activity, 12)
                     })
             }
             addView(button(activity, primary, true, onPrimary),
-                LinearLayout.LayoutParams(0, dp(activity, 53), 1f))
+                LinearLayout.LayoutParams(0, com.shihab.diplay.ui.LayoutMetrics.disconnectBtnH(activity), 1f))
         }
 
     private fun panel(activity: Activity): LinearLayout = LinearLayout(activity).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(activity, 28), dp(activity, 28), dp(activity, 28), dp(activity, 24))
+        setPadding(com.shihab.diplay.ui.LayoutMetrics.dp(activity, 28), com.shihab.diplay.ui.LayoutMetrics.dp(activity, 28), com.shihab.diplay.ui.LayoutMetrics.dp(activity, 28), com.shihab.diplay.ui.LayoutMetrics.dp(activity, 24))
         background = rounded(activity,
             intArrayOf(Color.rgb(5, 38, 65), Color.rgb(1, 15, 34), Color.rgb(4, 36, 61)),
             20, Color.rgb(4, 189, 245), 1)
@@ -123,16 +114,16 @@ internal object DiPlayUpdateDialogs {
             background = rounded(activity, intArrayOf(Color.rgb(5, 66, 103), Color.rgb(3, 35, 62)),
                 19, Color.rgb(0, 120, 188))
         }
-        row.addView(emblem, LinearLayout.LayoutParams(dp(activity, 88), dp(activity, 88)).apply {
-            rightMargin = dp(activity, 24)
+        row.addView(emblem, LinearLayout.LayoutParams(com.shihab.diplay.ui.LayoutMetrics.dp(activity, 88), com.shihab.diplay.ui.LayoutMetrics.dp(activity, 88)).apply {
+            rightMargin = com.shihab.diplay.ui.LayoutMetrics.dp(activity, 24)
         })
         val copy = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
-        copy.addView(text(activity, title, 25f, WHITE, true))
+        copy.addView(text(activity, title, 25f, GlassColors.UPDATE_WHITE, true))
         copy.addView(space(activity, 4))
-        copy.addView(text(activity, subtitle, 15f, MUTED))
+        copy.addView(text(activity, subtitle, 15f, GlassColors.UPDATE_MUTED))
         if (!description.isNullOrBlank()) {
             copy.addView(space(activity, 6))
-            copy.addView(text(activity, description, 13f, MUTED))
+            copy.addView(text(activity, description, 13f, GlassColors.UPDATE_MUTED))
         }
         row.addView(copy, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(row)
@@ -145,7 +136,7 @@ internal object DiPlayUpdateDialogs {
                              asNotes: Boolean) {
         if (asNotes) {
             root.addView(text(activity, activity.getString(R.string.update_notes_heading),
-                17f, WHITE, true))
+                17f, GlassColors.UPDATE_WHITE, true))
             root.addView(space(activity, 10))
             // Render Markdown-ish release notes as short cyan-dot rows without exposing raw markers.
             message.lines().filter { it.isNotBlank() }.forEach { source ->
@@ -154,16 +145,16 @@ internal object DiPlayUpdateDialogs {
                 val row = LinearLayout(activity).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.TOP
-                    setPadding(0, dp(activity, 4), 0, dp(activity, 4))
+                    setPadding(0, com.shihab.diplay.ui.LayoutMetrics.dp(activity, 4), 0, com.shihab.diplay.ui.LayoutMetrics.dp(activity, 4))
                 }
-                row.addView(text(activity, "•", 13f, CYAN),
-                    LinearLayout.LayoutParams(dp(activity, 25), -2))
-                row.addView(text(activity, item, 14f, MUTED),
+                row.addView(text(activity, "•", 13f, GlassColors.UPDATE_CYAN),
+                    LinearLayout.LayoutParams(com.shihab.diplay.ui.LayoutMetrics.dp(activity, 25), -2))
+                row.addView(text(activity, item, 14f, GlassColors.UPDATE_MUTED),
                     LinearLayout.LayoutParams(0, -2, 1f))
                 root.addView(row)
             }
         } else {
-            root.addView(text(activity, message, 15f, MUTED))
+            root.addView(text(activity, message, 15f, GlassColors.UPDATE_MUTED))
         }
     }
 
@@ -197,7 +188,7 @@ internal object DiPlayUpdateDialogs {
         scroll.setBackgroundResource(GlassColors.dialogBg())
         scroll.isClickable = true
         val metrics = activity.resources.displayMetrics
-        val panelW = GlassColors.dp(activity, 440).coerceAtMost((metrics.widthPixels * 0.42f).toInt())
+        val panelW = com.shihab.diplay.ui.LayoutMetrics.dp(activity, 440).coerceAtMost((metrics.widthPixels * 0.42f).toInt())
         overlay.addView(
             scroll,
             android.widget.FrameLayout.LayoutParams(panelW, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
@@ -244,7 +235,7 @@ internal object DiPlayUpdateDialogs {
             activity.getString(R.string.update_available_description))
         contentLabel(activity, root, notes, true)
         root.addView(space(activity, 12))
-        root.addView(text(activity, safetyNotice, 12f, FADED))
+        root.addView(text(activity, safetyNotice, 12f, GlassColors.UPDATE_FADED))
         return footer(activity, root, primaryLabel, secondaryLabel, onPrimary)
     }
 
@@ -277,7 +268,7 @@ internal object DiPlayUpdateDialogs {
     ) {
         private fun activate(index: Int) {
             steps.forEachIndexed { i, view ->
-                view.setTextColor(if (i == index) WHITE else if (i < index) CYAN else FADED)
+                view.setTextColor(if (i == index) GlassColors.UPDATE_WHITE else if (i < index) GlassColors.UPDATE_CYAN else GlassColors.UPDATE_FADED)
                 // Step label uses an ASCII numeric prefix; state is shown by color only
                 // (the OEM head-unit font lacks ✓ / ◉ / ○ glyphs).
                 view.text = view.tag.toString()
@@ -319,15 +310,15 @@ internal object DiPlayUpdateDialogs {
             gravity = Gravity.CENTER_VERTICAL
         }
         val indicator = IconView(activity, ICON_DOWNLOAD)
-        row.addView(indicator, LinearLayout.LayoutParams(dp(activity, 91), dp(activity, 91)).apply {
-            rightMargin = dp(activity, 22)
+        row.addView(indicator, LinearLayout.LayoutParams(com.shihab.diplay.ui.LayoutMetrics.dp(activity, 91), com.shihab.diplay.ui.LayoutMetrics.dp(activity, 91)).apply {
+            rightMargin = com.shihab.diplay.ui.LayoutMetrics.dp(activity, 22)
         })
         val titles = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         titles.addView(text(activity, activity.getString(R.string.update_downloading),
-            23f, WHITE, true))
+            23f, GlassColors.UPDATE_WHITE, true))
         titles.addView(space(activity, 6))
         titles.addView(text(activity, activity.getString(R.string.update_downloading_phase),
-            15f, MUTED))
+            15f, GlassColors.UPDATE_MUTED))
         row.addView(titles, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(row)
         root.addView(space(activity, 22))
@@ -348,9 +339,9 @@ internal object DiPlayUpdateDialogs {
                 setId(1, android.R.id.progress)
             }
         }
-        progressRow.addView(bar, LinearLayout.LayoutParams(0, dp(activity, 16), 1f))
-        val percent = text(activity, "0%", 19f, WHITE, true).apply { gravity = Gravity.RIGHT }
-        progressRow.addView(percent, LinearLayout.LayoutParams(dp(activity, 66), -2))
+        progressRow.addView(bar, LinearLayout.LayoutParams(0, com.shihab.diplay.ui.LayoutMetrics.dp(activity, 16), 1f))
+        val percent = text(activity, "0%", 19f, GlassColors.UPDATE_WHITE, true).apply { gravity = Gravity.RIGHT }
+        progressRow.addView(percent, LinearLayout.LayoutParams(com.shihab.diplay.ui.LayoutMetrics.dp(activity, 66), -2))
         root.addView(progressRow)
         root.addView(space(activity, 20))
 
@@ -360,13 +351,13 @@ internal object DiPlayUpdateDialogs {
             activity.getString(R.string.update_progress_step_prepare))
         val views = stepLabels.mapIndexed { index, title ->
             text(activity, (index + 1).toString() + ". " + title,
-                15f, if (index == 0) WHITE else FADED).apply {
+                15f, if (index == 0) GlassColors.UPDATE_WHITE else GlassColors.UPDATE_FADED).apply {
                 tag = title
             }
         }
         val phase = text(activity, activity.getString(R.string.update_downloading_phase),
-            14f, MUTED)
-        val detail = text(activity, "", 13f, FADED)
+            14f, GlassColors.UPDATE_MUTED)
+        val detail = text(activity, "", 13f, GlassColors.UPDATE_FADED)
         views.forEachIndexed { index, view ->
             root.addView(view)
             if (index == 0) {
@@ -376,9 +367,9 @@ internal object DiPlayUpdateDialogs {
                 root.addView(detail)
             }
             if (index < 2) {
-                val connector = View(activity).apply { setBackgroundColor(DIVIDER) }
-                root.addView(connector, LinearLayout.LayoutParams(dp(activity, 1), dp(activity, 19))
-                    .apply { leftMargin = dp(activity, 7) })
+                val connector = View(activity).apply { setBackgroundColor(GlassColors.UPDATE_DIVIDER) }
+                root.addView(connector, LinearLayout.LayoutParams(com.shihab.diplay.ui.LayoutMetrics.dp(activity, 1), com.shihab.diplay.ui.LayoutMetrics.dp(activity, 19))
+                    .apply { leftMargin = com.shihab.diplay.ui.LayoutMetrics.dp(activity, 7) })
             }
         }
         root.addView(space(activity, 19))
@@ -442,37 +433,37 @@ internal object DiPlayUpdateDialogs {
                     shape(floatArrayOf(3f, 0f, 25f, -12f, 25f, 16f, 3f, 28f),
                         Color.rgb(33, 200, 249))
                     paint.style = Paint.Style.FILL
-                    paint.color = CYAN
+                    paint.color = GlassColors.UPDATE_CYAN
                     canvas.drawCircle(cx + 25f * u, cy + 25f * u, 16f * u, paint)
-                    line(25f, 33f, 25f, 17f, DARK, 3.5f)
-                    line(19f, 23f, 25f, 17f, DARK, 3.5f)
-                    line(31f, 23f, 25f, 17f, DARK, 3.5f)
+                    line(25f, 33f, 25f, 17f, GlassColors.UPDATE_DARK, 3.5f)
+                    line(19f, 23f, 25f, 17f, GlassColors.UPDATE_DARK, 3.5f)
+                    line(31f, 23f, 25f, 17f, GlassColors.UPDATE_DARK, 3.5f)
                 }
                 ICON_DOWNLOAD, ICON_READY -> {
                     paint.style = Paint.Style.STROKE
                     paint.strokeWidth = 7f * u
                     paint.color = Color.rgb(7, 72, 116)
                     canvas.drawCircle(cx, cy, 41f * u, paint)
-                    paint.color = CYAN
+                    paint.color = GlassColors.UPDATE_CYAN
                     canvas.drawArc(RectF(cx - 41f * u, cy - 41f * u,
                             cx + 41f * u, cy + 41f * u),
                         -90f, if (symbol == ICON_READY) 360f else 250f, false, paint)
                     if (symbol == ICON_READY || step == 2) {
-                        line(-18f, 0f, -5f, 13f, CYAN, 5f)
-                        line(-5f, 13f, 21f, -16f, CYAN, 5f)
+                        line(-18f, 0f, -5f, 13f, GlassColors.UPDATE_CYAN, 5f)
+                        line(-5f, 13f, 21f, -16f, GlassColors.UPDATE_CYAN, 5f)
                     } else {
-                        line(0f, -20f, 0f, 11f, CYAN, 6f)
-                        line(-11f, 1f, 0f, 12f, CYAN, 6f)
-                        line(11f, 1f, 0f, 12f, CYAN, 6f)
-                        line(-16f, 17f, -16f, 25f, CYAN, 4f)
-                        line(-16f, 25f, 16f, 25f, CYAN, 4f)
-                        line(16f, 25f, 16f, 17f, CYAN, 4f)
+                        line(0f, -20f, 0f, 11f, GlassColors.UPDATE_CYAN, 6f)
+                        line(-11f, 1f, 0f, 12f, GlassColors.UPDATE_CYAN, 6f)
+                        line(11f, 1f, 0f, 12f, GlassColors.UPDATE_CYAN, 6f)
+                        line(-16f, 17f, -16f, 25f, GlassColors.UPDATE_CYAN, 4f)
+                        line(-16f, 25f, 16f, 25f, GlassColors.UPDATE_CYAN, 4f)
+                        line(16f, 25f, 16f, 17f, GlassColors.UPDATE_CYAN, 4f)
                     }
                 }
                 else -> {
                     paint.style = Paint.Style.STROKE
                     paint.strokeWidth = 4f * u
-                    paint.color = CYAN
+                    paint.color = GlassColors.UPDATE_CYAN
                     canvas.drawCircle(cx, cy, 30f * u, paint)
                     paint.style = Paint.Style.FILL
                     canvas.drawCircle(cx, cy - 14f * u, 4f * u, paint)

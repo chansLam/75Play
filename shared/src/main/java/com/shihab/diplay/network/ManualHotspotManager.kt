@@ -7,15 +7,15 @@ import android.net.wifi.WifiConfiguration
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Looper
-import android.util.Log
 import com.shihab.diplay.compat.realSdkInt
-import com.shihab.diplay.orchestration.ManualHotspotBand
-import com.shihab.diplay.orchestration.ManualHotspotSecurity
-import com.shihab.diplay.transport.Iap2WirelessSecurity
+import com.shihab.diplay.model.ManualHotspotBand
+import com.shihab.diplay.model.ManualHotspotSecurity
+import com.shihab.diplay.model.Iap2WirelessSecurity
 import java.net.Inet6Address
 import java.net.InetAddress
 import java.net.NetworkInterface
 import java.util.Collections
+import com.shihab.diplay.util.AppLog
 
 /**
  * Attaches to a hotspot that is already running on this device.
@@ -76,10 +76,14 @@ class ManualHotspotManager(
         require(timeoutMillis > 0) { "timeoutMillis must be positive" }
 
         val apConfiguration = readApConfiguration()
+        // Vendors often leave the stock SoftAP SSID while DiPlay still has a saved name.
+        // Prefer the live AP name for iAP2 so the iPhone joins what is actually on-air;
+        // do not abort the session over a name mismatch alone.
+        val advertisedSsid = apConfiguration?.ssid?.takeIf { it.isNotBlank() } ?: expectedSsid
         if (apConfiguration != null && apConfiguration.ssid != expectedSsid) {
-            throw WirelessStartupException(WirelessStartupFailure.HOTSPOT_CONFIGURATION,
-                "Manual hotspot SSID does not match the active local AP configuration: " +
-                    "'${apConfiguration.ssid}'",
+            onDiagnostic(
+                "Manual hotspot SSID mismatch: configured='$expectedSsid' " +
+                    "active='${apConfiguration.ssid}'; advertising active SSID",
             )
         }
         validateApConfiguration(apConfiguration)
@@ -107,8 +111,8 @@ class ManualHotspotManager(
             runCatching { network?.hardwareAddress?.toMacAddressString() }.getOrNull()
                 ?.takeUnless { it == "02:00:00:00:00:00" || it == "00:00:00:00:00:00" }
                 ?: HotspotInterfaceBssid.read(selected.name))
-        val connectionFrequency = frequencyFromConnectionInfo()
-        val scanFrequency = frequencyFromScanResult(localInterface)
+        val connectionFrequency = frequencyFromConnectionInfo(advertisedSsid)
+        val scanFrequency = frequencyFromScanResult(localInterface, advertisedSsid)
         val channel = observedManualHotspotChannel(
             apChannel = apConfiguration?.channel ?: 0,
             connectionFrequencyMHz = connectionFrequency,
@@ -137,7 +141,7 @@ class ManualHotspotManager(
         }
 
         if (channel == 0) {
-            Log.w(
+            AppLog.w(
                 TAG,
                 "Could not read the active hotspot channel from Android public APIs; " +
                     "reporting iAP2 channel 0 (auto) instead of configured channel " +
@@ -146,7 +150,7 @@ class ManualHotspotManager(
         }
         val observedBandLabel = wifiBandLabel(apConfiguration?.band)
         return WirelessHotspotInfo(
-            ssid = expectedSsid,
+            ssid = advertisedSsid,
             passphrase = passphrase,
             security = security,
             channel = channel,
@@ -239,18 +243,19 @@ class ManualHotspotManager(
         }
     }
 
-    private fun frequencyFromConnectionInfo(): Int? {
-        if (Build.VERSION.SDK_INT < 21) return null
+    private fun frequencyFromConnectionInfo(activeSsid: String): Int? {
+        if (realSdkInt() < 21) return null
         val connectionInfo = try {
             wifiManager.connectionInfo
         } catch (_: SecurityException) {
             null
         } ?: return null
-        if (unquote(connectionInfo.ssid) != expectedSsid) return null
+        val connected = unquote(connectionInfo.ssid)
+        if (connected != activeSsid && connected != expectedSsid) return null
         return connectionInfo.frequency.takeIf { it > 0 }
     }
 
-    private fun frequencyFromScanResult(localInterface: LocalHotspotInterface): Int? {
+    private fun frequencyFromScanResult(localInterface: LocalHotspotInterface, activeSsid: String): Int? {
         // KitKat SoftAP rarely needs scanResults; reading them can trigger radio work on i.MX6.
         if (realSdkInt() < 21) return null
         val localBssid = localInterface.hardwareAddress ?: return null
@@ -260,7 +265,7 @@ class ManualHotspotManager(
             return null
         }
         return scanResults.firstOrNull { result ->
-            result.SSID == expectedSsid &&
+            (result.SSID == activeSsid || result.SSID == expectedSsid) &&
                 result.BSSID.equals(localBssid, ignoreCase = true) &&
                 result.frequency > 0
         }?.frequency

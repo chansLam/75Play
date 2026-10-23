@@ -1,8 +1,5 @@
 package com.shihab.diplay
 import com.shihab.diplay.host.CarPlayBackgroundSession
-import com.shihab.diplay.settings.SettingsCategory
-import com.shihab.diplay.settings.SettingsInformationArchitecture
-import com.shihab.diplay.settings.SettingsSection
 
 import android.content.res.Configuration
 import android.os.Looper
@@ -34,7 +31,7 @@ class InterfaceSizeActivityTest {
 
     @Test
     @Config(sdk = [28], qualifiers = "en-sw800dp-w1280dp-h800dp-land-mdpi")
-    fun fixedScalingKeepsFreshWindowDimensionsAndTheSelectedSettingsCategory() {
+    fun fixedScalingKeepsFreshWindowDimensionsAndSettingsPage() {
         val app = RuntimeEnvironment.getApplication()
         CarPlayBackgroundSession.clear()
         AppLocale.save(app, AppLocale.SYSTEM)
@@ -45,8 +42,11 @@ class InterfaceSizeActivityTest {
         controller.setup()
         try {
             ReflectionHelpers.setField(activity, "page", "settings")
-            ReflectionHelpers.setField(activity, "settingsCategory", SettingsCategory.DISPLAY)
-            ReflectionHelpers.callInstanceMethod<Unit>(activity, "render")
+            ReflectionHelpers.callInstanceMethod<Unit>(
+                activity,
+                "showPage",
+                ReflectionHelpers.ClassParameter(String::class.java, "settings"),
+            )
             assertEquals(240, activity.resources.configuration.densityDpi)
             assertEquals(853, activity.resources.configuration.screenWidthDp)
             assertEquals(160, app.resources.configuration.densityDpi)
@@ -67,6 +67,7 @@ class InterfaceSizeActivityTest {
             assertEquals(0, installed.screenHeightDp)
 
             activity.onConfigurationChanged(reported(800, 1280))
+            shadowOf(Looper.getMainLooper()).idle()
             assertEquals(240, activity.resources.configuration.densityDpi)
             assertEquals(533, activity.resources.configuration.screenWidthDp)
             assertEquals(853, activity.resources.configuration.screenHeightDp)
@@ -74,14 +75,14 @@ class InterfaceSizeActivityTest {
             val split = reported(480, 800)
             activity.onMultiWindowModeChanged(true, split)
             activity.onConfigurationChanged(split)
+            shadowOf(Looper.getMainLooper()).idle()
             assertEquals(240, activity.resources.configuration.densityDpi)
             assertEquals(320, activity.resources.configuration.screenWidthDp)
             assertEquals(533, activity.resources.configuration.screenHeightDp)
-            assertEquals(SettingsCategory.DISPLAY,
-                ReflectionHelpers.getField<SettingsCategory>(activity, "settingsCategory"))
             assertEquals("settings", ReflectionHelpers.getField<String>(activity, "page"))
-            assertEquals(1, texts(activity.findViewById(android.R.id.content)).count {
-                it.text.startsWith(activity.getString(R.string.settings_interface_size) + " · ")
+            val interfaceSizeLabel = activity.getString(R.string.settings_interface_size)
+            assertTrue(texts(activity.findViewById(android.R.id.content)).any {
+                it.text?.toString()?.startsWith(interfaceSizeLabel) == true
             })
         } finally {
             controller.pause().stop().destroy()
@@ -102,8 +103,11 @@ class InterfaceSizeActivityTest {
         controller.setup()
         try {
             ReflectionHelpers.setField(activity, "page", "settings")
-            ReflectionHelpers.setField(activity, "settingsCategory", SettingsCategory.DISPLAY)
-            ReflectionHelpers.callInstanceMethod<Unit>(activity, "render")
+            ReflectionHelpers.callInstanceMethod<Unit>(
+                activity,
+                "showPage",
+                ReflectionHelpers.ClassParameter(String::class.java, "settings"),
+            )
             val installed = ReflectionHelpers.getField<Configuration>(activity, "mOverrideConfiguration")
             assertEquals(240, activity.resources.configuration.densityDpi)
             assertEquals(160, app.resources.configuration.densityDpi)
@@ -123,8 +127,6 @@ class InterfaceSizeActivityTest {
             assertEquals(267, resized.resources.configuration.screenHeightDp)
             assertEquals(320, app.resources.configuration.densityDpi)
             assertEquals("settings", ReflectionHelpers.getField<String>(resized, "page"))
-            assertEquals(SettingsCategory.DISPLAY,
-                ReflectionHelpers.getField<SettingsCategory>(resized, "settingsCategory"))
         } finally {
             controller.pause().stop().destroy()
         }

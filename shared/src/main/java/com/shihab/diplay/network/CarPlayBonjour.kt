@@ -5,7 +5,6 @@ import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
-import android.util.Log
 import com.shihab.diplay.airplay.AirPlayConfig
 import com.shihab.diplay.airplay.AirPlayIdentity
 import com.shihab.diplay.airplay.AirPlayInfoPlist
@@ -32,6 +31,7 @@ import javax.jmdns.JmDNS
 import javax.jmdns.ServiceEvent
 import javax.jmdns.ServiceInfo
 import javax.jmdns.ServiceListener
+import com.shihab.diplay.util.AppLog
 
 /** KitKat system NSD can be present but nonfunctional; modern ROMs need interface-scoped mDNS. */
 internal fun useBundledCarPlayMdns(sdkInt: Int): Boolean =
@@ -202,7 +202,7 @@ class CarPlayBonjour(
     private val multicastLock = ((context.applicationContext ?: context).let { ctx ->
         (ctx.getSystemService(Context.WIFI_SERVICE) as? WifiManager)
             ?: runCatching {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) ctx.getSystemService(WifiManager::class.java) else null
+                if (realSdkInt() >= Build.VERSION_CODES.M) ctx.getSystemService(WifiManager::class.java) else null
             }.getOrNull()
     })?.createMulticastLock("carplay-bonjour")?.apply { setReferenceCounted(false) }
 
@@ -266,23 +266,23 @@ class CarPlayBonjour(
         override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
             registrationResult.set(errorCode)
             registrationLatch.countDown()
-            Log.w(TAG, "AirPlay NSD registration failed code=$errorCode")
+            AppLog.w(TAG, "AirPlay NSD registration failed code=$errorCode")
         }
 
         override fun onServiceUnregistered(serviceInfo: NsdServiceInfo) = Unit
 
         override fun onUnregistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-            Log.w(TAG, "AirPlay NSD unregistration failed code=$errorCode")
+            AppLog.w(TAG, "AirPlay NSD unregistration failed code=$errorCode")
         }
     }
 
     private val discoveryListener = object : NsdManager.DiscoveryListener {
         override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
-            Log.w(TAG, "CarPlay control discovery failed code=$errorCode")
+            AppLog.w(TAG, "CarPlay control discovery failed code=$errorCode")
         }
 
         override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
-            Log.w(TAG, "CarPlay control discovery stop failed code=$errorCode")
+            AppLog.w(TAG, "CarPlay control discovery stop failed code=$errorCode")
         }
 
         override fun onDiscoveryStarted(serviceType: String) = Unit
@@ -338,7 +338,7 @@ class CarPlayBonjour(
                             // Issue #156: bundled mDNS cannot bind UDP 5353 on this unit (port
                             // already held by the factory mdnsd). A wildcard bind does not help,
                             // so defer to system NSD registration instead of failing bring-up.
-                            Log.w(TAG, "interface mDNS bind failed; falling back to system NSD", error)
+                            AppLog.w(TAG, "interface mDNS bind failed; falling back to system NSD", error)
                             interfaceMdnsActive = false
                             publishedFamilies = "nsd-fallback"
                             null
@@ -362,7 +362,7 @@ class CarPlayBonjour(
                             advertisedAddresses,
                             bind = { address -> JmDNS.create(address, "carplay-${config.deviceId.replace(":", "")}") },
                             onFailure = { address, failure ->
-                                Log.w(TAG, "mDNS bind failed for " +
+                                AppLog.w(TAG, "mDNS bind failed for " +
                                     (if (address is Inet4Address) "IPv4" else "IPv6") +
                                     "; preserving other advertised families", failure)
                             },
@@ -513,7 +513,7 @@ class CarPlayBonjour(
                 } catch (_: InterruptedException) {
                     return
                 } catch (error: Exception) {
-                    if (!closed) Log.w(TAG, "Interface CarPlay service handling failed", error)
+                    if (!closed) AppLog.w(TAG, "Interface CarPlay service handling failed", error)
                 }
                 continue
             }
@@ -528,7 +528,7 @@ class CarPlayBonjour(
             } catch (_: InterruptedException) {
                 return
             } catch (error: Exception) {
-                if (!closed) Log.w(TAG, "CarPlay control service handling failed", error)
+                if (!closed) AppLog.w(TAG, "CarPlay control service handling failed", error)
             }
         }
     }
@@ -579,7 +579,7 @@ class CarPlayBonjour(
                     }
                 }
             } catch (error: RuntimeException) {
-                Log.w(TAG, "CarPlay control service resolution failed", error)
+                AppLog.w(TAG, "CarPlay control service resolution failed", error)
                 false
             }
             if (!submitted) return null
@@ -589,12 +589,12 @@ class CarPlayBonjour(
                 throw error
             }
             if (!completed) {
-                Log.w(TAG, "CarPlay control service resolution timed out")
+                AppLog.w(TAG, "CarPlay control service resolution timed out")
                 return null
             }
             resolved.get()?.let { return it }
             if (failure.get() != NsdManager.FAILURE_ALREADY_ACTIVE) {
-                Log.w(TAG, "CarPlay control service resolution failed code=${failure.get()}")
+                AppLog.w(TAG, "CarPlay control service resolution failed code=${failure.get()}")
                 return null
             }
             if (!closed && attempt + 1 < RESOLVE_ATTEMPTS) {
@@ -729,7 +729,7 @@ class CarPlayBonjour(
         try {
             onEvent(event)
         } catch (error: RuntimeException) {
-            Log.w(TAG, "CarPlay Bonjour event callback failed", error)
+            AppLog.w(TAG, "CarPlay Bonjour event callback failed", error)
         }
     }
 

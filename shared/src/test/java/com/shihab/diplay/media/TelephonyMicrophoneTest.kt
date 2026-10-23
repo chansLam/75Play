@@ -77,7 +77,9 @@ class TelephonyMicrophoneTest {
         sink.onMicrophoneStarted(telephony, config("telephony"))
         val record = awaitCapture()
 
-        assertEquals(AudioManager.MODE_IN_COMMUNICATION, manager.mode)
+        // CS75: keep the prior mode (no MODE_IN_COMMUNICATION) so call audio stays on the
+        // loudspeaker path; STREAM_MUSIC is muted during IN_COMMUNICATION on this head unit.
+        assertEquals(AudioManager.MODE_RINGTONE, manager.mode)
         assertEquals(MediaRecorder.AudioSource.VOICE_COMMUNICATION, record.audioSource)
         val effects = ShadowAudioEffect.getAudioEffects()
         assertEquals(microphoneLog(), setOf("AcousticEchoCanceler", "NoiseSuppressor"),
@@ -135,7 +137,7 @@ class TelephonyMicrophoneTest {
         val record = awaitCapture()
         assertEquals(AudioRecord.RECORDSTATE_RECORDING, record.recordingState)
         assertEquals(MediaRecorder.AudioSource.VOICE_COMMUNICATION, record.audioSource)
-        assertEquals(AudioManager.MODE_IN_COMMUNICATION, manager.mode)
+        assertEquals(AudioManager.MODE_RINGTONE, manager.mode)
         assertEquals(2, ShadowAudioEffect.getAudioEffects().size)
         sink.onMicrophoneStopped(telephony)
         assertEquals(AudioManager.MODE_RINGTONE, manager.mode)
@@ -146,7 +148,7 @@ class TelephonyMicrophoneTest {
         sink.onMicrophoneStarted(telephony, config("telephony"))
         awaitCapture()
         sink.onMicrophoneStopped(speechRecognition)
-        assertEquals(AudioManager.MODE_IN_COMMUNICATION, manager.mode)
+        assertEquals(AudioManager.MODE_NORMAL, manager.mode)
         assertEquals(microphoneLog(), 2, ShadowAudioEffect.getAudioEffects().size)
         sink.onMicrophoneStopped(telephony)
         assertEquals(AudioManager.MODE_NORMAL, manager.mode)
@@ -208,11 +210,12 @@ class TelephonyMicrophoneTest {
 
     @Test
     @Config(shadows = [RejectingAudioManager::class])
-    fun modeFailureDoesNotEscapeTheDownlinkCallback() {
+    fun modeDenialDoesNotBlockTelephonyCapture() {
+        // CS75 no longer calls AudioManager.setMode for telephony; a ROM that rejects mode
+        // changes must still start uplink capture.
         sink.onMicrophoneStarted(telephony, config("telephony"))
-        assertNull(recorder.get())
+        assertEquals(AudioRecord.RECORDSTATE_RECORDING, awaitCapture().recordingState)
         assertEquals(AudioManager.MODE_NORMAL, manager.mode)
-        assertTrue(ShadowLog.getLogsForTag("xcertplay-usb").any { it.msg.contains("microphone start failed") })
     }
 
     @Test fun telephonyKeepsRecordingWhenTheEchoCancellerLibraryIsMissing() {

@@ -1,6 +1,7 @@
 package com.shihab.diplay
 import com.shihab.diplay.host.CarPlayBackgroundSession
-import com.shihab.diplay.host.CarPlaySessionDisplay
+import com.shihab.diplay.session.CarPlaySessionDisplay
+import com.shihab.diplay.host.WirelessStartupRecovery
 
 import android.graphics.Matrix
 import android.os.Handler
@@ -9,17 +10,13 @@ import android.view.MotionEvent
 import android.view.Surface
 import android.view.TextureView
 import android.view.View
-import android.view.ViewGroup
-import android.widget.Switch
 import com.shihab.diplay.airplay.*
-import com.shihab.diplay.host.R
 import com.shihab.diplay.media.AndroidMediaSink
 import com.shihab.diplay.media.CarPlayVideoLayout
 import com.shihab.diplay.orchestration.CarPlayController
 import com.shihab.diplay.orchestration.CarPlayRuntimeConfig
 import com.shihab.diplay.orchestration.CarPlayTransport
 import com.shihab.diplay.orchestration.MfiTarget
-import com.shihab.diplay.orchestration.WirelessHotspotMode
 import com.shihab.diplay.transport.Iap2IdentificationConfig
 import java.time.Duration
 import java.util.concurrent.ExecutorService
@@ -38,6 +35,7 @@ import org.robolectric.android.util.concurrent.PausedExecutorService
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
 import org.robolectric.shadows.ShadowLog
+import org.robolectric.util.ReflectionHelpers
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
@@ -187,18 +185,18 @@ class CarPlayHostDisplaySizeTest {
         assertEquals(0, getField("restartGeneration"))
     }
 
-    @Test fun resumingWhileEditingDoesNotOverwriteTheBarPreview() {
+    @Test fun resumingReloadsPersistedSystemBars() {
+        AirPlayPersistence.saveHideTopBar(activity, true)
+        AirPlayPersistence.saveHideBottomBar(activity, true)
         startSession()
-        setField("menuOpen", true)
         setField("hideTopBar", false)
-        setField("hideBottomBar", true)
+        setField("hideBottomBar", false)
 
         invoke("onResume")
 
-        assertEquals(false, getField("hideTopBar"))
+        assertEquals(true, getField("hideTopBar"))
         assertEquals(true, getField("hideBottomBar"))
-        assertWindowBars(false, true)
-        assertTrue(AirPlayPersistence.loadHideTopBar(activity))
+        assertWindowBars(true, true)
         assertEquals(0, getField("restartGeneration"))
     }
 
@@ -239,40 +237,6 @@ class CarPlayHostDisplaySizeTest {
 
         assertEquals(0, activity.window.decorView.systemUiVisibility and HarmanFullscreenCompat.OEM_FULLSCREEN_BIT)
         assertWindowBars(false, false)
-    }
-
-    @Test fun menuBarChangesPreviewWithoutSavingAndCancelRestoresTheSavedValues() {
-        invoke("loadPersistedSettings")
-        setField("settingsBaseline", invoke("captureSettingsBaseline"))
-        setField("menuOpen", true)
-        val controls = invoke("buildFullscreenSection") as ViewGroup
-
-        menuBarSwitch(controls, R.string.hide_the_navigation_bar).performClick()
-
-        assertEquals(false, getField("hideBottomBar"))
-        assertWindowBars(true, false)
-        assertTrue(AirPlayPersistence.loadHideBottomBar(activity))
-
-        invoke("cancelSettingsEdits")
-
-        assertEquals(true, getField("hideBottomBar"))
-        assertWindowBars(true, true)
-        assertTrue(AirPlayPersistence.loadHideBottomBar(activity))
-    }
-
-    @Test fun savingMenuBarsPreservesAnIndependentCombination() {
-        AirPlayPersistence.saveWirelessHotspotMode(activity, WirelessHotspotMode.MANUAL)
-        AirPlayPersistence.saveManualHotspotSsid(activity, "DiPlay")
-        invoke("loadPersistedSettings")
-        setField("menuOpen", true)
-        val controls = invoke("buildFullscreenSection") as ViewGroup
-        menuBarSwitch(controls, R.string.hide_the_status_bar).performClick()
-
-        invoke("saveSettingsAndReconnect")
-
-        assertFalse(AirPlayPersistence.loadHideTopBar(activity))
-        assertTrue(AirPlayPersistence.loadHideBottomBar(activity))
-        assertEquals(false, getField("menuOpen"))
     }
 
     @Test fun quickOpenAndCloseCancelsThePendingShrink() {
@@ -504,8 +468,13 @@ class CarPlayHostDisplaySizeTest {
         }
     }
 
-    private fun getField(name: String): Any? = activity.javaClass.getDeclaredField(name)
-        .apply { isAccessible = true }.get(activity)
+    private fun wirelessStartup() =
+        ReflectionHelpers.getField<WirelessStartupRecovery>(activity, "wirelessStartup")
+
+    private fun getField(name: String): Any? = when (name) {
+        "restartGeneration" -> wirelessStartup().generation
+        else -> activity.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(activity)
+    }
 
     private fun invoke(name: String): Any? = activity.javaClass.getDeclaredMethod(name)
         .apply { isAccessible = true }.invoke(activity)
@@ -516,12 +485,10 @@ class CarPlayHostDisplaySizeTest {
         assertEquals(hideBottom, activity.window.decorView.systemUiVisibility and View.SYSTEM_UI_FLAG_HIDE_NAVIGATION != 0)
     }
 
-    private fun menuBarSwitch(controls: ViewGroup, label: Int): Switch = (0 until controls.childCount)
-        .mapNotNull { controls.getChildAt(it) as? ViewGroup }
-        .flatMap { row -> (0 until row.childCount).map { row.getChildAt(it) } }
-        .filterIsInstance<Switch>().single { it.contentDescription == activity.getString(label) }
-
     private fun setField(name: String, value: Any?) {
-        activity.javaClass.getDeclaredField(name).apply { isAccessible = true }.set(activity, value)
+        when (name) {
+            "restartGeneration" -> ReflectionHelpers.setField(wirelessStartup(), "generation", value)
+            else -> activity.javaClass.getDeclaredField(name).apply { isAccessible = true }.set(activity, value)
+        }
     }
 }

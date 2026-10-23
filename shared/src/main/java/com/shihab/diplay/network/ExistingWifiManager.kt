@@ -4,8 +4,8 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.wifi.WifiManager
 import android.os.Looper
-import com.shihab.diplay.orchestration.ManualHotspotValidation
-import com.shihab.diplay.transport.Iap2WirelessSecurity
+import com.shihab.diplay.model.ManualHotspotValidation
+import com.shihab.diplay.model.Iap2WirelessSecurity
 import java.io.IOException
 import java.net.InetAddress
 import java.net.NetworkInterface

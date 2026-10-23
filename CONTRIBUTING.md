@@ -1,6 +1,6 @@
 # 贡献指南
 
-感谢关注 75Play。本仓库专为 **长安 CS75 Plus 2020 SoftAP**（Android 4.4.2 / API 19 · `armeabi-v7a`）维护。
+感谢关注 75Play。本仓库专为 **长安 CS75 Plus 2020**（Android 4.4.2 / API 19 · `armeabi-v7a`；默认 Wi‑Fi Direct）维护。
 
 更完整的助手约定见 [`AGENTS.md`](AGENTS.md)。
 

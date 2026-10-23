@@ -1,6 +1,6 @@
 package com.shihab.diplay
 import com.shihab.diplay.host.CarPlayBackgroundSession
-import com.shihab.diplay.host.CarPlaySessionDisplay
+import com.shihab.diplay.session.CarPlaySessionDisplay
 
 import android.media.AudioFocusRequest
 import android.media.AudioManager

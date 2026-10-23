@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import android.widget.Toast
 import com.shihab.diplay.airplay.CarPlayMediaButton
 import com.shihab.diplay.airplay.VideoInCar
@@ -17,6 +16,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import com.shihab.diplay.util.AppLog
 
 /**
  * iOS 27 video in car (see [VideoInCar]). The iPhone hands the car a media URL (insertPlayQueueItem)
@@ -45,8 +45,22 @@ internal object CarPlayVideo : CarPlayVideoListener {
         private set
     @Volatile var playing = false
         private set
+    /** Set by the iPhone's seek handler on a loader thread; read on the main thread. */
+    @Volatile
     var pendingSeekMillis: Int? = null
-    var activity: CarPlayVideoActivity? = null
+    /** Playback surface. The activity class is not named here, so KitKat does not load ExoPlayer. */
+    internal interface PlayerHost {
+        fun applyRate()
+        fun applySeek()
+        fun skip(deltaMillis: Int)
+        fun load()
+        fun state(): VideoInCar.PlayerState
+        fun finish()
+    }
+
+    /** Set/cleared by the video activity from its lifecycle; read by media-key callbacks. */
+    @Volatile
+    var activity: PlayerHost? = null
 
     fun attach(context: Context, next: CarPlayController) {
         appContext = context.applicationContext
@@ -102,7 +116,7 @@ internal object CarPlayVideo : CarPlayVideoListener {
      * receiver does, say so on the car screen and go back to CarPlay instead of showing black. Main thread.
      */
     fun onPlayerFailed(code: Int) {
-        Log.w(TAG, "item cannot play here code=$code")
+        AppLog.w(TAG, "item cannot play here code=$code")
         streamId?.let { reply(it, VideoInCar.errorNotification(itemUuid, code)) }
         appContext?.let { DiPlayDialog.toast(it, it.getString(R.string.video_cannot_play), true) }
         stop()
@@ -122,15 +136,15 @@ internal object CarPlayVideo : CarPlayVideoListener {
                 // An app's own scheme is loaded through the iPhone (IphoneResolvingDataSource).
                 val item = VideoInCar.parseItem(message, iphoneLoadsAppSchemes = true)
                 if (item == null) {
-                    Log.w(TAG, "queue item this player cannot play")
+                    AppLog.w(TAG, "queue item this player cannot play")
                     return
                 }
-                Log.i(TAG, "queue item app=${(message["item"] as? Map<*, *>)?.get("clientBundleID")}")
+                AppLog.i(TAG, "queue item app=${(message["item"] as? Map<*, *>)?.get("clientBundleID")}")
                 url = item.url
                 itemUuid = item.uuid
                 val queued = message["item"] as? Map<*, *>
                 streaming = queued?.get("mediaType") == "streaming"
-                Log.i(TAG, "queue item host=${android.net.Uri.parse(item.url).host} mediaType=${queued?.get("mediaType")}")
+                AppLog.i(TAG, "queue item host=${android.net.Uri.parse(item.url).host} mediaType=${queued?.get("mediaType")}")
                 startMillis = item.startMillis
                 activity?.load()
             }
@@ -157,7 +171,7 @@ internal object CarPlayVideo : CarPlayVideoListener {
             "unhandledURL" -> onUrlLoaded(message)
             "stop", "removePlayQueueItem" -> stop()
             "setProperty" -> Unit
-            else -> Log.i(TAG, "video message $type keys=${message.keys}")
+            else -> AppLog.i(TAG, "video message $type keys=${message.keys}")
         }
     }
 
@@ -187,11 +201,11 @@ internal object CarPlayVideo : CarPlayVideoListener {
             ),
             "item" to linkedMapOf("uuid" to itemUuid),
         ))
-        Log.i(TAG, "asked the iPhone to load a ${android.net.Uri.parse(url).scheme} URL request=$id")
+        AppLog.i(TAG, "asked the iPhone to load a ${android.net.Uri.parse(url).scheme} URL request=$id")
         val response = try {
             answer.poll(URL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         } catch (_: Exception) {
-            Log.w(TAG, "no iPhone answer for request=$id")
+            AppLog.w(TAG, "no iPhone answer for request=$id")
             null
         } finally {
             pendingUrls.remove(id)
@@ -208,7 +222,7 @@ internal object CarPlayVideo : CarPlayVideoListener {
     private fun onUrlLoaded(message: Map<String, Any?>) {
         val response = message["response"] as? Map<*, *>
         val id = (response?.get("FCUP_Response_RequestID") as? Number)?.toLong()
-        Log.i(TAG, "iPhone unhandledURL answer request=$id keys=${message.keys} responseKeys=${response?.keys}")
+        AppLog.i(TAG, "iPhone unhandledURL answer request=$id keys=${message.keys} responseKeys=${response?.keys}")
         if (id != null) pendingUrls[id]?.offer(response)
     }
 
@@ -221,27 +235,28 @@ internal object CarPlayVideo : CarPlayVideoListener {
         sender.execute {
             // A reply that cannot be sent must never take CarPlay down with it.
             val sent = runCatching { target.sendVideoMessage(streamId, message) }
-                .onFailure { Log.w(TAG, "reply ${message["type"]} failed: ${it.javaClass.simpleName}") }
+                .onFailure { AppLog.w(TAG, "reply ${message["type"]} failed: ${it.javaClass.simpleName}") }
                 .getOrDefault(false)
-            if (!sent) Log.w(TAG, "reply ${message["type"]} not sent")
+            if (!sent) AppLog.w(TAG, "reply ${message["type"]} not sent")
         }
     }
 
     private fun show() {
         val context = appContext ?: return
         when {
-            url == null -> Log.w(TAG, "video player requested without a playable item")
-            !VideoInCar.allowed -> Log.w(TAG, "video player requested while not parked")
+            url == null -> AppLog.w(TAG, "video player requested without a playable item")
+            !VideoInCar.allowed -> AppLog.w(TAG, "video player requested while not parked")
             activity != null -> Unit
-            else -> context.startActivity(
-                Intent(context, CarPlayVideoActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            )
+            else -> {
+                val type = Class.forName("com.shihab.diplay.CarPlayVideoActivity")
+                context.startActivity(Intent(context, type).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
         }
     }
 
     private fun closePlayer(reason: String) {
         val player = activity ?: return
-        Log.i(TAG, "closing the video player: $reason")
+        AppLog.i(TAG, "closing the video player: $reason")
         player.finish()
     }
 

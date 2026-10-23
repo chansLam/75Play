@@ -1,7 +1,6 @@
 package com.shihab.diplay
 
 import android.net.Uri
-import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.ByteArrayDataSource
@@ -10,6 +9,7 @@ import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.TransferListener
 import com.shihab.diplay.airplay.VideoInCar
 import java.io.IOException
+import com.shihab.diplay.util.AppLog
 
 /**
  * Loads what the car can load itself (http, https, data) directly and asks the iPhone for
@@ -39,7 +39,7 @@ internal class IphoneResolvingDataSource(
         }
         if (scheme in DIRECT_SCHEMES) return openSource(upstream, dataSpec)
         val resolved = resolveOnIphone(url) ?: throw IOException("iPhone did not load the $scheme URL")
-        Log.i(TAG, "iPhone loaded $scheme URL status=${resolved.status} bytes=${resolved.data?.size} redirect=${resolved.location != null}")
+        AppLog.i(TAG, "iPhone loaded $scheme URL status=${resolved.status} bytes=${resolved.data?.size} redirect=${resolved.location != null}")
         resolved.location?.let { location ->
             if (redirects >= MAX_REDIRECTS) throw IOException("Too many iPhone URL redirects")
             // Reapply the policy: a resource loader's Location must not select an Android file,

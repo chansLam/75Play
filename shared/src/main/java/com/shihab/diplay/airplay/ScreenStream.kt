@@ -1,6 +1,5 @@
 package com.shihab.diplay.airplay
 
-import android.util.Log
 import java.io.Closeable
 import java.io.InputStream
 import java.net.InetAddress
@@ -9,6 +8,7 @@ import java.net.Socket
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import com.shihab.diplay.util.AppLog
 
 enum class VideoCodec { H264, H265 }
 
@@ -115,7 +115,7 @@ class ScreenStream(
                         // sync with the iPhone and the stream survives.
                         val consecutive = decryptFailures.incrementAndGet()
                         frameCounter.incrementAndGet()
-                        Log.w(TAG, "video frame auth failed, skipping frame (consecutive=$consecutive)", error)
+                        AppLog.w(TAG, "video frame auth failed, skipping frame (consecutive=$consecutive)", error)
                         onDiagnostic("video frame auth failed, skipped consecutive=$consecutive")
                         if (consecutive >= MAX_CONSECUTIVE_DECRYPT_FAILURES) throw error
                         return
@@ -124,7 +124,7 @@ class ScreenStream(
                     body
                 }
                 if (firstFrameLogged.compareAndSet(false, true)) {
-                    Log.i(
+                    AppLog.i(
                         TAG,
                         "video first decrypted frame sealed=${body.size} plain=${payload.size} " +
                         "head=${payload.hexPrefix(16)} chacha=${AirPlayCrypto.chachaImplementation}",
@@ -134,7 +134,7 @@ class ScreenStream(
             }
             OP_VIDEO_CONFIG -> {
                 val (codec, codecData) = ScreenCodec.detectConfig(body)
-                Log.i(TAG, "video codec config codec=$codec body=${body.size} data=${codecData.size}")
+                AppLog.i(TAG, "video codec config codec=$codec body=${body.size} data=${codecData.size}")
                 listener.onCodec(codec)
                 listener.onConfig(codecData)
             }

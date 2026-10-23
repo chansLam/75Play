@@ -1,12 +1,12 @@
 package com.shihab.diplay.airplay
 
-import android.util.Log
 import java.io.BufferedOutputStream
 import java.io.Closeable
 import java.io.DataOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
+import com.shihab.diplay.util.AppLog
 
 /**
  * Diagnostic capture for the encrypted UDP datagrams and decrypted RTP packets of one audio
@@ -64,10 +64,10 @@ class AudioPacketCapture(
                     it.writeInt(streamType)
                     it.writeLong(System.currentTimeMillis())
                     it.flush()
-                    Log.i(TAG, "audio capture started type=$streamType file=${file.absolutePath}")
+                    AppLog.i(TAG, "audio capture started type=$streamType file=${file.absolutePath}")
                 }
             } catch (error: Exception) {
-                Log.w(TAG, "audio capture could not open type=$streamType", error)
+                AppLog.w(TAG, "audio capture could not open type=$streamType", error)
                 null
             }
         }
@@ -102,7 +102,7 @@ class AudioPacketCapture(
                 if (packets % FLUSH_INTERVAL_PACKETS == 0) output.flush()
                 if (packets >= maxPackets) close()
             } catch (failure: Exception) {
-                Log.w(TAG, "audio capture write failed type=$streamType", failure)
+                AppLog.w(TAG, "audio capture write failed type=$streamType", failure)
                 close()
             }
         }
@@ -114,10 +114,10 @@ class AudioPacketCapture(
             output?.flush()
             output?.close()
         } catch (error: Exception) {
-            Log.w(TAG, "audio capture close failed type=$streamType", error)
+            AppLog.w(TAG, "audio capture close failed type=$streamType", error)
         } finally {
             if (output != null) {
-                Log.i(
+                AppLog.i(
                     TAG,
                     "audio capture stopped type=$streamType packets=$packets " +
                         "bytes=$bytesWritten file=${file.absolutePath}",

@@ -17,13 +17,15 @@ interface DiPlayHost {
     fun isCarPlayActive(): Boolean
     /** True while a connect attempt is in flight (session may exist but not yet active). */
     fun isCarPlayConnecting(): Boolean
+    /** Latest connection-stage line while connecting; blank otherwise. */
+    fun connectStageLabel(): String
     /** Cancel an in-flight connect (dialog Cancel / disconnect-while-connecting). */
     fun cancelConnectAttempt()
-    fun markReconnectNeeded()
     fun reconnectIfRunning()
-    /** Ask before applying a reconnect-required setting: OK = run [onApply] (save + reconnect),
-     * Cancel = do nothing (value is not saved). */
-    fun confirmReconnectChange(message: String, onApply: () -> Unit)
+    /** Reconnect-required setting. No session: run [onApply] immediately. A live session asks
+     * first: OK = [onApply] (save + reconnect), Cancel = [onCancel] (value is not saved).
+     * [onApply] is last so trailing lambdas still bind to it. */
+    fun confirmReconnectChange(message: String, onCancel: (() -> Unit)? = null, onApply: () -> Unit)
     fun updateCheckNow()
     fun exportDiagnosticsNow()
     fun setRootHideNavbar(enabled: Boolean)
@@ -50,6 +52,10 @@ interface DiPlayHost {
     fun closeCarHotspot(): Boolean
     fun carHotspotSsid(): String
     fun carHotspotPassphrase(): String
+    /** 最近一次扫描缓存，不等待新扫描。 */
+    fun peekWifiNetworks(): List<WifiEntry>
+    /** 发起一次扫描。结果由系统 SCAN_RESULTS 广播送达，不在这里阻塞。 */
+    fun requestWifiScan()
     fun scanWifiNetworks(callback: (List<WifiEntry>) -> Unit)
     fun connectToWifi(ssid: String, passphrase: String): Boolean
     /** SSID the head unit is currently connected to as station (blank if none). */

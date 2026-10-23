@@ -1,13 +1,13 @@
 package com.shihab.diplay.orchestration
 
 import android.content.Context
-import android.os.Build
+import com.shihab.diplay.compat.realSdkInt
 import com.shihab.diplay.network.ExistingWifiManager
 import com.shihab.diplay.network.LocalOnlyHotspotManager
 import com.shihab.diplay.network.ManualHotspotManager
 import com.shihab.diplay.network.WirelessHotspotManager
-import com.shihab.diplay.network.WirelessStartupException
-import com.shihab.diplay.network.WirelessStartupFailure
+import com.shihab.diplay.model.WirelessStartupException
+import com.shihab.diplay.model.WirelessStartupFailure
 import com.shihab.diplay.network.WifiP2pGroupManager
 
 /**
@@ -27,11 +27,11 @@ internal object HotspotPolicyRouter {
         onNetworkChanged: () -> Unit,
     ): WirelessHotspotManager = when (mode) {
         WirelessHotspotMode.WIFI_P2P -> {
-            check(Build.VERSION.SDK_INT >= 28)
+            check(realSdkInt() >= 28)
             WifiP2pGroupManager(context, onLog, preferredChannel = config.wifiP2pPreferredChannel)
         }
         WirelessHotspotMode.LOCAL_ONLY_HOTSPOT -> {
-            check(Build.VERSION.SDK_INT >= 26) { "Local hotspot requires Android 8; choose Wi-Fi Direct or Car hotspot" }
+            check(realSdkInt() >= 26) { "Local hotspot requires Android 8; choose Wi-Fi Direct or Car hotspot" }
             LocalOnlyHotspotManager(context, onLog)
         }
         WirelessHotspotMode.EXISTING_WIFI -> ExistingWifiManager(

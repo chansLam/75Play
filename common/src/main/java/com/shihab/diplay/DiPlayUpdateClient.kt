@@ -17,6 +17,7 @@ import okhttp3.TlsVersion
 import okhttp3.OkUrlFactory
 
 import com.shihab.diplay.core.UpdateEndpoints
+import com.shihab.diplay.util.AppLog
 
 /** GitHub-only updates with a domestic HTTPS mirror for release assets. */
 internal object DiPlayUpdateClient {
@@ -333,7 +334,7 @@ internal object DiPlayUpdateClient {
             if (candidate.protocol != "https" || !approvedHost) {
                 throw IOException("Untrusted update redirect: ${candidate.host}")
             }
-            var connection = if (android.os.Build.VERSION.SDK_INT < 22) {
+            var connection = if (com.shihab.diplay.compat.realSdkInt() < 22) {
                 legacyHttp.open(candidate) as HttpsURLConnection
             } else {
                 candidate.openConnection() as HttpsURLConnection
@@ -346,10 +347,10 @@ internal object DiPlayUpdateClient {
                 // OEM Android 5+ frameworks can also expose an SSLv3-only
                 // TLS fallback; retry that exact failure with bundled Conscrypt.
                 // Do not retry certificate, hostname, or other handshake errors.
-                if (android.os.Build.VERSION.SDK_INT < 22 || !isObsoleteSslv3Failure(failure)) {
+                if (com.shihab.diplay.compat.realSdkInt() < 22 || !isObsoleteSslv3Failure(failure)) {
                     throw failure
                 }
-                android.util.Log.w("DiPlayUpdate", "System TLS offered only SSLv3; retrying TLS 1.2")
+                AppLog.w("DiPlayUpdate", "System TLS offered only SSLv3; retrying TLS 1.2")
                 connection = legacyHttp.open(candidate) as HttpsURLConnection
                 configureRequest(connection, method)
                 try {

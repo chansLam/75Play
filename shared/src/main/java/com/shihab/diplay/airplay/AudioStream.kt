@@ -7,6 +7,7 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import com.shihab.diplay.util.AppLog
 
 enum class AudioCodecKind { AAC_LC, OPUS, LPCM }
 
@@ -88,14 +89,19 @@ class AudioStream(
         runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO) }
         val stats = StreamReceiveStats("audio type=$streamType", onDiagnostic)
         val buffer = ByteArray(DATAGRAM_BYTES)
+        var failures = 0
         try {
             while (!closed.get()) {
                 val packet = DatagramPacket(buffer, buffer.size)
                 try {
                     stats.reading()
                     socket.receive(packet)
+                    failures = 0
                 } catch (_: Exception) {
-                    if (closed.get()) return else continue
+                    if (closed.get()) return
+                    failures = receiveFailed(failures)
+                    if (closed.get()) return
+                    continue
                 }
                 stats.received(
                     size = packet.length,
@@ -108,7 +114,7 @@ class AudioStream(
                 val packetNumber = receivedPackets.incrementAndGet()
                 if (wire.size < RTP_HEADER_LEN + TAIL_LEN) {
                     if (packetNumber == 1) {
-                        android.util.Log.w(
+                        AppLog.w(
                             TAG,
                             "audio stream type=$streamType short packet bytes=${wire.size}",
                         )
@@ -135,7 +141,7 @@ class AudioStream(
                 } catch (error: Exception) {
                     val failureNumber = authenticationFailures.incrementAndGet()
                     if (failureNumber == 1) {
-                        android.util.Log.w(
+                        AppLog.w(
                             TAG,
                             "audio stream type=$streamType first decrypt failure " +
                                 "wire=${wire.toHexString()}",
@@ -149,14 +155,14 @@ class AudioStream(
                 val rtp = wire.copyOf(RTP_HEADER_LEN) + payload
                 val decryptedNumber = decryptedPackets.incrementAndGet()
                 if (decryptedNumber <= FIRST_PACKET_LOG_COUNT) {
-                    android.util.Log.i(
+                    AppLog.i(
                         TAG,
                         "audio stream type=$streamType packet=$decryptedNumber sample=$sample " +
                             "wireBytes=${wire.size} payloadBytes=${payload.size} " +
                             "payloadHead=${payload.copyOf(minOf(payload.size, 16)).toHexString()}",
                     )
                 } else if (decryptedNumber % PACKET_LOG_INTERVAL == 0) {
-                    android.util.Log.i(
+                    AppLog.i(
                         TAG,
                         "audio stream type=$streamType decrypted=$decryptedNumber " +
                             "authFailures=${authenticationFailures.get()}",
@@ -175,13 +181,32 @@ class AudioStream(
 
     private fun runControl(socket: DatagramSocket) {
         val buffer = ByteArray(DATAGRAM_BYTES)
+        var failures = 0
         while (!closed.get()) {
             try {
                 socket.receive(DatagramPacket(buffer, buffer.size))
+                failures = 0
             } catch (_: Exception) {
+                if (closed.get()) return
+                failures = receiveFailed(failures)
                 if (closed.get()) return
             }
         }
+    }
+
+    /** Back off, then close the stream after repeated receive failures so the loop cannot spin. */
+    private fun receiveFailed(failures: Int): Int {
+        val next = failures + 1
+        if (next >= 8) {
+            close()
+            return next
+        }
+        try {
+            Thread.sleep(25L * next)
+        } catch (_: InterruptedException) {
+            close()
+        }
+        return next
     }
 
     private fun bindAnyPort(): DatagramSocket {

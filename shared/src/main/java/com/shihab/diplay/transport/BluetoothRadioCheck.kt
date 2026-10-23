@@ -1,7 +1,7 @@
 package com.shihab.diplay.transport
 
-import com.shihab.diplay.network.WirelessStartupException
-import com.shihab.diplay.network.WirelessStartupFailure
+import com.shihab.diplay.model.WirelessStartupException
+import com.shihab.diplay.model.WirelessStartupFailure
 import java.io.IOException
 
 /**

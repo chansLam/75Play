@@ -1,10 +1,13 @@
 package com.shihab.diplay.bluetooth
 
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
+import android.content.BroadcastReceiver
 import android.content.Context
-import android.os.Build
+import android.content.Intent
+import android.content.IntentFilter
 import com.shihab.diplay.compat.BluetoothCompat
 import com.shihab.diplay.transport.BlockingDuplexByteStream
 import com.shihab.diplay.transport.BluetoothLinkCheck
@@ -15,6 +18,34 @@ import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+
+/**
+ * Order and budget for one AOSP RFCOMM open.
+ *
+ * A cached iAP2 record means SDP already finished, so the insecure socket (the link an iPhone
+ * paired with "just works" will accept) goes first. Without a cache the first lookup keeps the
+ * long KitKat budget. Later attempts stay short: a second full SDP wait rarely succeeds, but an
+ * insecure socket can still connect after a secure one stalls on authentication.
+ */
+internal object AospRfcommPlan {
+    enum class Method { SECURE, INSECURE, CHANNEL }
+
+    data class Step(val method: Method, val timeoutMillis: Long)
+
+    fun steps(serviceCached: Boolean): List<Step> = if (serviceCached) {
+        listOf(
+            Step(Method.INSECURE, 12_000L),
+            Step(Method.SECURE, 12_000L),
+            Step(Method.CHANNEL, 6_000L),
+        )
+    } else {
+        listOf(
+            Step(Method.SECURE, 18_000L),
+            Step(Method.INSECURE, 8_000L),
+            Step(Method.CHANNEL, 6_000L),
+        )
+    }
+}
 
 class AndroidBluetoothAdapter(
     private val context: Context
@@ -70,6 +101,7 @@ class AndroidBluetoothAdapter(
         }.getOrDefault(false)
     }
 
+    @SuppressLint("MissingPermission")
     override fun openRfcommStream(deviceAddress: String, uuid: String): BlockingDuplexByteStream {
         // Radio off / missing adapter are known before the attempt: throw the typed start failure so the
         // host screen can name it instead of silently waiting through an attempt that cannot succeed.
@@ -82,35 +114,39 @@ class AndroidBluetoothAdapter(
         if (radioBlocker != null) throw BluetoothRadioCheck.failure(radioBlocker)
         val device = a.getRemoteDevice(deviceAddress)
         val serviceUuid = UUID.fromString(uuid)
+        // Discovery holds the radio; SDP and socket connect both stall until it stops.
+        runCatching { a.cancelDiscovery() }
+        if (device.bondState != BluetoothDevice.BOND_BONDED) {
+            runCatching { ensureClassicBond(device) }
+        }
+        val cached = serviceCached(device, serviceUuid) ||
+            runCatching { refreshServiceCache(a, device, serviceUuid) }.getOrDefault(false)
 
+        var pending = AospRfcommPlan.steps(cached)
         var socket: BluetoothSocket? = null
         var lastError: Throwable? = null
-
-        // 1. Try standard secure RFCOMM
-        try {
-            socket = connectSocket(device, a) { it.createRfcommSocketToServiceRecord(serviceUuid) }
-        } catch (t: Throwable) {
-            lastError = t
-        }
-
-        // 2. Fallback to insecure RFCOMM on legacy or custom vehicle ROMs where MITM pairing is absent
-        if (socket == null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.GINGERBREAD_MR1) {
+        while (pending.isNotEmpty() && socket == null) {
+            val step = pending.first()
+            pending = pending.drop(1)
             try {
-                socket = connectSocket(device, a) { it.createInsecureRfcommSocketToServiceRecord(serviceUuid) }
-            } catch (t: Throwable) {
-                lastError = t
-            }
-        }
-
-        // 3. Channel 1 reflection fallback if SDP service record resolution was stripped by vehicle ROM
-        if (socket == null) {
-            try {
-                socket = connectSocket(device, a) { dev ->
-                    val method = dev.javaClass.getMethod("createInsecureRfcommSocket", Int::class.javaPrimitiveType)
-                    method.invoke(dev, 1) as BluetoothSocket
+                socket = connectSocket(device, a, step.timeoutMillis) { dev ->
+                    when (step.method) {
+                        AospRfcommPlan.Method.SECURE ->
+                            dev.createRfcommSocketToServiceRecord(serviceUuid)
+                        AospRfcommPlan.Method.INSECURE ->
+                            dev.createInsecureRfcommSocketToServiceRecord(serviceUuid)
+                        AospRfcommPlan.Method.CHANNEL -> {
+                            val method = dev.javaClass.getMethod(
+                                "createInsecureRfcommSocket",
+                                Int::class.javaPrimitiveType,
+                            )
+                            method.invoke(dev, 1) as BluetoothSocket
+                        }
+                    }
                 }
-            } catch (_: Throwable) {
-                // Ignore reflection fallback error and keep primary lastError
+            } catch (t: Throwable) {
+                // A missing channel-1 method must not hide the SDP error that actually failed.
+                if (step.method != AospRfcommPlan.Method.CHANNEL || lastError == null) lastError = t
             }
         }
 
@@ -121,6 +157,80 @@ class AndroidBluetoothAdapter(
         }
 
         return BluetoothRfcommDuplexStream(socket)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun serviceCached(device: BluetoothDevice, uuid: UUID): Boolean =
+        runCatching {
+            device.uuids.orEmpty().any { it.uuid == uuid }
+        }.getOrDefault(false)
+
+    /** Classic bond. An iPhone will not accept iAP2 RFCOMM on an unpaired or LE-only link. */
+    @SuppressLint("MissingPermission")
+    private fun ensureClassicBond(device: BluetoothDevice) {
+        if (device.bondState == BluetoothDevice.BOND_BONDED) return
+        awaitDeviceBroadcast(
+            action = BluetoothDevice.ACTION_BOND_STATE_CHANGED,
+            address = device.address,
+            timeoutMillis = 20_000L,
+        ) {
+            val started = runCatching {
+                // Hidden since KitKat: 1 = TRANSPORT_BREDR. The public createBond() may bond LE only.
+                val method = device.javaClass.getMethod("createBond", Int::class.javaPrimitiveType)
+                method.invoke(device, 1) as Boolean
+            }.getOrElse {
+                runCatching { device.createBond() }.getOrDefault(false)
+            }
+            started || device.bondState == BluetoothDevice.BOND_BONDING
+        }
+    }
+
+    /** Ask the phone for its service list so the socket connect does not sit in a cold SDP lookup. */
+    @SuppressLint("MissingPermission")
+    private fun refreshServiceCache(
+        adapter: BluetoothAdapter,
+        device: BluetoothDevice,
+        uuid: UUID,
+    ): Boolean {
+        if (serviceCached(device, uuid)) return true
+        awaitDeviceBroadcast(
+            action = BluetoothDevice.ACTION_UUID,
+            address = device.address,
+            timeoutMillis = 8_000L,
+        ) {
+            runCatching { adapter.cancelDiscovery() }
+            runCatching { device.fetchUuidsWithSdp() }.getOrDefault(false)
+        }
+        return serviceCached(device, uuid)
+    }
+
+    @SuppressLint("MissingPermission", "UnspecifiedRegisterReceiverFlag")
+    private fun awaitDeviceBroadcast(
+        action: String,
+        address: String,
+        timeoutMillis: Long,
+        start: () -> Boolean,
+    ) {
+        val latch = CountDownLatch(1)
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context, intent: Intent) {
+                if (intent.action != action) return
+                val extra = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
+                if (extra?.address?.equals(address, ignoreCase = true) != true) return
+                if (action == BluetoothDevice.ACTION_BOND_STATE_CHANGED) {
+                    val state = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.BOND_NONE)
+                    if (state == BluetoothDevice.BOND_BONDING) return
+                }
+                latch.countDown()
+            }
+        }
+        val app = context.applicationContext
+        app.registerReceiver(receiver, IntentFilter(action))
+        try {
+            if (start()) latch.await(timeoutMillis, TimeUnit.MILLISECONDS)
+        } finally {
+            runCatching { app.unregisterReceiver(receiver) }
+        }
     }
 
     private fun connectSocket(

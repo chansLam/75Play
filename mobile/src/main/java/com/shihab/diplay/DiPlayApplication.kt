@@ -2,14 +2,14 @@ package com.shihab.diplay
 
 import android.content.Context
 import android.os.Build
-import android.util.Log
+import com.shihab.diplay.compat.realSdkInt
 import androidx.multidex.MultiDexApplication
 import java.io.File
-import java.io.PrintWriter
 import java.io.StringWriter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.shihab.diplay.util.AppLog
 
 class DiPlayApplication : MultiDexApplication() {
 
@@ -27,9 +27,13 @@ class DiPlayApplication : MultiDexApplication() {
             bootLog("attach-EXCEPTION: " + t.javaClass.name + ": " + t.message)
             try {
                 val sw = StringWriter()
-                t.printStackTrace(PrintWriter(sw))
+                sw.write(t.stackTraceToString())
                 bootLog(sw.toString())
+                AppLog.w(TAG, "attachBaseContext failed on " + t.javaClass.name, t)
             } catch (ignored: Throwable) {
+                // Crash-recorder path: this logging must never itself crash startup — stay silent
+                // (Log.w cannot throw) and rethrow the original exception below.
+                AppLog.w(TAG, "bootLog stack dump failed: ${ignored.message}", ignored)
             }
             throw t
         }
@@ -64,6 +68,9 @@ class DiPlayApplication : MultiDexApplication() {
             try {
                 recordCrash(this, thread, throwable)
             } catch (ignored: Throwable) {
+                // Never re-enter a crashing handler or throw here — the default handler still
+                // runs in finally, so the process dies exactly as it would without us.
+                AppLog.w(TAG, "recordCrash failed on ${thread.name}: ${ignored.message}", ignored)
             } finally {
                 defaultHandler?.uncaughtException(thread, throwable)
             }
@@ -78,10 +85,14 @@ class DiPlayApplication : MultiDexApplication() {
             if (f.exists() && f.length() > 64 * 1024) f.delete()
             f.appendText(line)
         } catch (ignored: Throwable) {
+            // Boot marker is best-effort diagnostics; missing /sdcard must not affect startup.
+            AppLog.w(TAG, "boot-log sdcard write failed: ${ignored.message}")
         }
         try {
             File(applicationContext.filesDir, "diplay-boot.log").appendText(line)
         } catch (ignored: Throwable) {
+            // Private-dir write fallback above already covers the common case; stay silent here.
+            AppLog.w(TAG, "boot-log private write failed: ${ignored.message}")
         }
     }
 
@@ -91,7 +102,7 @@ class DiPlayApplication : MultiDexApplication() {
         fun recordCrash(context: Context, thread: Thread, throwable: Throwable) {
             val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date())
             val stringWriter = StringWriter()
-            throwable.printStackTrace(PrintWriter(stringWriter))
+            stringWriter.write(throwable.stackTraceToString())
             val stackTrace = stringWriter.toString()
 
             val logEntry = buildString {
@@ -105,7 +116,7 @@ class DiPlayApplication : MultiDexApplication() {
                 append("=================================================\n")
             }
 
-            Log.e(TAG, logEntry)
+            AppLog.e(TAG, logEntry)
 
             // 1. Always write to private app directory (preserved)
             runCatching {
@@ -125,7 +136,7 @@ class DiPlayApplication : MultiDexApplication() {
             }
 
             // 3. On legacy Android (API <= 28), also attempt public locations for U-disk / file manager copy.
-            if (Build.VERSION.SDK_INT <= 28) {
+            if (realSdkInt() <= 28) {
                 runCatching {
                     @Suppress("DEPRECATION")
                     val downloads = android.os.Environment.getExternalStoragePublicDirectory(

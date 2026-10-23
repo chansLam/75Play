@@ -2,7 +2,7 @@ package com.shihab.diplay.network
 
 import android.content.Context
 import com.shihab.diplay.adb.LocalAdb
-import com.shihab.diplay.orchestration.WirelessHotspotMode
+import com.shihab.diplay.model.WirelessHotspotMode
 
 object CarHotspotSettings {
     private fun prefs(context: Context) = context.getSharedPreferences("diplay_car_hotspot", Context.MODE_PRIVATE)

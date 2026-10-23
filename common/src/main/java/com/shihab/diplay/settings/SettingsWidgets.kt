@@ -14,6 +14,7 @@ import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
 import com.shihab.diplay.airplay.CarPlayDisplayScale
+import com.shihab.diplay.compat.realSdkInt
 import com.shihab.diplay.host.R
 
 object SettingsWidgets {
@@ -76,7 +77,7 @@ object SettingsWidgets {
             this.contentDescription = contentDescription
             isEnabled = enabled
             if (theme.isOverlay) {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                if (realSdkInt() >= android.os.Build.VERSION_CODES.M) {
                     thumbTintList = ColorStateList(
                         arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
                         intArrayOf(theme.accent, theme.textSecondary),

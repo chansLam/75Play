@@ -38,6 +38,9 @@ class StartupDiagnosticSnapshotTest {
             override fun startActivity(intent: Intent) { launch = intent }
         }
         BootReceiver().onReceive(context, Intent(Intent.ACTION_BOOT_COMPLETED))
+        // v2.0.1 boots async (goAsync + background thread); wait for the launch to land.
+        awaitUntil { StartupDiagnosticSnapshot.report(app).contains("launchResult=startActivity-returned") }
+        assertNotNull(launch)
         assertEquals(DiPlayActivity::class.java.name, launch!!.component!!.className)
         assertTrue(launch!!.flags and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
         assertTrue(StartupDiagnosticSnapshot.report(app).contains("launchResult=startActivity-returned"))
@@ -49,6 +52,7 @@ class StartupDiagnosticSnapshotTest {
             override fun startActivity(intent: Intent) { throw SecurityException("Jane's phone token=private-data") }
         }
         BootReceiver().onReceive(context, Intent(Intent.ACTION_BOOT_COMPLETED))
+        awaitUntil { StartupDiagnosticSnapshot.report(app).contains("launchResult=failed") }
         val failed = StartupDiagnosticSnapshot.report(app)
         assertTrue(failed.contains("launchResult=failed failureClass=SecurityException"))
         assertFalse(failed.contains("Jane")); assertFalse(failed.contains("private-data"))
@@ -56,6 +60,16 @@ class StartupDiagnosticSnapshotTest {
         AirPlayPersistence.saveAutoStartOnBoot(app, false)
         BootReceiver().onReceive(context, Intent(Intent.ACTION_BOOT_COMPLETED))
         assertTrue(StartupDiagnosticSnapshot.report(app).contains("launchResult=disabled failureClass=none"))
+    }
+
+    /** Poll until [cond] holds; Robolectric runs the real "diplay-boot" Thread, so a deadline loop
+     *  (not immediate assertion) is the correct way to observe the async boot launch. */
+    private fun awaitUntil(timeoutMs: Long = 3_000L, cond: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (!cond() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20)
+        }
+        assertTrue("boot launch did not complete within ${timeoutMs}ms", cond())
     }
 
     @Test fun unrelatedBroadcastsDoNotCreateOrOverwriteBootEvidence() {

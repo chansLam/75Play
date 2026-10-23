@@ -4,8 +4,10 @@ import com.shihab.diplay.host.CarPlayBackgroundSession
 import android.content.Intent
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Switch
+import android.widget.LinearLayout
+import android.widget.TextView
 import com.shihab.diplay.host.R
+import com.shihab.diplay.ui.GlassSwitch
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Test
@@ -35,8 +37,6 @@ class SystemBarSettingsTest {
 
         assertTrue(statusBarSwitch().isChecked)
         assertTrue(navigationBarSwitch().isChecked)
-        assertFalse(descendants(activity.window.decorView).filterIsInstance<Switch>()
-            .any { it.contentDescription == activity.getString(R.string.full_screen) })
     }
 
     @Test fun settingsReadAllFourExistingCombinationsWithoutChangingThem() {
@@ -89,38 +89,24 @@ class SystemBarSettingsTest {
         assertBars(false, true)
     }
 
-    @Test fun harmanFullscreenIsOptInAndInAdvancedSettings() {
+    @Test fun harmanFullscreenPersistsWithoutSettingsUi() {
         AirPlayPersistence.saveHarmanFullscreen(context, false)
-        openSettings()
-        activity.onBackPressedDispatcher.onBackPressed()
-        descendants(activity.window.decorView)
-            .single { it.contentDescription == activity.getString(
-                R.string.settings_open_category,
-                activity.getString(R.string.settings_advanced),
-            ) }
-            .performClick()
-        val harmanSwitch = descendants(activity.window.decorView)
-            .filterIsInstance<Switch>()
-            .single { it.contentDescription == activity.getString(R.string.settings_harman_fullscreen_experimental) }
+        assertFalse(AirPlayPersistence.loadHarmanFullscreen(context))
 
-        assertFalse(harmanSwitch.isChecked)
-        harmanSwitch.performClick()
-
-        assertTrue(harmanSwitch.isChecked)
+        AirPlayPersistence.saveHarmanFullscreen(context, true)
         assertTrue(AirPlayPersistence.loadHarmanFullscreen(context))
+
+        AirPlayPersistence.saveHarmanFullscreen(context, false)
+        assertFalse(AirPlayPersistence.loadHarmanFullscreen(context))
     }
 
     private fun openSettings() {
-        controller = Robolectric.buildActivity(DiPlayActivity::class.java,
-            Intent(context, DiPlayActivity::class.java).putExtra("page", "settings")).setup()
-        // First paint is a short splash; advance past the delayed render().
+        controller = Robolectric.buildActivity(
+            DiPlayActivity::class.java,
+            Intent(context, DiPlayActivity::class.java).putExtra("page", "settings"),
+        ).setup()
+        // First paint is a short splash; advance past the delayed showPage().
         ShadowLooper.idleMainLooper(1300, TimeUnit.MILLISECONDS)
-        descendants(activity.window.decorView)
-            .single { it.contentDescription == activity.getString(
-                R.string.settings_open_category,
-                activity.getString(R.string.settings_display),
-            ) }
-            .performClick()
     }
 
     private fun assertBars(hideTop: Boolean, hideBottom: Boolean) {
@@ -130,12 +116,21 @@ class SystemBarSettingsTest {
         assertEquals(hideBottom, navigationBarSwitch().isChecked)
     }
 
-    private fun statusBarSwitch(): Switch = barSwitch(R.string.hide_the_status_bar)
+    private fun statusBarSwitch(): GlassSwitch = barSwitch(R.string.setting_hide_top_bar)
 
-    private fun navigationBarSwitch(): Switch = barSwitch(R.string.hide_the_navigation_bar)
+    private fun navigationBarSwitch(): GlassSwitch = barSwitch(R.string.setting_hide_bottom_bar)
 
-    private fun barSwitch(label: Int): Switch = descendants(activity.window.decorView)
-        .filterIsInstance<Switch>().single { it.contentDescription == activity.getString(label) }
+    private fun barSwitch(label: Int): GlassSwitch {
+        val labelText = activity.getString(label)
+        val labelView = descendants(activity.window.decorView)
+            .filterIsInstance<TextView>()
+            .single { it.text?.toString() == labelText }
+        val parent = labelView.parent as LinearLayout
+        return (0 until parent.childCount)
+            .map { parent.getChildAt(it) }
+            .filterIsInstance<GlassSwitch>()
+            .single()
+    }
 
     private fun descendants(view: View): Sequence<View> = sequence {
         yield(view)

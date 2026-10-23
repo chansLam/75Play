@@ -1,6 +1,6 @@
 package com.shihab.diplay.network
 
-import com.shihab.diplay.transport.Iap2WirelessSecurity
+import com.shihab.diplay.model.Iap2WirelessSecurity
 import java.io.Closeable
 import java.net.InetAddress
 

@@ -3,7 +3,7 @@ package com.shihab.diplay
 import android.content.Context
 import com.shihab.diplay.airplay.CarPlaySize
 import com.shihab.diplay.host.R
-import com.shihab.diplay.orchestration.ManualHotspotValidation
+import com.shihab.diplay.model.ManualHotspotValidation
 
 internal fun CarPlaySize.localizedLabel(context: Context): String = context.getString(when (this) {
     CarPlaySize.LARGE -> R.string.option_size_large

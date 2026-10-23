@@ -2,7 +2,7 @@ package com.shihab.diplay
 
 import android.media.MediaCodecList
 import android.media.MediaFormat
-import android.os.Build
+import com.shihab.diplay.compat.realSdkInt
 
 /**
  * HEVC is worth asking for only when a hardware decoder plays it. Without one, Android picks its own
@@ -16,10 +16,11 @@ internal object HevcSupport {
         requested && (decoders.any { it.hardware } || softwareChosen && decoders.isNotEmpty())
 
     fun decoders(): List<Decoder> = runCatching {
+        if (realSdkInt() < 21) return emptyList()
         MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.filter { info ->
             !info.isEncoder && info.supportedTypes.any { it.equals(MediaFormat.MIMETYPE_VIDEO_HEVC, ignoreCase = true) }
         }.map { info ->
-            Decoder(info.name, if (Build.VERSION.SDK_INT >= 29) info.isHardwareAccelerated
+            Decoder(info.name, if (realSdkInt() >= 29) info.isHardwareAccelerated
                 else !info.name.startsWith("OMX.google.") && !info.name.startsWith("c2.android."))
         }
     }.getOrDefault(emptyList())

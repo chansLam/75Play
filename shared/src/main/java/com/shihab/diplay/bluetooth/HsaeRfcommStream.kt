@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
 import android.os.RemoteException
-import android.util.Log
 import com.anwsdk.service.IAnwPhoneLink
 import com.anwsdk.service.IAnwSPPDataCallBack
 import com.anwsdk.service.IAnwSocketDataCallBack
@@ -16,6 +15,7 @@ import java.util.ArrayDeque
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import com.shihab.diplay.util.AppLog
 
 class HsaeRfcommStream private constructor(
     private val context: Context,
@@ -166,7 +166,7 @@ class HsaeRfcommStream private constructor(
                 service.ANWBT_SPPDisconnect(connectionIndex)
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Error disconnecting HSAE RFCOMM index=$connectionIndex", e)
+            AppLog.w(TAG, "Error disconnecting HSAE RFCOMM index=$connectionIndex", e)
         }
         runCatching {
             context.unbindService(connection)
@@ -180,7 +180,7 @@ class HsaeRfcommStream private constructor(
         private val EMPTY = ByteArray(0)
 
         fun connect(context: Context, address: String, uuidString: String): BlockingDuplexByteStream {
-            Log.i(TAG, "Connecting HSAE RFCOMM to $address uuid=$uuidString")
+            AppLog.i(TAG, "Connecting HSAE RFCOMM to $address uuid=$uuidString")
             val latch = CountDownLatch(1)
             var phoneLinkService: IAnwPhoneLink? = null
             val serviceConnection = object : ServiceConnection {
@@ -230,10 +230,10 @@ class HsaeRfcommStream private constructor(
                 service.ANWBT_SocketInit()
                 val index = intArrayOf(-1)
                 var ret = service.ANWBT_SocketConnect(1, address, guidBytes, 0, 0L, 0L, index)
-                Log.i(TAG, "ANWBT_SocketConnect(GUID) returned $ret index=${index[0]}")
+                AppLog.i(TAG, "ANWBT_SocketConnect(GUID) returned $ret index=${index[0]}")
                 if (ret < 0 || index[0] < 0) {
                     ret = service.ANWBT_SocketConnect(1, address, rfcBytes, 0, 0L, 0L, index)
-                    Log.i(TAG, "ANWBT_SocketConnect(RFC) returned $ret index=${index[0]}")
+                    AppLog.i(TAG, "ANWBT_SocketConnect(RFC) returned $ret index=${index[0]}")
                 }
                 if (ret >= 0 && index[0] >= 0) {
                     val stream = HsaeRfcommStream(
@@ -246,11 +246,11 @@ class HsaeRfcommStream private constructor(
                         sppCallback = null
                     )
                     streamInstance = stream
-                    Log.i(TAG, "HSAE Socket connect successful index=${index[0]}")
+                    AppLog.i(TAG, "HSAE Socket connect successful index=${index[0]}")
                     return stream
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "SocketConnect failed, falling back to SPP: ${e.message}")
+                AppLog.w(TAG, "SocketConnect failed, falling back to SPP: ${e.message}")
             }
 
             // Fallback to SPP mode
@@ -267,11 +267,11 @@ class HsaeRfcommStream private constructor(
                 service.ANWBT_SPPInit(guidBytes)
                 val index = intArrayOf(-1)
                 var ret = service.ANWBT_SPPConnect(address, guidBytes, index)
-                Log.i(TAG, "ANWBT_SPPConnect(GUID) returned $ret index=${index[0]}")
+                AppLog.i(TAG, "ANWBT_SPPConnect(GUID) returned $ret index=${index[0]}")
                 if (ret < 0 || index[0] < 0) {
                     service.ANWBT_SPPInit(rfcBytes)
                     ret = service.ANWBT_SPPConnect(address, rfcBytes, index)
-                    Log.i(TAG, "ANWBT_SPPConnect(RFC) returned $ret index=${index[0]}")
+                    AppLog.i(TAG, "ANWBT_SPPConnect(RFC) returned $ret index=${index[0]}")
                 }
                 if (ret >= 0 && index[0] >= 0) {
                     val stream = HsaeRfcommStream(
@@ -284,11 +284,11 @@ class HsaeRfcommStream private constructor(
                         sppCallback = sppCallback
                     )
                     streamInstance = stream
-                    Log.i(TAG, "HSAE SPP connect successful index=${index[0]}")
+                    AppLog.i(TAG, "HSAE SPP connect successful index=${index[0]}")
                     return stream
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "SPPConnect failed: ${e.message}")
+                AppLog.w(TAG, "SPPConnect failed: ${e.message}")
             }
 
             runCatching { context.unbindService(serviceConnection) }

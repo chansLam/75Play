@@ -1,7 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 纯深色窗口背景：供 CarPlayHostActivity 等全屏宿主使用，避免切换瞬间闪出 DiPlay 启动背景图。
-     必须是 drawable REFERENCE（Freescale i.MX6 ROM 解析资源名，纯 color literal 会崩）。 -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="rectangle">
-    <solid android:color="#FF0B1020" />
+<!-- Solid window background for CarPlayHostActivity. Must stay a drawable reference. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#FF0B1016" />
 </shape>

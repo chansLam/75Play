@@ -1,11 +1,13 @@
 package com.shihab.diplay.network
 
+import com.shihab.diplay.util.AppLog
 import java.util.concurrent.FutureTask
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
 /** Uses only a firmware-advertised command for the saved hotspot; never configures a replacement AP. */
 internal object CarHotspotAdbFallback {
+    private const val TAG = "CarHotspotAdbFallback"
     private const val EXIT = "DIPLAY_HOTSPOT_EXIT:"
 
     fun start(deadline: Long, cancelled: () -> Boolean, state: () -> Boolean?,
@@ -102,8 +104,11 @@ internal object CarHotspotAdbFallback {
             }
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
-        } catch (_: java.util.concurrent.ExecutionException) { }
-        finally {
+        } catch (e: java.util.concurrent.ExecutionException) {
+            // The ADB fallback action threw; without this log the real hotspot failure cause
+            // was silently swallowed, leaving no trace when the bring-up fell through.
+            AppLog.w(TAG, "hotspot ADB fallback action failed", e.cause ?: e)
+        } finally {
             if (!task.isDone) { abort(); task.cancel(true) }
         }
         return false

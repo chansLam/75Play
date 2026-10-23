@@ -62,8 +62,10 @@ internal object AudioChannelMapper {
         // the head unit mutes STREAM_MUSIC during a call (musicVolume=0), so call audio written
         // to the music stream is silent even though PCM decodes and writes fine.
         "telephony" -> AudioChannelSelection(AudioChannel.PHONE, AudioContentType.SPEECH, AudioManager.STREAM_VOICE_CALL)
+        // STREAM_MUSIC is silent on the CS75. Siri uses the notification stream unless the
+        // renderer overrides it with the user's media channel.
         "speechrecognition" ->
-            AudioChannelSelection(AudioChannel.ASSISTANT, AudioContentType.SPEECH)
+            AudioChannelSelection(AudioChannel.ASSISTANT, AudioContentType.SPEECH, AudioManager.STREAM_NOTIFICATION)
         "media" -> AudioChannelSelection(AudioChannel.MEDIA, AudioContentType.MUSIC)
         "default", "alert", "compatibility" ->
             AudioChannelSelection(AudioChannel.NAVIGATION, AudioContentType.SPEECH, navigationStreamType)
@@ -77,7 +79,7 @@ internal object AudioChannelMapper {
     ): AudioChannelSelection = when (audioType) {
         "telephony" -> AudioChannelSelection(AudioChannel.PHONE, AudioContentType.SPEECH, AudioManager.STREAM_VOICE_CALL)
         "speechrecognition" ->
-            AudioChannelSelection(AudioChannel.ASSISTANT, AudioContentType.SPEECH)
+            AudioChannelSelection(AudioChannel.ASSISTANT, AudioContentType.SPEECH, AudioManager.STREAM_NOTIFICATION)
         "media", "compatibility" ->
             AudioChannelSelection(AudioChannel.MEDIA, AudioContentType.MUSIC)
         "default", "alert" -> AudioChannelSelection(AudioChannel.NAVIGATION, AudioContentType.SPEECH, navigationStreamType)

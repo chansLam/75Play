@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="update_checking">Проверка обновлений…</string>
+    <string name="update_up_to_date">Установлена последняя версия.</string>
+    <string name="update_no_notes">Заметки к выпуску недоступны.</string>
+    <string name="update_parked_notice">Припаркуйтесь и отключите CarPlay перед установкой. Android попросит подтвердить установку.</string>
+    <string name="update_download">Скачать обновление</string>
+    <string name="update_downloading">Загрузка и проверка APK…</string>
+    <string name="update_install_notice">Скачанный APK прошёл проверку SHA-256, имени пакета и сертификата подписи. Открыть установщик Android сейчас?</string>
+    <string name="update_install">Открыть установщик</string>
+    <string name="update_disconnect_first">Отключите CarPlay и припаркуйтесь перед загрузкой или установкой обновления.</string>
+    <string name="update_install_unavailable">Системный установщик недоступен на этом устройстве.</string>
+    <string name="update_failed">Ошибка обновления</string>
+    <string name="update_verifying">Проверка SHA-256 и сертификата подписи APK…</string>
+    <string name="update_downloading_phase">Загрузка подписанного пакета обновления</string>
+    <string name="update_manual_saved">Проверенная копия также сохранена для ручной установки:
+%1$s</string>
+    <string name="update_manual_install_help">Это головное устройство не приняло системный intent установщика APK. Скачанный и проверенный APK сохранён по адресу:
+
+%1$s
+
+На стоянке откройте файловый менеджер и выберите этот APK в загрузках. Если на устройстве нет установщика, используйте ПК с ADB или установщик производителя.</string>
+    <string name="update_manual_install_no_copy">Головное устройство не приняло системный intent установщика APK, а общедоступное хранилище загрузок недоступно. Скачайте APK на компьютере с официального GitHub Release 75Play и установите его через ADB или установщик головного устройства на стоянке.</string>
+    <string name="update_notes_heading">Что нового</string>
+    <string name="update_available_heading">Доступно обновление</string>
+    <string name="update_available_subtitle">Доступно: %1$s</string>
+    <string name="update_available_description">Готовы к загрузке новые функции и исправления.</string>
+    <string name="update_ready_heading">Пакет обновления готов</string>
+    <string name="update_ready_subtitle">%1$s · Загрузка и проверка завершены</string>
+    <string name="update_dialog_subtitle">Обновление ПО 75Play</string>
+    <string name="update_progress_step_download">Загрузка пакета обновления</string>
+    <string name="update_progress_step_verify">Проверить SHA-256 и сертификат подписи</string>
+    <string name="update_progress_step_prepare">Подготовить пакет установки</string>
+    <string name="update_preparing">Подготовка установочного пакета…</string>
+    <string name="update_continue_background">Продолжить в фоне</string>
+    <string name="update_tls_unavailable">Это устройство не может установить безопасное TLS-соединение с сервером обновлений. Скачайте APK из официального GitHub Release через другой браузер или компьютер и установите его вручную.</string>
+</resources>

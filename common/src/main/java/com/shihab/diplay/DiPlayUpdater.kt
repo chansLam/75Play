@@ -8,6 +8,7 @@ import com.shihab.diplay.host.R
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.Executors
+import com.shihab.diplay.util.AppLog
 
 /**
  * Checks for signed GitHub Release updates without blocking the UI.
@@ -66,7 +67,7 @@ internal class DiPlayUpdater(private val activity: DiPlayActivity) {
                     }
                 }
             } catch (error: Exception) {
-                android.util.Log.w("DiPlayUpdate", "Release check failed", error)
+                AppLog.w("DiPlayUpdate", "Release check failed", error)
                 if (manual) onUi { showFailure(error) }
             } finally {
                 busy = false
@@ -128,7 +129,7 @@ internal class DiPlayUpdater(private val activity: DiPlayActivity) {
                 } catch (error: Exception) {
                     // Public storage is optional. Do not reject a signed download on an OEM
                     // whose Downloads volume is missing or throws an unexpected exception.
-                    android.util.Log.w("DiPlayUpdate", "Public APK copy unavailable", error)
+                    AppLog.w("DiPlayUpdate", "Public APK copy unavailable", error)
                     null
                 }
                 if (cancelled || closed) return@execute
@@ -139,7 +140,7 @@ internal class DiPlayUpdater(private val activity: DiPlayActivity) {
                     showInstallPrompt(file, release.tag)
                 }
             } catch (error: Exception) {
-                android.util.Log.w("DiPlayUpdate", "Update download or verification failed", error)
+                AppLog.w("DiPlayUpdate", "Update download or verification failed", error)
                 if (!cancelled) onUi { showFailure(error) }
             } finally {
                 busy = false
@@ -197,7 +198,7 @@ internal class DiPlayUpdater(private val activity: DiPlayActivity) {
     }
 
     private fun showInstallerUnavailable(error: Exception?) {
-        android.util.Log.w("DiPlayUpdate", "No system package installer accepted the verified APK", error)
+        AppLog.w("DiPlayUpdate", "No system package installer accepted the verified APK", error)
         val copy = publicInstallCopy
         val message = if (copy?.isFile == true) {
             activity.getString(R.string.update_manual_install_help, copy.absolutePath)

@@ -1,7 +1,7 @@
 name: Release
 
 # Push a version tag to build a signed standalone APK and publish a GitHub Release.
-# Example: git tag v2.0.0 && git push origin v2.0.0
+# Example: git tag v2.0.1 && git push origin v2.0.1
 #
 # Required repository secrets:
 #   ANDROID_KEYSTORE_BASE64

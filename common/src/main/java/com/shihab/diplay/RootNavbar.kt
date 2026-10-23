@@ -1,85 +1,76 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.shihab.diplay
 
-import java.util.concurrent.TimeUnit
 import android.content.Context
-import android.util.Log
+import com.shihab.diplay.util.AppLog
 
 /**
  * Root-level "hide the system navigation bar globally". Sets the property the Android system
  * reads to decide whether a navigation bar exists (qemu.hw.mainkeys=1 means "no nav bar"),
- * then restarts SystemUI so the change applies immediately and stays hidden across every app
- * until the property is reset (or the device reboots). Requires a rooted head unit with a
- * working "su". OEM launcher docks (e.g. Changan / 氢桌面 left dock) may not honour the flag.
+ * then restarts the display / SystemUI stack so the change applies immediately and stays
+ * hidden across every app until the property is reset. Requires a rooted head unit with a
+ * working "su".
  *
- * Robustness notes for the CS75 (Freescale / KitKat):
- *  - The "su" binary lives at different paths depending on the root method, so several
- *    candidates are probed instead of assuming a bare "su".
- *  - The SystemUI package / process differs across OEM builds (com.android.systemui,
- *    Changan / Hydrogen custom shells), so a few candidates are force-stopped and then
- *    restarted so the nav-bar property is re-read.
+ * OEM launcher docks (e.g. Changan / 氢桌面 left dock) are a separate window and may not
+ * honour this flag — use the left-dock safe-area inset for those.
+ *
+ * CS75 (Freescale / KitKat) notes:
+ *  - KitKat re-reads mainkeys when surfaceflinger / SystemUI restart; am force-stop alone
+ *    often leaves the old NavigationBar up. Prefer killall surfaceflinger (screen blinks once).
+ *  - Verify with getprop before treating apply as success.
  */
 object RootNavbar {
     const val TAG = "DiPlay-RootNavbar"
 
-    private val SU_PATHS = arrayOf(
-        "su",
-        "/system/bin/su",
-        "/system/xbin/su",
-        "/sbin/su",
-        "/su/bin/su",
-        // Extra candidates for one-click root tools (KingRoot / 360root / 刷机自带 su):
-        "/su/xbin/su",
-        "/system/su",
-        "/system/bin/.su",
-        "/system/xbin/.su",
-        "/system/xbin/kingroot",
-        "/system/bin/app_process",
-    )
-
     fun hiddenRequested(context: Context): Boolean = AirPlayPersistence.loadRootHideNavbar(context)
 
     /** True when a usable "su" responds with uid 0 (root). */
-    fun available(): Boolean = runCatching {
-        val su = findSu() ?: return@runCatching false
-        val process = Runtime.getRuntime().exec(arrayOf(su, "-c", "id"))
-        if (!process.waitFor(3000, TimeUnit.MILLISECONDS)) { process.destroy(); return@runCatching false }
-        val out = process.inputStream.readBytes().toString(Charsets.UTF_8).trim()
-        out.contains("uid=0") || out.contains("root")
-    }.getOrDefault(false)
+    fun available(): Boolean = RootShell.available()
 
     /** Hides (or restores) the navigation bar at the system level. Runs on a background thread. */
     fun applyHidden(hidden: Boolean): Boolean = runCatching {
-        val su = findSu()
+        val su = RootShell.findSu()
         if (su == null) {
-            Log.w(TAG, "applyHidden skipped: no usable su binary found")
+            AppLog.w(TAG, "applyHidden skipped: no usable su binary found")
             return@runCatching false
         }
         val prop = if (hidden) "1" else "0"
-        // 1) setprop 让 framework 按新值重建导航栏；
-        // 2) 杀掉并重启各候选 SystemUI / 桌面，使 prop 立即生效；
-        // 3) policy_control 兜底强制全屏隐藏（部分定制 UI 不看 mainkeys）。
+        // setprop → restart display stack (KitKat) → print getprop for verification.
+        // Do not force-stop the OEM launcher; that only disrupts the home shell and does not
+        // rebuild NavigationBar. policy_control is Lollipop+; ignore failures on KitKat.
         val script = buildString {
             append("setprop qemu.hw.mainkeys $prop; ")
             append("setprop persist.sys.mainkeys $prop; ")
-            append("pkill -f systemui; ")
-            append("pkill -f S311WT_SystemUI; ")
-            append("am force-stop com.android.systemui; ")
-            append("am force-stop com.changan.systemui; ")
-            append("am force-stop com.changan.carlife; ")
-            append("am force-stop com.hydrogen.desktop; ")
-            append("am force-stop com.changanaudio.desktop; ")
-            append("am force-stop S311WT_SystemUI; ")
-            append("sleep 1; ")
-            append("am startservice -n com.android.systemui/.SystemUIService; ")
-            if (hidden) append("settings put global policy_control immersive.navigation=*; ")
-            else append("settings delete global policy_control; ")
-            append("true")
+            // Classic Freescale / KitKat path: surfaceflinger respawn reloads SystemUI + nav.
+            append("killall surfaceflinger >/dev/null 2>&1 || ")
+            append("busybox killall surfaceflinger >/dev/null 2>&1 || true; ")
+            append("killall systemui >/dev/null 2>&1 || ")
+            append("busybox killall systemui >/dev/null 2>&1 || true; ")
+            append("killall S311WT_SystemUI >/dev/null 2>&1 || ")
+            append("busybox killall S311WT_SystemUI >/dev/null 2>&1 || true; ")
+            append("am force-stop com.android.systemui >/dev/null 2>&1 || true; ")
+            append("am force-stop com.changan.systemui >/dev/null 2>&1 || true; ")
+            append("sleep 2; ")
+            append("am startservice -n com.android.systemui/.SystemUIService >/dev/null 2>&1 || true; ")
+            if (hidden) {
+                append("settings put global policy_control immersive.navigation=* >/dev/null 2>&1 || true; ")
+            } else {
+                append("settings delete global policy_control >/dev/null 2>&1 || true; ")
+            }
+            append("getprop qemu.hw.mainkeys")
         }
-        val process = Runtime.getRuntime().exec(arrayOf(su, "-c", script))
-        if (!process.waitFor(8000, TimeUnit.MILLISECONDS)) { process.destroy(); return@runCatching false }
-        Log.i(TAG, "navbar hidden=$hidden applied via su=$su")
-        true
+        val out = RootShell.exec(su, script, timeoutMs = 15_000L) ?: run {
+            AppLog.w(TAG, "applyHidden: su script timed out or failed to start (su=$su)")
+            return@runCatching false
+        }
+        val value = out.lineSequence().map { it.trim() }.lastOrNull { it.isNotEmpty() }.orEmpty()
+        val ok = value == prop
+        if (ok) {
+            AppLog.i(TAG, "navbar hidden=$hidden applied via su=$su (getprop=$value)")
+        } else {
+            AppLog.w(TAG, "navbar hidden=$hidden NOT verified via su=$su (getprop='$value', out='$out')")
+        }
+        ok
     }.getOrDefault(false)
 
     /**
@@ -88,18 +79,7 @@ object RootNavbar {
      * to the disabled state.
      */
     fun enable(): Boolean = runCatching {
-        if (!applyHidden(true)) return@runCatching false
-        available()
+        if (RootShell.findSu() == null) return@runCatching false
+        applyHidden(true)
     }.getOrDefault(false)
-
-    private fun findSu(): String? {
-        for (path in SU_PATHS) {
-            val ok = runCatching {
-                val p = Runtime.getRuntime().exec(arrayOf(path, "-c", "id"))
-                p.waitFor(2000, TimeUnit.MILLISECONDS)
-            }.getOrDefault(false)
-            if (ok) return path
-        }
-        return null
-    }
 }

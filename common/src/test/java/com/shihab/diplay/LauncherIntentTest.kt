@@ -1,8 +1,5 @@
 package com.shihab.diplay
 import com.shihab.diplay.host.CarPlayBackgroundSession
-import com.shihab.diplay.settings.SettingsCategory
-import com.shihab.diplay.settings.SettingsInformationArchitecture
-import com.shihab.diplay.settings.SettingsSection
 
 import android.content.Intent
 import android.os.Bundle
@@ -30,6 +27,8 @@ class LauncherIntentTest {
     private var stops = 0
 
     @Before fun setup() {
+        DiPlayActivity.returnedFromCarPlayAt = 0L
+        CarPlayHostActivity.pictureVisible = false
         val app = RuntimeEnvironment.getApplication()
         app.getSharedPreferences("diplay", 0).edit().clear().commit()
         app.getSharedPreferences("xcertplay_airplay", 0).edit().clear().commit()
@@ -39,6 +38,8 @@ class LauncherIntentTest {
     }
 
     @After fun cleanup() {
+        DiPlayActivity.returnedFromCarPlayAt = 0L
+        CarPlayHostActivity.pictureVisible = false
         controller?.destroy()
         CarPlayBackgroundSession.clear()
     }
@@ -64,15 +65,29 @@ class LauncherIntentTest {
         assertEquals(0, stops)
     }
 
-    @Test fun launcherDeliveredToExistingSettingsOpensProjectionAndClearsReturnNavigation() {
+    @Test fun threeFingerReturnStaysOnDiPlay() {
         controller = Robolectric.buildActivity(DiPlayActivity::class.java,
             Intent().putExtra("page", "settings")).create()
         val activity = controller!!.get()
-        ReflectionHelpers.setField(activity, "connectionSettingsReturnCategory", SettingsCategory.ADVANCED)
+        shadowOf(activity).clearNextStartedActivities()
+        ReflectionHelpers.setField(activity, "userNavigatedFromCarPlay", false)
+        ReflectionHelpers.callInstanceMethod<Unit>(
+            activity,
+            "onNewIntent",
+            ReflectionHelpers.ClassParameter(Intent::class.java, Intent().putExtra("returnFromCarPlay", true)),
+        )
+        assertNull(shadowOf(activity).nextStartedActivity)
+        assertEquals(true, ReflectionHelpers.getField<Boolean>(activity, "userNavigatedFromCarPlay"))
+        assertEquals("settings", ReflectionHelpers.getField<String>(activity, "page"))
+    }
+
+    @Test fun launcherDeliveredToExistingSettingsOpensProjection() {
+        controller = Robolectric.buildActivity(DiPlayActivity::class.java,
+            Intent().putExtra("page", "settings")).create()
+        val activity = controller!!.get()
         ReflectionHelpers.callInstanceMethod<Unit>(activity, "onNewIntent",
             ReflectionHelpers.ClassParameter(Intent::class.java, launcher()))
         assertEquals("home", ReflectionHelpers.getField<String>(activity, "page"))
-        assertNull(ReflectionHelpers.getField<SettingsCategory?>(activity, "connectionSettingsReturnCategory"))
         assertEquals(CarPlayHostActivity::class.java.name,
             shadowOf(activity).nextStartedActivity?.component?.className)
         assertEquals(0, stops)
@@ -107,6 +122,20 @@ class LauncherIntentTest {
 
         // User brings DiPlay back to foreground (hot resume) while session is active
         controller!!.restart().start().resume()
+        assertEquals(CarPlayHostActivity::class.java.name,
+            shadowOf(activity).nextStartedActivity?.component?.className)
+    }
+
+    @Test fun projectionWithoutAWarmSurfaceStillOpensTheHost() {
+        controller = Robolectric.buildActivity(DiPlayActivity::class.java, Intent())
+            .create(Bundle().apply { putString("page", "home") })
+        val activity = controller!!.get()
+        shadowOf(activity).clearNextStartedActivities()
+        activity.openProjection()
+        assertEquals(CarPlayHostActivity::class.java.name,
+            shadowOf(activity).nextStartedActivity?.component?.className)
+        shadowOf(activity).clearNextStartedActivities()
+        activity.openProjection()
         assertEquals(CarPlayHostActivity::class.java.name,
             shadowOf(activity).nextStartedActivity?.component?.className)
     }

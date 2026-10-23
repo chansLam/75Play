@@ -3,6 +3,9 @@
 
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Optional: shell status-bar cellular bars. Units without a radio hide the icon. -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Legacy storage access for Android 4.4 crash/diagnostic exports on head units -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
@@ -16,6 +19,7 @@
     <!-- Optional: floating ball over other apps (install-time on KitKat). -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <queries>
+        <!-- Legacy OEM package query (not a BYD HUD product feature). Keep for HomeScreenMonitor tests / ROMs that still expose it. -->
         <package android:name="com.byd.carsettings" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
@@ -86,12 +90,6 @@
             android:exported="false"
             android:resizeableActivity="true"
             android:theme="@style/Theme.Xcertplay" />
-        <activity
-            android:name="com.shihab.diplay.DevTerminalActivity"
-            android:configChanges="density|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
-            android:exported="false"
-            android:resizeableActivity="true"
-            android:theme="@style/Theme.Xcertplay" />
         <service android:name="com.shihab.diplay.DiPlaySessionService" android:exported="false" />
         <!-- Background wireless CarPlay handshake (replaces the connect-only host Activity). -->
         <service android:name="com.shihab.diplay.CarPlayConnectService" android:exported="false" />
@@ -100,7 +98,7 @@
             android:name="com.shihab.diplay.CarPlayHostActivity"
             android:taskAffinity="${applicationId}.carplay"
             android:configChanges="density|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
-            android:exported="true"
+            android:exported="false"
             android:launchMode="singleTask"
             android:resizeableActivity="true"
             android:screenOrientation="fullSensor"
@@ -112,12 +110,6 @@
             android:name="com.shihab.diplay.CarPlayVideoActivity"
             android:configChanges="density|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
             android:exported="false"
-            android:theme="@style/Theme.Xcertplay" />
-
-        <activity
-            android:name="com.shihab.diplay.MainActivity"
-            android:exported="false"
-            android:resizeableActivity="true"
             android:theme="@style/Theme.Xcertplay" />
 
         <!-- CarPlay navigation widget, for launchers that host standard widgets. -->

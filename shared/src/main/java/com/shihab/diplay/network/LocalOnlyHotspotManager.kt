@@ -9,7 +9,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import androidx.annotation.RequiresApi
-import com.shihab.diplay.transport.Iap2WirelessSecurity
+import com.shihab.diplay.model.Iap2WirelessSecurity
 import java.io.IOException
 import java.net.Inet4Address
 import java.net.Inet6Address

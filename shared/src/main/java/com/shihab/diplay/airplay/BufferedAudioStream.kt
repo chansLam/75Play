@@ -1,6 +1,5 @@
 package com.shihab.diplay.airplay
 
-import android.util.Log
 import java.io.Closeable
 import java.io.DataInputStream
 import java.math.BigInteger
@@ -9,6 +8,7 @@ import java.net.Socket
 import java.net.InetAddress
 import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
+import com.shihab.diplay.util.AppLog
 
 /**
  * CarPlay's main buffered audio (WWDC23 "Enhanced buffering"). For apps that support it (Apple Music),
@@ -119,7 +119,10 @@ internal class BufferedAudioStream(
                 }
             }
         } catch (error: Exception) {
-            if (!closed.get()) log("Buffered audio: connection ended (${error.javaClass.simpleName})")
+            if (!closed.get()) {
+                log("Buffered audio: connection ended (${error.javaClass.simpleName})")
+                close()
+            }
         } finally {
             runCatching { accepted?.close() }
             synchronized(lock) { if (client === accepted) client = null }
@@ -179,8 +182,11 @@ internal class BufferedAudioStream(
                 }
             }
         } catch (_: InterruptedException) {
+            // Restore the interrupt status so callers of the feed thread observe the shutdown
+            // request instead of treating the interrupt as a benign loop exit.
+            Thread.currentThread().interrupt()
         } catch (error: Exception) {
-            if (!closed.get()) Log.w(TAG, "buffered audio feed failed", error)
+            if (!closed.get()) AppLog.w(TAG, "buffered audio feed failed", error)
             close()
         }
     }

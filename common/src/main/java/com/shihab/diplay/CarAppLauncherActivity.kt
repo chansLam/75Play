@@ -7,10 +7,10 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
-import android.util.Log
 import android.view.Gravity
 import android.view.ViewGroup
 import com.shihab.diplay.host.R
+import com.shihab.diplay.util.AppLog
 
 /**
  * Standalone entry from DiPlay home. While CarPlay is active, the OEM button uses the
@@ -55,7 +55,7 @@ class CarAppLauncherActivity : Activity() {
             app.launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
             startActivity(app.launch)
         } catch (e: Exception) {
-            Log.w(TAG, "Could not launch ${app.label}", e)
+            AppLog.w(TAG, "Could not launch ${app.label}", e)
         }
     }
 

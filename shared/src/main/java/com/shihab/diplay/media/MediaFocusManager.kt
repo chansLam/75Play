@@ -3,15 +3,14 @@ package com.shihab.diplay.media
 import android.content.Context
 import android.media.AudioManager
 import android.media.AudioTrack
-import android.util.Log
+import com.shihab.diplay.util.AppLog
 
 /**
  * Owns one audio-focus request for all eligible tracks in a CarPlay sink.
  *
- * P4: extracted verbatim from AndroidMediaSink (formerly `AudioFocusCoordinator`) as the
- * media-layer focus unit. Behaviour is unchanged: it tracks active tracks, promotes the
- * highest-priority channel to a focus request, ducks/mutes media on transient loss and
- * keeps CarPlay audio running on permanent loss.
+ * Tracks active tracks and promotes the highest-priority channel to one focus request.
+ * A phone track mutes media immediately. Assistant ducks media. System duck/loss/gain
+ * callbacks only change media while media itself owns the request.
  */
 internal class MediaFocusManager(
     context: Context?,
@@ -19,7 +18,12 @@ internal class MediaFocusManager(
     private val muteMediaOnTransientLoss: Boolean = true,
     private val report: (String) -> Unit = {},
 ) {
-    private data class Entry(val channel: AudioChannel, val attributes: Any?, var appliedVolume: Float = FULL_VOLUME)
+    private data class Entry(
+        val channel: AudioChannel,
+        val attributes: Any?,
+        val streamType: Int,
+        var appliedVolume: Float = FULL_VOLUME,
+    )
 
     private val manager = context?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
     private val active = LinkedHashMap<AudioTrack, Entry>()
@@ -62,15 +66,19 @@ internal class MediaFocusManager(
             }
             runCatching { report("Audio: focus change=$change activeTracks=${active.size}") }
             when (change) {
-                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> setMediaVolume(DUCKED_VOLUME)
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                    if (requestedChannel == AudioChannel.MEDIA) setMediaVolume(DUCKED_VOLUME)
+                }
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                    if (muteMediaOnTransientLoss) {
+                    if (requestedChannel == AudioChannel.MEDIA && muteMediaOnTransientLoss) {
                         // This reports a temporary Android focus owner, not a confirmed call.
-                        Log.i(TAG, "Audio: muting media during transient focus loss")
+                        AppLog.i(TAG, "Audio: muting media during transient focus loss")
                         setMediaVolume(0f)
                     }
                 }
-                AudioManager.AUDIOFOCUS_GAIN -> setMediaVolume(FULL_VOLUME)
+                AudioManager.AUDIOFOCUS_GAIN -> {
+                    if (requestedChannel == AudioChannel.MEDIA) setMediaVolume(FULL_VOLUME)
+                }
                 // Keep CarPlay audio running on permanent loss. Some head units
                 // do not send a later gain callback after taking focus back.
             }
@@ -78,9 +86,14 @@ internal class MediaFocusManager(
     }
 
     @Synchronized
-    fun acquire(track: AudioTrack, channel: AudioChannel, attributes: Any?) {
+    fun acquire(
+        track: AudioTrack,
+        channel: AudioChannel,
+        attributes: Any?,
+        streamType: Int = AudioManager.STREAM_MUSIC,
+    ) {
         if (closed || !enabled || manager == null || channel == AudioChannel.NAVIGATION) return
-        active[track] = Entry(channel, attributes)
+        active[track] = Entry(channel, attributes, streamType)
         refreshRequest()
         applyMediaVolume(track, active.getValue(track))
     }
@@ -126,11 +139,20 @@ internal class MediaFocusManager(
         currentListener = listenerFor(focusGeneration)
         request = null
         requestedChannel = primary.channel
-        val result = manager?.requestAudioFocus(currentListener, AudioManager.STREAM_MUSIC, gain)
-        if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) setMediaVolume(FULL_VOLUME)
+        // 0 is STREAM_VOICE_CALL. Do not remap it to STREAM_MUSIC.
+        val result = manager?.requestAudioFocus(currentListener, primary.streamType, gain)
+        applyPrimaryPolicy()
         val line = "Audio: focus requested channel=${primary.channel} gain=$gain granted=$result activeTracks=${active.size}"
-        Log.i(TAG, line)
+        AppLog.i(TAG, line)
         runCatching { report(line) }
+    }
+
+    private fun applyPrimaryPolicy() {
+        when (requestedChannel) {
+            AudioChannel.PHONE -> setMediaVolume(0f)
+            AudioChannel.ASSISTANT -> setMediaVolume(DUCKED_VOLUME)
+            else -> setMediaVolume(FULL_VOLUME)
+        }
     }
 
     private fun setMediaVolume(volume: Float) {
@@ -147,9 +169,9 @@ internal class MediaFocusManager(
     }
 
     private fun AudioChannel.focusPriority(): Int = when (this) {
-        AudioChannel.MEDIA -> 3
-        AudioChannel.PHONE -> 2
-        AudioChannel.ASSISTANT -> 1
+        AudioChannel.PHONE -> 3
+        AudioChannel.ASSISTANT -> 2
+        AudioChannel.MEDIA -> 1
         AudioChannel.NAVIGATION -> 0
     }
 

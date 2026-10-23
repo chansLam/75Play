@@ -1,6 +1,5 @@
 package com.shihab.diplay.airplay
 
-import android.util.Log
 import com.shihab.diplay.mfi.MfiAuthenticator
 import com.shihab.diplay.transport.BlockingDuplexByteStream
 import java.io.BufferedInputStream
@@ -15,6 +14,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
+import com.shihab.diplay.util.AppLog
 
 data class AirPlayDeviceInfo(
     val name: String,
@@ -145,7 +145,7 @@ class AirPlaySession(
         try {
             media.onSessionClosed(this)
         } catch (error: Exception) {
-            Log.w(TAG, "airplay media stream teardown failed", error)
+            AppLog.w(TAG, "airplay media stream teardown failed", error)
         }
         teardown()
         if (notified.compareAndSet(false, true)) listener.onSessionEnded(this)
@@ -324,7 +324,7 @@ class AirPlaySession(
             output.flush()
             true
         } catch (error: Exception) {
-            Log.w(TAG, "airplay event command failed type=${command["type"]}", error)
+            AppLog.w(TAG, "airplay event command failed type=${command["type"]}", error)
             close()
             false
         }
@@ -340,13 +340,13 @@ class AirPlaySession(
         if (sent) com.shihab.diplay.media.TouchLatencyProbe.onTouchSent(sendStartNs, System.nanoTime() - sendStartNs)
         if (sent && firstTouchSendLogged.compareAndSet(false, true)) {
             val first = scaled.firstOrNull()
-            Log.i(
+            AppLog.i(
                 TAG,
                 "airplay touch report sent contacts=${scaled.size} first=" +
                     "(${first?.x},${first?.y},down=${first?.down}) report=${report.toHexString()}",
             )
         } else if (!sent && touchSendFailureLogged.compareAndSet(false, true)) {
-            Log.w(TAG, "airplay touch dropped: event channel is not ready")
+            AppLog.w(TAG, "airplay touch dropped: event channel is not ready")
         }
         return sent
     }
@@ -412,7 +412,7 @@ class AirPlaySession(
     fun setNightMode(night: Boolean): Boolean = synchronized(eventWriteLock) {
         pendingNightMode = night
         val sent = sendPendingNightModeLocked()
-        Log.i(TAG, "AirPlay setNightMode night=$night eventReady=${eventSocket != null && eventCipher != null} sent=$sent")
+        AppLog.i(TAG, "AirPlay setNightMode night=$night eventReady=${eventSocket != null && eventCipher != null} sent=$sent")
         sent
     }
 
@@ -456,7 +456,7 @@ class AirPlaySession(
                         activeCipher.decrypt(encBuf)
                     } catch (error: Exception) {
                         closeReason = "control decrypt failed: ${error.message ?: error.javaClass.simpleName}"
-                        Log.e(TAG, "airplay $closeReason encrypted=${encBuf.size}", error)
+                        AppLog.e(TAG, "airplay $closeReason encrypted=${encBuf.size}", error)
                         break
                     }
                     encBuf = decrypted.rest
@@ -486,7 +486,7 @@ class AirPlaySession(
                     val response = try {
                         handle(request)
                     } catch (error: Exception) {
-                        Log.e(
+                        AppLog.e(
                             TAG,
                             "airplay handler failed ${request.method} ${request.path} cseq=$cseq",
                             error,
@@ -523,7 +523,7 @@ class AirPlaySession(
             }
         } catch (error: Exception) {
             closeReason = "control I/O failed: ${error.message ?: error.javaClass.simpleName}"
-            if (!closed.get()) Log.e(TAG, "airplay $closeReason", error)
+            if (!closed.get()) AppLog.e(TAG, "airplay $closeReason", error)
         } finally {
             debugLog("airplay control closing reason=$closeReason activeStreams=$activeStreams")
             close()
@@ -578,7 +578,7 @@ class AirPlaySession(
                     }
                     debugLog("airplay /info request=$requestInfo")
                 }
-                Log.i(
+                AppLog.i(
                     TAG,
                     "airplay /info features=${info["features"]} " +
                         "audioFormats=${(info["audioFormats"] as? List<*>)?.size ?: 0} " +
@@ -614,18 +614,18 @@ class AirPlaySession(
         try {
             media.onSetupResponseSent(this)
         } catch (error: Exception) {
-            Log.w(TAG, "airplay SETUP response callback failed", error)
+            AppLog.w(TAG, "airplay SETUP response callback failed", error)
         }
         reapplyClusterContent()
     }
 
     private fun debugLog(message: String, uiVisible: Boolean = true) {
-        Log.i(TAG, message)
+        AppLog.i(TAG, message)
         if (!uiVisible) return
         try {
             listener.onDebugLog(message)
         } catch (error: Exception) {
-            Log.w(TAG, "debug log callback failed", error)
+            AppLog.w(TAG, "debug log callback failed", error)
         }
     }
 
@@ -633,7 +633,7 @@ class AirPlaySession(
         try {
             listener.onDebugLog("TRACE $message")
         } catch (error: Exception) {
-            Log.w(TAG, "trace log callback failed", error)
+            AppLog.w(TAG, "trace log callback failed", error)
         }
     }
 
@@ -641,7 +641,7 @@ class AirPlaySession(
         val dict = try {
             asMap(BplistCodec.decode(request.body)) ?: return RtspMessage.Response(status = 400)
         } catch (error: Exception) {
-            Log.e(TAG, "airplay SETUP plist decode failed body=${request.body.size}", error)
+            AppLog.e(TAG, "airplay SETUP plist decode failed body=${request.body.size}", error)
             return RtspMessage.Response(status = 400)
         }
         debugLog("airplay SETUP keys=${dict.keys.sorted()}")
@@ -859,7 +859,7 @@ class AirPlaySession(
             eventSocket = socket
             val shared = pairVerify.shared
             if (shared == null) {
-                Log.e(TAG, "airplay event rejected: pair-verify shared secret unavailable")
+                AppLog.e(TAG, "airplay event rejected: pair-verify shared secret unavailable")
                 safeClose(socket)
                 close()
                 return
@@ -886,7 +886,7 @@ class AirPlaySession(
             runEventRead(socket)
         } catch (error: Exception) {
             if (!closed.get()) {
-                Log.e(TAG, "airplay event accept failed", error)
+                AppLog.e(TAG, "airplay event accept failed", error)
                 close()
             }
         }
@@ -907,7 +907,7 @@ class AirPlaySession(
                 val decrypted = try {
                     cipher.decrypt(encrypted)
                 } catch (error: Exception) {
-                    Log.e(TAG, "airplay event decrypt failed encrypted=${encrypted.size}", error)
+                    AppLog.e(TAG, "airplay event decrypt failed encrypted=${encrypted.size}", error)
                     break
                 }
                 encrypted = decrypted.rest
@@ -932,7 +932,7 @@ class AirPlaySession(
                 }
             }
         } catch (error: Exception) {
-            if (!closed.get()) Log.e(TAG, "airplay event read failed", error)
+            if (!closed.get()) AppLog.e(TAG, "airplay event read failed", error)
         } finally {
             debugLog("airplay event connection closed")
             videoPlaybackAvailability.setEventReady(false)

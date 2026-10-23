@@ -4,7 +4,6 @@ import android.app.Service
 import android.content.Intent
 import android.os.Binder
 import android.os.IBinder
-import android.util.Log
 import com.shihab.diplay.airplay.AirPlayListenerIdentity
 import com.shihab.diplay.airplay.AirPlaySocketBinder
 import com.shihab.diplay.airplay.AirPlayTcpAccepted
@@ -22,6 +21,7 @@ import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicBoolean
+import com.shihab.diplay.util.AppLog
 
 /**
  * Hosts the AirPlay TCP listener on the wireless SoftAP address.
@@ -83,7 +83,7 @@ class CarPlayWirelessService : Service() {
         listenerIdentity: AirPlayListenerIdentity? = null,
     ): AttachResult {
         if (active.get()) {
-            Log.i(TAG, "replacing stale local-only Wi-Fi attachment")
+            AppLog.i(TAG, "replacing stale local-only Wi-Fi attachment")
             releaseLocked()
         }
         active.set(true)
@@ -130,12 +130,12 @@ class CarPlayWirelessService : Service() {
     ) {
         val servers = if (replacement.additionalAddresses.isEmpty()) {
             listOf(AirPlayPortSelector.bind(replacement.address, replacement.config.port) { busy, bound ->
-                Log.w(TAG, "AirPlay port $busy is in use; listening on $bound instead")
+                AppLog.w(TAG, "AirPlay port $busy is in use; listening on $bound instead")
             })
         } else {
             AirPlayPortSelector.bindAll(listOf(replacement.address) + replacement.additionalAddresses,
                 replacement.config.port) { busy, bound ->
-                Log.w(TAG, "AirPlay port $busy is in use; listening on $bound instead")
+                AppLog.w(TAG, "AirPlay port $busy is in use; listening on $bound instead")
             }
         }
         val server = servers.first()
@@ -164,7 +164,7 @@ class CarPlayWirelessService : Service() {
             while (active.get()) {
                 val socket: Socket = server.accept()
                 val acceptedAtNanos = System.nanoTime()
-                Log.i(TAG, "airplay connection accepted from ${socket.remoteSocketAddress}")
+                AppLog.i(TAG, "airplay connection accepted from ${socket.remoteSocketAddress}")
                 socket.tcpNoDelay = true
                 socket.keepAlive = true
                 socket.setSoLinger(true, 0)
@@ -243,7 +243,7 @@ class CarPlayWirelessService : Service() {
                 try {
                     session.close()
                 } catch (error: Exception) {
-                    Log.w(TAG, "AirPlay session replacement failed", error)
+                    AppLog.w(TAG, "AirPlay session replacement failed", error)
                 }
             }
             sessions.clear()
@@ -256,7 +256,7 @@ class CarPlayWirelessService : Service() {
         error: Throwable,
     ) {
         val message = error.message ?: error.javaClass.simpleName
-        Log.e(TAG, "CarPlay transport stopped: $message", error)
+        AppLog.e(TAG, "CarPlay transport stopped: $message", error)
         Thread(
             {
                 val releasedGeneration = synchronized(this) {

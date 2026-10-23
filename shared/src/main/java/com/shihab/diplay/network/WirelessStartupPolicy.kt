@@ -1,6 +1,13 @@
 package com.shihab.diplay.network
 
-import java.io.IOException
+import com.shihab.diplay.model.WirelessStartupException
+import com.shihab.diplay.model.WirelessStartupFailure
+
+// These shared error types were moved to [com.shihab.diplay.model] to break the
+// transport <-> network package cycle. The typealiases below keep the historical
+// `network.*` import path working for callers outside the shared module.
+typealias WirelessStartupFailure = com.shihab.diplay.model.WirelessStartupFailure
+typealias WirelessStartupException = com.shihab.diplay.model.WirelessStartupException
 
 object WirelessStartupPolicy {
     /**
@@ -27,9 +34,3 @@ object WirelessStartupPolicy {
     const val MAX_STARTUP_RETRIES = 5
     const val STABLE_SESSION_MILLIS = 60_000L
 }
-
-enum class WirelessStartupFailure {
-    HOTSPOT_NOT_READY, FIRST_TCP_TIMEOUT, HOTSPOT_CONFIGURATION, BLUETOOTH_UNUSABLE,
-}
-
-class WirelessStartupException(val reason: WirelessStartupFailure, message: String) : IOException(message)

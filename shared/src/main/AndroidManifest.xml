@@ -28,6 +28,7 @@
         android:name="android.hardware.faketouch"
         android:required="false" />
     <queries>
+        <!-- Legacy OEM package query name; not a BYD HUD product feature. -->
         <package android:name="com.byd.carsettings" />
         <intent>
             <action android:name="android.settings.WIFI_SETTINGS" />

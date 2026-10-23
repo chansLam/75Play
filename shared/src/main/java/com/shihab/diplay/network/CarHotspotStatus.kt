@@ -36,11 +36,11 @@ object CarHotspotStatus {
     }
 
     /**
-     * KitKat SoftAP enable for Changan OS_S311-WT style ROMs. Closes STA first when needed,
-     * prefers the saved AP configuration, then falls back to a null config.
+     * KitKat SoftAP enable for Changan OS_S311-WT style ROMs. Closes STA first when needed.
+     * Prefers [preferredConfig] (DiPlay SSID/passphrase), then the ROM-saved AP config, then null.
      * If SoftAP enable fails after turning STA off, STA is restored when it was previously on.
      */
-    fun enableIfPossible(context: Context): Boolean? {
+    fun enableIfPossible(context: Context, preferredConfig: WifiConfiguration? = null): Boolean? {
         // Spoofed ROMs may report SDK ≥ 26 while RELEASE is still 4.4.x.
         if (realSdkInt() >= Build.VERSION_CODES.O) return null
         val wifi = wifiManager(context.applicationContext) ?: return null
@@ -57,12 +57,15 @@ object CarHotspotStatus {
                 Boolean::class.javaPrimitiveType,
             )
             val savedConfig = readSoftApConfiguration(wifi)
-            val withConfig = if (savedConfig != null) {
-                runCatching { method.invoke(wifi, savedConfig, true) as Boolean }.getOrDefault(false)
-            } else {
-                false
+            val candidates = listOfNotNull(preferredConfig, savedConfig)
+            var enabled = false
+            for (config in candidates) {
+                enabled = runCatching { method.invoke(wifi, config, true) as Boolean }.getOrDefault(false)
+                if (enabled) break
             }
-            val enabled = withConfig || (method.invoke(wifi, null, true) as Boolean)
+            if (!enabled) {
+                enabled = runCatching { method.invoke(wifi, null, true) as Boolean }.getOrDefault(false)
+            }
             if (!enabled && wifiWasEnabled) {
                 @Suppress("DEPRECATION")
                 runCatching { wifi.isWifiEnabled = true }
@@ -71,8 +74,28 @@ object CarHotspotStatus {
         }.getOrNull()
     }
 
+    /**
+     * Build a KitKat SoftAP [WifiConfiguration] for CS75 ROMs.
+     * Empty [passphrase] → open AP; otherwise raw (unquoted) WPA2 PSK — S401 does not strip quotes.
+     */
+    fun wifiConfiguration(ssid: String, passphrase: String): WifiConfiguration =
+        WifiConfiguration().apply {
+            SSID = ssid
+            status = WifiConfiguration.Status.ENABLED
+            if (passphrase.isEmpty()) {
+                allowedKeyManagement.set(WifiConfiguration.KeyMgmt.NONE)
+            } else {
+                preSharedKey = passphrase
+                allowedKeyManagement.set(WifiConfiguration.KeyMgmt.WPA_PSK)
+                allowedAuthAlgorithms.set(WifiConfiguration.AuthAlgorithm.OPEN)
+                allowedProtocols.set(WifiConfiguration.Protocol.RSN)
+                allowedPairwiseCiphers.set(WifiConfiguration.PairwiseCipher.CCMP)
+                allowedGroupCiphers.set(WifiConfiguration.GroupCipher.CCMP)
+            }
+        }
+
     private fun wifiManager(app: Context): WifiManager? =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        if (realSdkInt() >= Build.VERSION_CODES.M) {
             app.getSystemService(WifiManager::class.java)
         } else {
             @Suppress("DEPRECATION")

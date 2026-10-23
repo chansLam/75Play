@@ -38,6 +38,19 @@ import android.widget.TextView
  */
 object DiPlayDialog {
 
+    private val openDialogs = ArrayList<java.lang.ref.WeakReference<Dialog>>()
+
+    /** Back closes the top dialog instead of navigating the page underneath it. */
+    fun consumeBack(): Boolean {
+        val dialog = openDialogs.mapNotNull { it.get() }.lastOrNull { it.isShowing } ?: return false
+        dialog.cancel()
+        return true
+    }
+
+    private fun track(dialog: Dialog) {
+        openDialogs.add(java.lang.ref.WeakReference(dialog))
+    }
+
     private fun themed(context: Context): Dialog {
         // Fullscreen translucent: partial Theme_Black windows leave gaps where ROM shows system nav.
         val dialog = Dialog(context, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen)
@@ -190,8 +203,11 @@ object DiPlayDialog {
                 setColor(GlassColors.ACCENT)
                 setStroke(0, android.graphics.Color.TRANSPARENT)
             } else {
-                setColor(GlassColors.CARD)
-                setStroke(GlassColors.dp(context, 1), 0x52FFFFFF.toInt())
+                setColor(if (GlassColors.isDark) 0x00000000 else 0xFFFFFFFF.toInt())
+                setStroke(
+                    GlassColors.dp(context, 1),
+                    if (GlassColors.isDark) 0x66FFFFFF.toInt() else 0xFF0F172A.toInt(),
+                )
             }
         }
 
@@ -210,13 +226,18 @@ object DiPlayDialog {
         minimumWidth = 0
         minWidth = 0
         minHeight = LayoutMetrics.disconnectBtnH(context)
+        minimumHeight = LayoutMetrics.disconnectBtnH(context)
         includeFontPadding = false
-        setSingleLine(true)
+        setSingleLine(false)
+        maxLines = 2
         gravity = Gravity.CENTER
         val ph = LayoutMetrics.ghostPadH(context)
         val pv = LayoutMetrics.ghostPadV(context)
         setPadding(ph, pv, ph, pv)
         setOnClickListener { listener() }
+        // 方向盘确定键可触发；聚焦叠青描边（主/危险钮圆角 16，次级 12）。
+        isFocusable = true
+        FocusSupport.attachStrokeOverlay(this, cornerRadiusDp = 10)
     }
 
     /**
@@ -256,6 +277,7 @@ object DiPlayDialog {
                 android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
         )
         window.decorView.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+        track(dialog)
         dialog.setContentView(
             root,
             ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
@@ -278,12 +300,14 @@ object DiPlayDialog {
         val d = themed(context)
         val shell = openShell(context, title)
         shell.body.addView(body(context, message))
-        val cancelBtn = dialogButton(context, cancel, GlassColors.btnSecondary(), GlassColors.BTN_SECONDARY_TEXT) { d.dismiss(); onCancel?.invoke() }
+        var applied = false
+        d.setOnCancelListener { if (!applied) onCancel?.invoke() }
+        val cancelBtn = dialogButton(context, cancel, GlassColors.btnSecondary(), GlassColors.BTN_SECONDARY_TEXT) { d.cancel() }
         val confirmBtn = dialogButton(
             context, confirm,
             if (danger) GlassColors.btnDanger() else GlassColors.btnPrimary(),
             if (danger) GlassColors.WARNING else GlassColors.NAV_SELECTED_TEXT,
-        ) { d.dismiss(); onConfirm() }
+        ) { applied = true; d.dismiss(); onConfirm() }
         shell.setFooter(buttonRow(context, cancelBtn, confirmBtn))
         shell.ready()
         show(d, shell.panel)
@@ -393,8 +417,11 @@ object DiPlayDialog {
             row.addView(label, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             if (index == current) {
                 row.addView(View(context).apply {
-                    setBackgroundColor(GlassColors.ACCENT)
-                    layoutParams = LinearLayout.LayoutParams(GlassColors.dp(context, 3), GlassColors.dp(context, 16))
+                    background = android.graphics.drawable.GradientDrawable(
+                        android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+                        intArrayOf(GlassColors.ACCENT_LIFT, GlassColors.ACCENT_DEEP),
+                    ).apply { cornerRadius = GlassColors.dp(context, 2).toFloat() }
+                    layoutParams = LinearLayout.LayoutParams(GlassColors.dp(context, 4), GlassColors.dp(context, 16))
                 })
             }
             shell.body.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -560,7 +587,7 @@ object DiPlayDialog {
             gravity = Gravity.CENTER
             textSize = 13f
             text = if (on) "✓" else ""
-            setTextColor(if (on) android.graphics.Color.WHITE else android.graphics.Color.TRANSPARENT)
+            setTextColor(if (on) GlassColors.NAV_SELECTED_TEXT else android.graphics.Color.TRANSPARENT)
             background = checkGradient(context, on)
         }
 
@@ -569,6 +596,7 @@ object DiPlayDialog {
             state[app.packageName] = shown
             onSetShown(app, shown)
         }
+        var refreshCategoryMarks: () -> Unit = {}
         fun rebuildList() {
             shell.body.removeAllViews()
             apps.forEach { app ->
@@ -602,10 +630,12 @@ object DiPlayDialog {
                     rebuildList()
                     shell.ready()
                 }
+                row.minimumHeight = LayoutMetrics.rowMinH(context)
                 shell.body.addView(row, LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 ).apply { bottomMargin = GlassColors.dp(context, 4) })
             }
+            refreshCategoryMarks()
         }
         rebuildList()
 
@@ -613,18 +643,29 @@ object DiPlayDialog {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
+        val categoryMarks = mutableListOf<Pair<TextView, () -> Boolean>>()
+        fun paintMark(cb: TextView, on: Boolean) {
+            cb.text = if (on) "✓" else ""
+            cb.setTextColor(if (on) GlassColors.NAV_SELECTED_TEXT else android.graphics.Color.TRANSPARENT)
+            cb.background = checkGradient(context, on)
+        }
+        refreshCategoryMarks = {
+            categoryMarks.forEach { (cb, on) -> paintMark(cb, on()) }
+        }
         fun addCategoryToggle(catSystem: Boolean, name: String) {
             val catApps = apps.filter { isSystem(it) == catSystem }
-            val allOn = catApps.isNotEmpty() && catApps.all { state[it.packageName] == true }
-            val cb = checkbox(allOn)
+            fun allOn() = catApps.isNotEmpty() && catApps.all { state[it.packageName] == true }
+            val cb = checkbox(allOn())
+            categoryMarks.add(cb to { allOn() })
             val cell = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 isClickable = true
                 isFocusable = true
+                minimumHeight = LayoutMetrics.rowMinH(context)
                 setPadding(GlassColors.dp(context, 2), 0, GlassColors.dp(context, 10), 0)
             }
-            cell.addView(cb, LinearLayout.LayoutParams(GlassColors.dp(context, 16), GlassColors.dp(context, 16)))
+            cell.addView(cb, LinearLayout.LayoutParams(GlassColors.dp(context, 20), GlassColors.dp(context, 20)))
             cell.addView(TextView(context).apply {
                 text = name
                 setTextColor(GlassColors.TEXT_BODY)
@@ -633,13 +674,10 @@ object DiPlayDialog {
             })
             cell.setOnClickListener {
                 if (catApps.isEmpty()) return@setOnClickListener
-                val targetOn = !allOn
+                val targetOn = !allOn()
                 catApps.forEach { setItem(it, targetOn) }
                 rebuildList()
                 shell.ready()
-                cb.text = if (targetOn) "✓" else ""
-                cb.setTextColor(if (targetOn) android.graphics.Color.WHITE else android.graphics.Color.TRANSPARENT)
-                cb.background = checkGradient(context, targetOn)
             }
             bottom.addView(cell)
         }

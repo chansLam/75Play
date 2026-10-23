@@ -5,7 +5,7 @@ import android.graphics.Color
 
 /**
  * 设置控件的两套呈现风格（与 GlassColors 暗/浅不同）：
- * - [CARD]：主应用玻璃卡片内（青蓝，对齐 GlassColors 暗色文字/强调）
+ * - [CARD]：主应用面板内（青蓝，对齐 GlassColors 暗色文字/强调）
  * - [OVERLAY]：CarPlay 浮层菜单（绿色，夜间 HUD 可读；与 MENU_* 一致）
  */
 enum class SettingsTheme(
@@ -19,11 +19,11 @@ enum class SettingsTheme(
 ) {
     CARD(
         isOverlay = false,
-        textPrimary = Color.rgb(0xF1, 0xF5, 0xF9),   // GlassColors.INK dark
-        textSecondary = Color.rgb(0x94, 0xA3, 0xB8), // GlassColors.MUTED dark
+        textPrimary = Color.rgb(0xF8, 0xFA, 0xFC),   // GlassColors.INK dark
+        textSecondary = Color.rgb(0x94, 0xA3, 0xB8), // GlassColors.DIM dark
         accent = Color.rgb(0x22, 0xD3, 0xEE),         // GlassColors.ACCENT dark
-        accentTrack = Color.rgb(0x15, 0x5E, 0x75),
-        trackOff = Color.rgb(0x33, 0x41, 0x55),
+        accentTrack = Color.rgb(0x33, 0x41, 0x55),
+        trackOff = Color.rgb(0x4A, 0x4F, 0x5A),
         buttonText = Color.rgb(0x04, 0x2F, 0x2E),     // GlassColors.NAV_SELECTED_TEXT
     ),
     OVERLAY(

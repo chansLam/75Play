@@ -7,11 +7,11 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Bundle
 import android.os.Looper
-import android.util.Log
 import com.shihab.diplay.transport.CarPlayLocationFix
 import com.shihab.diplay.transport.Iap2LocationProvider
 import com.shihab.diplay.transport.NmeaLocationEncoder
 import java.util.concurrent.ConcurrentHashMap
+import com.shihab.diplay.util.AppLog
 
 /**
  * Foreground Android location source for iAP2 LocationInformation.
@@ -63,12 +63,12 @@ class AndroidCarPlayLocationProvider(
                     )
                     subscribedProviders++
                 } catch (error: Exception) {
-                    Log.w(TAG, "Could not subscribe to Android location provider $provider", error)
+                    AppLog.w(TAG, "Could not subscribe to Android location provider $provider", error)
                 }
             }
             started = subscribedProviders > 0
             if (!started) {
-                Log.w(TAG, "No Android location provider could be started")
+                AppLog.w(TAG, "No Android location provider could be started")
             }
             started
         }
@@ -80,11 +80,11 @@ class AndroidCarPlayLocationProvider(
             val location = try {
                 locationManager.getLastKnownLocation(provider)
             } catch (error: Exception) {
-                Log.w(TAG, "Could not read last known location from $provider", error)
+                AppLog.w(TAG, "Could not read last known location from $provider", error)
                 null
             } ?: continue
             latestFixes[provider] = location
-            Log.i(
+            AppLog.i(
                 TAG,
                 "Seeded $provider location ageMs=${(System.currentTimeMillis() - location.time).coerceAtLeast(0)}",
             )
@@ -120,7 +120,7 @@ class AndroidCarPlayLocationProvider(
                 ),
             )
         } catch (error: Throwable) {
-            Log.w(TAG, "Could not encode Android location as NMEA", error)
+            AppLog.w(TAG, "Could not encode Android location as NMEA", error)
             null
         }
     }

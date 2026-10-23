@@ -3,13 +3,15 @@ package com.shihab.diplay.ui
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.Shader
 import android.view.View
 import android.widget.LinearLayout
 
 /**
- * 玻璃风格开关：圆角矩形底（开=主题强调蓝 / 关=灰）+ 圆形滑块。
+ * 圆角开关：开=青蓝轨道，关=灰轨道。
  * API 19 用 RectF 版 drawRoundRect；不依赖系统 Switch。
  * [compact] 保留兼容；车机短屏尺寸改由 [LayoutMetrics] 统一放大。
  */
@@ -69,16 +71,43 @@ class GlassSwitch @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         val r = h / 2f
+        val rect = RectF(0f, 0f, w.toFloat(), h.toFloat())
         track.style = Paint.Style.FILL
-        track.color = if (progress > 0.5f) GlassColors.ACCENT else grayColor()
-        canvas.drawRoundRect(RectF(0f, 0f, w.toFloat(), h.toFloat()), r, r, track)
+        track.shader = LinearGradient(
+            0f, 0f, 0f, h.toFloat(),
+            blend(grayColor(), GlassColors.ACCENT_LIFT, progress),
+            blend(grayColor(), GlassColors.ACCENT_DEEP, progress),
+            Shader.TileMode.CLAMP,
+        )
+        canvas.drawRoundRect(rect, r, r, track)
+        track.shader = null
+        track.style = Paint.Style.STROKE
+        track.strokeWidth = 1f
+        track.color = if (GlassColors.isDark) 0x33FFFFFF else 0x66FFFFFF
+        canvas.drawRoundRect(rect, r, r, track)
         val cy = h / 2f
         val cx = knobD / 2f + (w - knobD) * progress
+        val kr = knobD / 2f
+        knob.style = Paint.Style.FILL
+        knob.color = 0x33000000
+        canvas.drawCircle(cx, cy + 1.5f, kr, knob)
         knob.color = 0xFFFFFFFF.toInt()
-        canvas.drawCircle(cx, cy, knobD / 2f, knob)
+        canvas.drawCircle(cx, cy, kr, knob)
+        knob.color = 0x66FFFFFF
+        canvas.drawCircle(cx - kr * 0.22f, cy - kr * 0.28f, kr * 0.36f, knob)
     }
 
-    private fun grayColor(): Int = if (GlassColors.isDark) 0xFF4A4F5A.toInt() else 0xFF94A3B8.toInt()
+    private fun blend(from: Int, to: Int, t: Float): Int {
+        val u = t.coerceIn(0f, 1f)
+        fun channel(shift: Int): Int {
+            val a = (from ushr shift) and 0xFF
+            val b = (to ushr shift) and 0xFF
+            return a + ((b - a) * u).toInt()
+        }
+        return (channel(24) shl 24) or (channel(16) shl 16) or (channel(8) shl 8) or channel(0)
+    }
+
+    private fun grayColor(): Int = if (GlassColors.isDark) 0xFF3A4654.toInt() else 0xFFB7C6D4.toInt()
 
     private fun animateTo(target: Float) {
         animator?.cancel()

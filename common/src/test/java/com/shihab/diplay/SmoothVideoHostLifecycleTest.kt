@@ -1,7 +1,7 @@
 package com.shihab.diplay
 import com.shihab.diplay.host.CarPlayBackgroundSession
-import com.shihab.diplay.host.CarPlaySessionDisplay
-import com.shihab.diplay.host.smoothVideoDelayMillis
+import com.shihab.diplay.session.CarPlaySessionDisplay
+import com.shihab.diplay.session.smoothVideoDelayMillis
 
 import android.graphics.SurfaceTexture
 import android.media.MediaCrypto
@@ -228,6 +228,7 @@ class SmoothVideoHostLifecycleTest {
 
     private fun assertTimedOutSinkRetained(beginTeardown: () -> Unit) {
         val codec = BlockingCodec().also(blockedCodecs::add)
+        ShadowMediaCodec.clearCodecs()
         ShadowMediaCodec.addDecoder(MediaFormat.MIMETYPE_VIDEO_AVC,
             ShadowMediaCodec.CodecConfig(64 * 1024, 64 * 1024, codec))
         val surface = surface()
@@ -238,8 +239,13 @@ class SmoothVideoHostLifecycleTest {
         val config = byteArrayOf(1, 0x42, 0xC0.toByte(), 0x1E, 0xFF.toByte(), 0xE1.toByte(),
             0, sps.size.toByte()) + sps + byteArrayOf(1, 0, pps.size.toByte()) + pps
         closing.onVideoConfig(110, config)
-        closing.onVideoFrame(110, byteArrayOf(0, 0, 0, 1, 0x65, 0x88.toByte(), 0x84.toByte(), 0x21))
-        assertTrue("The decoder is blocked inside queueInputBuffer", codec.entered.await(5, TimeUnit.SECONDS))
+        val idr = byteArrayOf(0, 0, 0, 1, 0x65, 0x88.toByte(), 0x84.toByte(), 0x21)
+        val enteredBy = System.nanoTime() + TimeUnit.SECONDS.toNanos(8)
+        while (codec.entered.count > 0 && System.nanoTime() < enteredBy) {
+            closing.onVideoFrame(110, idr)
+            codec.entered.await(400, TimeUnit.MILLISECONDS)
+        }
+        assertTrue("The decoder is blocked inside queueInputBuffer", codec.entered.count == 0L)
         val controller = mock(CarPlayController::class.java)
         setField("controller", controller)
         setField("sink", closing)

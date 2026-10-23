@@ -1,7 +1,7 @@
 package com.shihab.diplay.media
 
-import android.util.Log
 import java.io.Closeable
+import com.shihab.diplay.util.AppLog
 
 /** One active mono call canceller; the uplink owns its processing and teardown. */
 internal interface CallEchoCanceller : Closeable {
@@ -50,7 +50,7 @@ internal class SpeexEchoCanceller private constructor(
 
         val available: Boolean by lazy {
             runCatching { System.loadLibrary("speex_echo"); true }
-                .onFailure { Log.w(TAG, "echo canceller library unavailable", it) }
+                .onFailure { AppLog.w(TAG, "echo canceller library unavailable", it) }
                 .getOrDefault(false)
         }
 

@@ -39,6 +39,10 @@ object ConnectionSettingsSection {
         onChanged = onChanged,
     )
 
+    /**
+     * Factory for tests and [SettingsWidgets] reuse.
+     * Production hotspot-mode UI lives in [com.shihab.diplay.ui.FragmentHome].
+     */
     fun createHotspotModeChoice(
         context: Context,
         selected: WirelessHotspotMode,
@@ -46,6 +50,8 @@ object ConnectionSettingsSection {
         onSelected: (WirelessHotspotMode) -> Unit,
     ): SettingsWidgets.ChoiceRowResult<WirelessHotspotMode> {
         val modes = buildList {
+            // Order matches home tabs / product default: Wi‑Fi Direct first.
+            add(WirelessHotspotMode.WIFI_P2P to context.getString(R.string.wifi_direct))
             add(WirelessHotspotMode.MANUAL to context.getString(R.string.built_in_car_hotspot))
             add(WirelessHotspotMode.EXISTING_WIFI to context.getString(R.string.existing_wifi_title))
         }

@@ -4,8 +4,8 @@ import android.content.Context
 import android.media.MediaCodec
 import android.media.MediaCodecList
 import android.media.MediaFormat
-import android.os.Build
-import android.util.Log
+import com.shihab.diplay.compat.realSdkInt
+import com.shihab.diplay.util.AppLog
 
 /**
  * Optional, for head units whose screen turns: CarPlay gets a square canvas holding a landscape and a
@@ -43,7 +43,7 @@ object CarPlayRotation {
         preferSoftwareHevcDecoder: Boolean = false,
         configures: (decoder: String, mime: String, side: Int) -> Boolean = ::configures,
     ): Int? {
-        if (Build.VERSION.SDK_INT < 21) return null
+        if (realSdkInt() < 21) return null
         val limit = picture.maxSide?.let { minOf(it, longSide) } ?: longSide
         val mime = if (hevc) MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
         val decoders = runCatching {
@@ -53,11 +53,11 @@ object CarPlayRotation {
         }.getOrDefault(emptyList())
         // Match AndroidMediaSink's explicit software-HEVC preference or default decoder. A later
         // software codec must not approve a canvas the default hardware decoder cannot configure.
-        val software = if (hevc && preferSoftwareHevcDecoder && Build.VERSION.SDK_INT >= 29)
+        val software = if (hevc && preferSoftwareHevcDecoder && realSdkInt() >= 29)
             decoders.firstOrNull { it.isSoftwareOnly } else null
         val decoder = software ?: decoders.firstOrNull()
         val hardware = decoder?.let {
-            if (Build.VERSION.SDK_INT >= 29) it.isHardwareAccelerated
+            if (realSdkInt() >= 29) it.isHardwareAccelerated
             else !it.name.startsWith("OMX.google.") && !it.name.startsWith("c2.android.")
         } == true
         val video = if (decoder != null && (hardware || software != null))
@@ -73,7 +73,7 @@ object CarPlayRotation {
             candidate <= maxOf(widths, heights) && candidate.toLong() * candidate <= widths.toLong() * heights &&
                 configures(decoder.name, mime, candidate).also { probed = it }
         }
-        Log.i(TAG, "square ${side ?: "unsupported"} for a $longSide px screen, picture $picture, hevc=$hevc " +
+        AppLog.i(TAG, "square ${side ?: "unsupported"} for a $longSide px screen, picture $picture, hevc=$hevc " +
             "decoder=${decoder?.name} softwareSelected=${software != null} configuredByDecoder=$probed")
         return side
     }
@@ -125,7 +125,7 @@ object CarPlayRotation {
             codec.configure(MediaFormat.createVideoFormat(mime, side, side), null, null, 0)
             true
         } catch (error: Exception) {
-            Log.i(TAG, "decoder $decoder declined a ${side}x$side square: ${error.message}")
+            AppLog.i(TAG, "decoder $decoder declined a ${side}x$side square: ${error.message}")
             false
         } finally {
             runCatching { codec?.release() }

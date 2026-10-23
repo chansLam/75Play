@@ -1,7 +1,7 @@
 package com.shihab.diplay.media
 
-import android.util.Log
 import java.io.Closeable
+import com.shihab.diplay.util.AppLog
 
 /**
  * NDK libopus software decoder fallback for legacy head units (KitKat / API 19) that have no
@@ -18,7 +18,7 @@ internal class NativeOpusDecoder private constructor(
     @Synchronized fun decode(packet: ByteArray): ByteArray? {
         if (!available) return null
         return runCatching { nativeDecode(handle, packet) }
-            .onFailure { Log.w(TAG, "Native Opus decode failed", it) }
+            .onFailure { AppLog.w(TAG, "Native Opus decode failed", it) }
             .getOrNull()
     }
 
@@ -32,7 +32,7 @@ internal class NativeOpusDecoder private constructor(
         private const val TAG = "xcertplay-opus"
         private val loaded: Boolean by lazy {
             runCatching { System.loadLibrary("opus_microphone"); true }
-                .onFailure { Log.w(TAG, "Software Opus library unavailable", it) }
+                .onFailure { AppLog.w(TAG, "Software Opus library unavailable", it) }
                 .getOrDefault(false)
         }
 
@@ -41,7 +41,7 @@ internal class NativeOpusDecoder private constructor(
         fun create(sampleRate: Int, channels: Int): NativeOpusDecoder? {
             if (!loaded) return null
             val handle = runCatching { nativeCreate(sampleRate, channels) }
-                .onFailure { Log.w(TAG, "Software Opus decoder init failed", it) }
+                .onFailure { AppLog.w(TAG, "Software Opus decoder init failed", it) }
                 .getOrDefault(0L)
             return if (handle != 0L) NativeOpusDecoder(handle, channels) else null
         }

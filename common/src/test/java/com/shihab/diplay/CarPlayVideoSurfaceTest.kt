@@ -4,7 +4,7 @@ import com.shihab.diplay.host.CarPlayVideoSurfaceMode
 import com.shihab.diplay.host.CarPlayVideoSurfaceOwner
 import com.shihab.diplay.host.backgroundSessionMatchesView
 import com.shihab.diplay.host.carPlayVideoSurfaceMode
-import com.shihab.diplay.host.smoothVideoDelayMillis
+import com.shihab.diplay.session.smoothVideoDelayMillis
 
 import com.shihab.diplay.media.CarPlayVideoLayout
 import org.junit.Assert.*

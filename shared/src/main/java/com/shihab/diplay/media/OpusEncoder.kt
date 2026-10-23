@@ -2,37 +2,17 @@ package com.shihab.diplay.media
 
 import android.media.MediaCodec
 import android.media.MediaFormat
-import android.util.Log
+import com.shihab.diplay.compat.inputBufferCompat
+import com.shihab.diplay.compat.outputBufferCompat
 import java.io.Closeable
+import com.shihab.diplay.util.AppLog
 
 /**
  * Encodes 20 ms chunks of 48 kHz mono PCM into raw Opus access units for the CarPlay
  * microphone uplink.
  */
 internal class OpusEncoder(bitrate: Int) : Closeable {
-    private val codec: MediaCodec? = try {
-        val format = MediaFormat.createAudioFormat(
-            MediaFormat.MIMETYPE_AUDIO_OPUS,
-            SAMPLE_RATE,
-            CHANNELS,
-        ).apply {
-            setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
-            setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, MAX_INPUT_BYTES)
-        }
-        MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_OPUS).also {
-            it.configure(
-                format,
-                null,
-                null,
-                MediaCodec.CONFIGURE_FLAG_ENCODE,
-            )
-            it.start()
-            Log.i(TAG, "Opus microphone encoder started bitrate=$bitrate")
-        }
-    } catch (error: Exception) {
-        Log.w(TAG, "Opus microphone encoder unavailable", error)
-        null
-    }
+    private val codec: MediaCodec? = openCodec(bitrate)
     // No platform MediaCodec Opus encoder (e.g. KitKat i.MX6): fall back to the bundled NDK libopus.
     private val native: NativeOpusEncoder? = if (codec == null) NativeOpusEncoder.create(bitrate) else null
     private val bufferInfo = MediaCodec.BufferInfo()
@@ -51,12 +31,11 @@ internal class OpusEncoder(bitrate: Int) : Closeable {
         val inputIndex = try {
             codec.dequeueInputBuffer(INPUT_TIMEOUT_US)
         } catch (error: Exception) {
-            Log.w(TAG, "Opus microphone input dequeue failed", error)
+            AppLog.w(TAG, "Opus microphone input dequeue failed", error)
             return emptyList()
         }
         if (inputIndex >= 0) {
-            @Suppress("DEPRECATION")
-            val input = codec.inputBuffers[inputIndex]
+            val input = codec.inputBufferCompat(inputIndex)
             if (input == null || pcm.size > input.remaining()) {
                 codec.queueInputBuffer(inputIndex, 0, 0, presentationTimeUs, 0)
             } else {
@@ -82,7 +61,7 @@ internal class OpusEncoder(bitrate: Int) : Closeable {
             val index = try {
                 codec.dequeueOutputBuffer(bufferInfo, 0)
             } catch (error: Exception) {
-                Log.w(TAG, "Opus microphone output dequeue failed", error)
+                AppLog.w(TAG, "Opus microphone output dequeue failed", error)
                 return output
             }
             when {
@@ -93,8 +72,7 @@ internal class OpusEncoder(bitrate: Int) : Closeable {
                         codec.releaseOutputBuffer(index, false)
                         continue
                     }
-                    @Suppress("DEPRECATION")
-                    val buffer = codec.outputBuffers[index]
+                    val buffer = codec.outputBufferCompat(index)
                     if (buffer != null && bufferInfo.size > 0) {
                         val bytes = ByteArray(bufferInfo.size)
                         buffer.position(bufferInfo.offset)
@@ -103,7 +81,7 @@ internal class OpusEncoder(bitrate: Int) : Closeable {
                         output.add(bytes)
                         outputPackets++
                         if (outputPackets <= FIRST_PACKET_LOG_COUNT) {
-                            Log.i(
+                            AppLog.i(
                                 TAG,
                                 "Opus microphone packet=$outputPackets bytes=${bytes.size} " +
                                     "head=${bytes.copyOf(minOf(bytes.size, 16)).toHexString()}",
@@ -115,6 +93,38 @@ internal class OpusEncoder(bitrate: Int) : Closeable {
             }
         }
         return output
+    }
+
+    private fun openCodec(bitrate: Int): MediaCodec? {
+        var created: MediaCodec? = null
+        return try {
+            val format = MediaFormat.createAudioFormat(
+                MediaFormat.MIMETYPE_AUDIO_OPUS,
+                SAMPLE_RATE,
+                CHANNELS,
+            ).apply {
+                setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
+                setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, MAX_INPUT_BYTES)
+            }
+            created = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_OPUS)
+            created.configure(
+                format,
+                null,
+                null,
+                MediaCodec.CONFIGURE_FLAG_ENCODE,
+            )
+            created.start()
+            AppLog.i(TAG, "Opus microphone encoder started bitrate=$bitrate")
+            created
+        } catch (error: Exception) {
+            AppLog.w(TAG, "Opus microphone encoder unavailable", error)
+            try {
+                created?.release()
+            } catch (_: Exception) {
+                // configure/start failed before the codec was usable
+            }
+            null
+        }
     }
 
     override fun close() {

@@ -17,7 +17,7 @@
 
 ## 安装
 
-1. 从 [Releases](https://github.com/chansLam/75Play/releases) 下载 APK（文件名见 [`site/config.json`](../site/config.json)，当前 `75Play-v2.0.0-release.apk`）。
+1. 从 [Releases](https://github.com/chansLam/75Play/releases) 下载 APK（文件名见 [`site/config.json`](../site/config.json)，当前 `75Play-v2.0.1-release.apk`）。
 2. 若已安装**其他签名**的 75Play / 同类包，先彻底卸载。
 3. 用车机文件管理器安装，或 `adb install -r <apk>`。**不要**装到 iPhone。
 4. 打开 75Play。KitKat 上车机权限多为安装时授予。关掉其他投屏 / 手机互联应用。
@@ -53,7 +53,7 @@
 | 车辆 | 驾驶侧、Siri 键、悬浮小白点、应用列表、手势 |
 | 诊断 / 高级 | 诊断报告；安卓终端（实验性）；HEVC 等实验项 |
 
-设置按**司机目标**分组；实验项在「高级」，标题带「实验性」后缀。改动若需重连，文案会说明；「立即重连」仅在明确同意时使用。
+设置按**司机目标**分组；实验项在「高级」，标题带「实验性」后缀。改动若需重连，文案会说明；已连接时会先确认「保存并重新连接」。
 
 ## 反馈
 

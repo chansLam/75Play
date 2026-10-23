@@ -2,6 +2,7 @@
 package com.shihab.diplay
 
 import com.shihab.diplay.ui.DiPlayDialog
+import com.shihab.diplay.ui.dp
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
@@ -9,7 +10,6 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
-import android.os.Build
 import android.view.DragEvent
 import android.view.Gravity
 import android.view.View
@@ -22,6 +22,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
+import com.shihab.diplay.compat.realSdkInt
 import com.shihab.diplay.host.R
 import kotlin.math.roundToInt
 
@@ -42,15 +43,14 @@ object CarPlayAppPanels {
         onLaunch: (CarAppCatalog.App) -> Unit,
         onClose: () -> Unit,
     ): View {
-        val density = context.resources.displayMetrics.density
-        fun dp(v: Int) = (v * density).roundToInt()
-        val kitKat = Build.VERSION.SDK_INT < 21
-        val columns = if (kitKat) 4 else 5
-        val iconDp = if (kitKat) 52 else 60
-        val iconPx = dp(iconDp)
-        val padH = if (kitKat) 20 else 28
-        val padV = if (kitKat) 16 else 22
-        val corner = if (kitKat) 18 else 24
+        val kitKat = realSdkInt() < 21
+        // 车机弹层：大图标、少列。不按 SDK 把触控做小。
+        val columns = 4
+        val iconDp = 72
+        val iconPx = context.dp(iconDp)
+        val padH = 24
+        val padV = 20
+        val corner = 20
 
         val overlay = FrameLayout(context).apply {
             setBackgroundColor(SCRIM)
@@ -62,10 +62,10 @@ object CarPlayAppPanels {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
                 setColor(PANEL_FILL)
-                cornerRadius = dp(corner).toFloat()
-                setStroke(dp(1), PANEL_STROKE)
+                cornerRadius = context.dp(corner).toFloat()
+                setStroke(context.dp(1), PANEL_STROKE)
             }
-            setPadding(dp(padH), dp(padV), dp(padH), dp(padV))
+            setPadding(context.dp(padH), context.dp(padV), context.dp(padH), context.dp(padV))
             isClickable = true
             setOnClickListener { }
         }
@@ -74,7 +74,7 @@ object CarPlayAppPanels {
         val header = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = dp(44)
+            minimumHeight = context.dp(56)
         }
         val titleCol = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -83,29 +83,29 @@ object CarPlayAppPanels {
         titleCol.addView(TextView(context).apply {
             text = context.getString(R.string.app_launcher_title)
             setTextColor(0xFFF2F7FF.toInt())
-            textSize = if (kitKat) 20f else 22f
+            textSize = 22f
             typeface = Typeface.DEFAULT_BOLD
         })
         titleCol.addView(TextView(context).apply {
             text = context.getString(R.string.app_launcher_popup_hint)
             setTextColor(0x99B8C9DC.toInt())
-            textSize = 12f
-            setPadding(0, dp(2), 0, 0)
+            textSize = 16f
+            setPadding(0, context.dp(2), 0, 0)
         })
         header.addView(titleCol, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         header.addView(
             TextView(context).apply {
                 text = context.getString(R.string.app_launcher_close)
                 setTextColor(0xFFEAF4FF.toInt())
-                textSize = 14f
+                textSize = 16f
                 typeface = Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER
-                setPadding(dp(18), dp(8), dp(18), dp(8))
+                setPadding(context.dp(20), context.dp(12), context.dp(20), context.dp(12))
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.RECTANGLE
-                    cornerRadius = dp(999).toFloat()
+                    cornerRadius = context.dp(10).toFloat()
                     setColor(CLOSE_FILL)
-                    setStroke(dp(1), 0x33FFFFFF)
+                    setStroke(context.dp(1), 0x33FFFFFF)
                 }
                 setOnClickListener { onClose() }
                 contentDescription = context.getString(R.string.app_launcher_close)
@@ -118,9 +118,9 @@ object CarPlayAppPanels {
         )
         panel.addView(
             View(context).apply { setBackgroundColor(0x18FFFFFF) },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)).apply {
-                topMargin = dp(12)
-                bottomMargin = dp(14)
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, context.dp(1)).apply {
+                topMargin = context.dp(12)
+                bottomMargin = context.dp(14)
             },
         )
 
@@ -131,20 +131,20 @@ object CarPlayAppPanels {
                     setTextColor(0xCCB8C9DC.toInt())
                     textSize = 16f
                     gravity = Gravity.CENTER
-                    setPadding(0, dp(40), 0, dp(40))
+                    setPadding(0, context.dp(40), 0, context.dp(40))
                 },
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
             )
         } else {
             val rows = (apps.size + columns - 1) / columns
-            val rowH = dp(iconDp + 36)
-            val gridH = (rows * rowH + (rows - 1) * dp(8)).coerceAtMost(
+            val rowH = context.dp(iconDp + 48)
+            val gridH = (rows * rowH + (rows - 1) * context.dp(8)).coerceAtMost(
                 (context.resources.displayMetrics.heightPixels * 0.62f).toInt(),
             )
             val grid = GridView(context).apply {
                 numColumns = columns
-                horizontalSpacing = dp(8)
-                verticalSpacing = dp(8)
+                horizontalSpacing = context.dp(8)
+                verticalSpacing = context.dp(8)
                 isVerticalScrollBarEnabled = rows > 3
                 stretchMode = GridView.STRETCH_COLUMN_WIDTH
                 cacheColorHint = Color.TRANSPARENT
@@ -159,7 +159,7 @@ object CarPlayAppPanels {
                     override fun getItemId(position: Int) = position.toLong()
                     override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
                         val app = apps[position]
-                        val tile = convertView ?: oemStyleTile(context, iconDp) { dp(it) }
+                        val tile = convertView ?: oemStyleTile(context, iconDp) { context.dp(it) }
                         tile.setOnClickListener { onLaunch(app) }
                         tile.setOnLongClickListener {
                             confirmUninstall(context, app)
@@ -179,7 +179,7 @@ object CarPlayAppPanels {
         }
 
         val metrics = context.resources.displayMetrics
-        val widthFrac = if (kitKat) 0.78f else 0.72f
+        val widthFrac = 0.86f
         overlay.addView(
             panel,
             FrameLayout.LayoutParams(
@@ -199,11 +199,9 @@ object CarPlayAppPanels {
     fun shownApps(context: Context, apps: List<CarAppCatalog.App>): List<CarAppCatalog.App> {
         // 与主页应用列表共用同一份持久化（home_app_list）：先过滤隐藏，再按用户自定义顺序排序，
         // 保证 CarPlay 显示的和主页完全一致。
-        val prefs = context.getSharedPreferences("home_app_list", Context.MODE_PRIVATE)
-        val hidden = prefs.getString("hidden_packages", "")?.split(",").orEmpty()
-            .filter { it.isNotBlank() }.toSet()
+        val hidden = DiPlayPreferences.homeAppHidden(context)
         val shown = apps.filterNot { it.packageName in hidden }
-        val order = prefs.getString("app_order", "")?.split(",").orEmpty().filter { it.isNotBlank() }
+        val order = DiPlayPreferences.homeAppOrder(context)
         if (order.isEmpty()) return shown
         val index = order.withIndex().associate { (i, pkg) -> pkg to i }
         return shown.sortedBy { index[it.packageName] ?: Int.MAX_VALUE }
@@ -216,12 +214,10 @@ object CarPlayAppPanels {
         onDone: () -> Unit,
         onCancel: () -> Unit,
     ): View {
-        val density = context.resources.displayMetrics.density
-        val dp: (Int) -> Int = { v -> (v * density).roundToInt() }
-        val kitKat = Build.VERSION.SDK_INT < 21
-        val pad = if (kitKat) 16 else 28
-        val corner = if (kitKat) 16 else 28
-        val iconPx = dp(40)
+        val kitKat = realSdkInt() < 21
+        val pad = 22
+        val corner = 20
+        val iconPx = context.dp(56)
 
         // Working copies: `ordered` keeps display order, `checked` the packages to show.
         val ordered = apps.toMutableList()
@@ -246,9 +242,9 @@ object CarPlayAppPanels {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
                 setColor(PANEL_FILL)
-                cornerRadius = dp(corner).toFloat()
+                cornerRadius = context.dp(corner).toFloat()
             }
-            setPadding(dp(pad), dp(pad - 4), dp(pad), dp(pad))
+            setPadding(context.dp(pad), context.dp(pad - 4), context.dp(pad), context.dp(pad))
             isClickable = true
             setOnClickListener { }
         }
@@ -258,7 +254,7 @@ object CarPlayAppPanels {
             TextView(context).apply {
                 text = context.getString(R.string.app_launcher_edit_title)
                 setTextColor(Color.WHITE)
-                textSize = if (kitKat) 22f else 26f
+                textSize = 22f
                 typeface = Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER_VERTICAL
             },
@@ -272,11 +268,11 @@ object CarPlayAppPanels {
             TextView(context).apply {
                 text = context.getString(R.string.app_launcher_done)
                 setTextColor(Color.WHITE)
-                textSize = 15f
+                textSize = 16f
                 gravity = Gravity.CENTER
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.RECTANGLE
-                    cornerRadius = dp(8).toFloat()
+                    cornerRadius = context.dp(8).toFloat()
                     setColor(0x44FFFFFF)
                 }
                 setOnClickListener {
@@ -287,18 +283,18 @@ object CarPlayAppPanels {
                     onDone()
                 }
             },
-            FrameLayout.LayoutParams(dp(64), dp(40), Gravity.CENTER_VERTICAL or Gravity.END),
+            FrameLayout.LayoutParams(context.dp(112), context.dp(48), Gravity.CENTER_VERTICAL or Gravity.END),
         )
-        panel.addView(header, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44)))
+        panel.addView(header, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, context.dp(56)))
         panel.addView(
             TextView(context).apply {
                 text = context.getString(R.string.app_launcher_manage_hint)
                 setTextColor(0xCCFFFFFF.toInt())
-                textSize = 13f
+                textSize = 16f
                 gravity = Gravity.START
             },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                .apply { bottomMargin = dp(6) },
+                .apply { bottomMargin = context.dp(6) },
         )
 
         if (apps.isEmpty()) {
@@ -340,8 +336,8 @@ object CarPlayAppPanels {
             fun filterCheckBox(labelRes: Int): CheckBox = CheckBox(context).apply {
                 text = context.getString(labelRes)
                 setTextColor(Color.WHITE)
-                textSize = 14f
-                setPadding(0, 0, dp(8), 0)
+                textSize = 16f
+                setPadding(0, 0, context.dp(8), 0)
             }
 
             val bulkRow = LinearLayout(context).apply {
@@ -357,7 +353,7 @@ object CarPlayAppPanels {
             panel.addView(
                 bulkRow,
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                    .apply { bottomMargin = dp(4) },
+                    .apply { bottomMargin = context.dp(4) },
             )
 
             selectAllBox.setOnCheckedChangeListener { _, isChecked ->
@@ -385,7 +381,7 @@ object CarPlayAppPanels {
                 override fun getItemId(position: Int) = position.toLong()
                 override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
                     val app = ordered[position]
-                    val row = convertView ?: buildManageRow(context, dp)
+                    val row = convertView ?: buildManageRow(context) { v -> context.dp(v) }
                     val handle = row.getTag(R.id.manage_tag_handle) as TextView
                     val check = row.getTag(R.id.manage_tag_check) as CheckBox
                     val icon = row.getTag(R.id.manage_tag_icon) as ImageView
@@ -438,10 +434,10 @@ object CarPlayAppPanels {
                                 dragFrom = target
                                 adapter.notifyDataSetChanged()
                             }
-                            val edge = dp(48)
+                            val edge = context.dp(48)
                             when {
-                                event.y < edge -> smoothScrollBy(-dp(16), 50)
-                                height - event.y < edge -> smoothScrollBy(dp(16), 50)
+                                event.y < edge -> smoothScrollBy(-context.dp(16), 50)
+                                height - event.y < edge -> smoothScrollBy(context.dp(16), 50)
                             }
                             true
                         }
@@ -459,8 +455,8 @@ object CarPlayAppPanels {
         }
 
         val metrics = context.resources.displayMetrics
-        val widthFrac = if (kitKat) 0.88f else 0.92f
-        val heightFrac = if (kitKat) 0.82f else 0.88f
+        val widthFrac = 0.9f
+        val heightFrac = 0.86f
         overlay.addView(
             panel,
             FrameLayout.LayoutParams(
@@ -477,29 +473,29 @@ object CarPlayAppPanels {
         val row = LinearLayout(context)
         row.orientation = LinearLayout.HORIZONTAL
         row.gravity = Gravity.CENTER_VERTICAL
-        row.setPadding(0, dp(4), 0, dp(4))
+        row.setPadding(0, context.dp(8), 0, context.dp(8))
 
         val handle = TextView(context).apply {
             text = "☰"
             setTextColor(0xCCFFFFFF.toInt())
-            textSize = 20f
+            textSize = 22f
             gravity = Gravity.CENTER
             contentDescription = context.getString(R.string.app_launcher_drag_handle)
         }
-        row.addView(handle, LinearLayout.LayoutParams(dp(44), dp(48)))
+        row.addView(handle, LinearLayout.LayoutParams(context.dp(56), context.dp(56)))
         val check = CheckBox(context).apply { isClickable = true }
-        row.addView(check, LinearLayout.LayoutParams(dp(48), dp(48)))
+        row.addView(check, LinearLayout.LayoutParams(context.dp(56), context.dp(56)))
         val icon = ImageView(context).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
-        row.addView(icon, LinearLayout.LayoutParams(dp(40), dp(40)))
+        row.addView(icon, LinearLayout.LayoutParams(context.dp(48), context.dp(48)))
         val label = TextView(context).apply {
             setTextColor(Color.WHITE)
-            textSize = 15f
+            textSize = 18f
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
         }
         row.addView(
             label,
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(8) },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = context.dp(8) },
         )
 
         // Tags MUST be on the row — getView looks them up from convertView/row.
@@ -552,7 +548,7 @@ object CarPlayAppPanels {
         })
         val labelView = TextView(context).apply {
             setTextColor(0xE6EAF4FF.toInt())
-            textSize = 12f
+            textSize = 16f
             gravity = Gravity.CENTER_HORIZONTAL
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END

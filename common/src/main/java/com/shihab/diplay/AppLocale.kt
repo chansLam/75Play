@@ -3,9 +3,7 @@ package com.shihab.diplay
 
 import android.app.Activity
 import com.shihab.diplay.ui.DiPlayDialog
-import android.app.LocaleManager
-import android.os.Build
-import android.os.LocaleList
+import com.shihab.diplay.compat.realSdkInt
 import android.content.Context
 import android.content.res.Configuration
 import android.content.res.Resources
@@ -28,36 +26,16 @@ object AppLocale {
     private const val PREFS = "diplay"
     private const val KEY_LANGUAGE = "app_language"
 
-    private const val KEY_MIGRATED = "app_language_platform_migrated"
-
     fun preference(context: Context): String {
-        if (Build.VERSION.SDK_INT >= 33) {
-            val locales = context.getSystemService(LocaleManager::class.java).applicationLocales
-            if (locales.isEmpty) return SYSTEM
-            val selected = locales[0]
-            if (selected.language != "zh") return selected.language
-            // An explicit BCP 47 script is more specific than the region's usual script.
-            return when (selected.script) {
-                "Hant" -> TRADITIONAL_CHINESE
-                "Hans" -> SIMPLIFIED_CHINESE
-                else -> if (selected.country in setOf("TW", "HK", "MO")) {
-                    TRADITIONAL_CHINESE
-                } else {
-                    SIMPLIFIED_CHINESE
-                }
-            }
-        }
+        if (realSdkInt() >= 33) return platformLocales("preference", context) as String
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getString(KEY_LANGUAGE, SYSTEM)?.takeIf { it in ALL } ?: SYSTEM
     }
 
     fun save(context: Context, language: String) {
         require(language in ALL)
-        if (Build.VERSION.SDK_INT >= 33) {
-            context.getSystemService(LocaleManager::class.java).applicationLocales =
-                locale(language)?.let { LocaleList(it) } ?: LocaleList.getEmptyLocaleList()
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .putBoolean(KEY_MIGRATED, true).remove(KEY_LANGUAGE).apply()
+        if (realSdkInt() >= 33) {
+            platformLocales("save", context, language)
         } else {
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                 .putString(KEY_LANGUAGE, language).apply()
@@ -66,17 +44,8 @@ object AppLocale {
 
     /** On Android 13+, the OS is the single source of truth for the app language. */
     fun wrap(context: Context): Context {
-        if (Build.VERSION.SDK_INT >= 33) {
-            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            if (!prefs.getBoolean(KEY_MIGRATED, false)) {
-                val manager = context.getSystemService(LocaleManager::class.java)
-                val previous = locale(prefs.getString(KEY_LANGUAGE, SYSTEM) ?: SYSTEM)
-                // Never overwrite a language already chosen through Android Settings.
-                if (manager.applicationLocales.isEmpty && previous != null) {
-                    manager.applicationLocales = LocaleList(previous)
-                }
-                prefs.edit().putBoolean(KEY_MIGRATED, true).remove(KEY_LANGUAGE).apply()
-            }
+        if (realSdkInt() >= 33) {
+            platformLocales("migrateIfNeeded", context)
             return context
         }
         val locale = locale(preference(context)) ?: return context
@@ -95,20 +64,37 @@ object AppLocale {
      */
     @Suppress("DEPRECATION")
     fun enforce(context: Context): Boolean {
-        if (Build.VERSION.SDK_INT >= 33) return false
-        val systemLocale = if (Build.VERSION.SDK_INT >= 24) {
-            Resources.getSystem().configuration.locales[0]
-        } else {
-            Resources.getSystem().configuration.locale
-        }
+        if (realSdkInt() >= 33) return false
+        val system = if (realSdkInt() >= 24) topLocale(Resources.getSystem().configuration)
+            else Resources.getSystem().configuration.locale
+        val current = if (realSdkInt() >= 24) topLocale(context.resources.configuration)
+            else context.resources.configuration.locale
+        return applyLocale(context, system, current)
+    }
+
+    private fun topLocale(configuration: android.content.res.Configuration): java.util.Locale {
+        val type = Class.forName("com.shihab.diplay.Api24Locales")
+        return type.getMethod("top", android.content.res.Configuration::class.java)
+            .invoke(null, configuration) as java.util.Locale
+    }
+
+    private fun platformLocales(method: String, vararg args: Any?): Any? {
+        val type = Class.forName("com.shihab.diplay.PlatformAppLocales")
+        val parameterTypes = args.map { arg ->
+            when (arg) {
+                is Context -> Context::class.java
+                is String -> String::class.java
+                else -> arg!!.javaClass
+            }
+        }.toTypedArray()
+        return type.getMethod(method, *parameterTypes).invoke(null, *args)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun applyLocale(context: Context, systemLocale: Locale, currentLocale: Locale): Boolean {
         val locale = locale(preference(context)) ?: systemLocale
-        val resources = context.resources
-        val currentLocale = if (Build.VERSION.SDK_INT >= 24) {
-            resources.configuration.locales[0]
-        } else {
-            resources.configuration.locale
-        }
         if (currentLocale == locale) return false
+        val resources = context.resources
         val configuration = Configuration(resources.configuration).apply {
             setLocale(locale)
             setLayoutDirection(locale)
@@ -125,7 +111,7 @@ object AppLocale {
         require(language in ALL)
         if (language == preference(activity)) return
         save(activity, language)
-        if (Build.VERSION.SDK_INT < 33) activity.recreate()
+        if (realSdkInt() < 33) activity.recreate()
     }
 
     fun showPicker(activity: Activity) {
@@ -158,5 +144,16 @@ object AppLocale {
         SPANISH -> Locale("es")
         UKRAINIAN -> Locale("uk")
         else -> null
+    }
+
+    /** 阿语（RTL 文字）判断：以当前 resources 的 locale 为准。 */
+    fun isArabic(resources: Resources): Boolean =
+        resources.configuration.locale.language == ARABIC
+
+    /** 根容器按阿语切 RTL，让代码构建的水平 LinearLayout / gravity start-end 自然镜像。 */
+    fun applyRootLayoutDirection(activity: Activity) {
+        if (isArabic(activity.resources)) {
+            activity.window.decorView.layoutDirection = android.view.View.LAYOUT_DIRECTION_RTL
+        }
     }
 }

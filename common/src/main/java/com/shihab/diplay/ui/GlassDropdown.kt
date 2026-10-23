@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -21,6 +22,19 @@ import com.shihab.diplay.host.ImmersiveBars
  * - Non-focusable so opening does not flash the system navigation bar.
  */
 object GlassDropdown {
+
+    private var showing: PopupWindow? = null
+
+    /** Back from the shell closes the open list. */
+    fun dismiss(): Boolean {
+        val window = showing ?: return false
+        if (!window.isShowing) {
+            showing = null
+            return false
+        }
+        window.dismiss()
+        return true
+    }
 
     fun show(
         anchor: View,
@@ -46,7 +60,13 @@ object GlassDropdown {
                 textSize = LayoutMetrics.settingsCapTextSize(ctx)
                 gravity = Gravity.CENTER_VERTICAL
                 setTextColor(if (i == selected) GlassColors.ACCENT else GlassColors.TEXT_BODY)
-                if (i == selected) setTypeface(typeface, android.graphics.Typeface.BOLD)
+                if (i == selected) {
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    background = GradientDrawable().apply {
+                        setColor(GlassColors.ACCENT_SOFT_FILL)
+                        cornerRadius = dp(8).toFloat()
+                    }
+                }
                 includeFontPadding = true
                 minimumHeight = LayoutMetrics.rowMinH(ctx)
                 val pv = LayoutMetrics.capPadV(ctx)
@@ -63,7 +83,10 @@ object GlassDropdown {
             if (i < labels.lastIndex) {
                 col.addView(View(ctx).apply {
                     setBackgroundColor(GlassColors.DIVIDER)
-                    layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1)
+                    layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1).apply {
+                        leftMargin = dp(10)
+                        rightMargin = dp(10)
+                    }
                 })
             }
         }
@@ -123,7 +146,9 @@ object GlassDropdown {
             .coerceAtLeast(dp(48))
 
         // focusable=false：不抢 Activity 焦点，避免车机侧边系统导航栏闪一下。
+        showing?.dismiss()
         popup = PopupWindow(scroller, popupW, popupH, /* focusable = */ false)
+        showing = popup
         popup.isOutsideTouchable = true
         popup.isTouchable = true
         popup.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
@@ -150,6 +175,7 @@ object GlassDropdown {
         popup.showAtLocation(anchor, Gravity.NO_GRAVITY, x, y)
         ImmersiveBars.keepHiddenWhile(act) { popup.isShowing }
         popup.setOnDismissListener {
+            if (showing === popup) showing = null
             ImmersiveBars.applyToWindow(act?.window, force = true)
         }
     }

@@ -1,36 +1,16 @@
 package com.shihab.diplay
 
-import android.Manifest
 import android.content.Context
-import android.content.pm.PackageManager
-import android.graphics.BitmapFactory
-import android.view.WindowManager
-import android.util.DisplayMetrics
-import androidx.core.content.ContextCompat
-import com.shihab.diplay.airplay.AirPlayConfig
-import com.shihab.diplay.airplay.AirPlayDisplayConfig
-import com.shihab.diplay.airplay.AirPlayIcon
-import com.shihab.diplay.airplay.AirPlayIdentity
-import com.shihab.diplay.airplay.CarPlayDisplayScale
-import com.shihab.diplay.airplay.CarPlayMediaEngine
 import com.shihab.diplay.airplay.AirPlaySessionListener
-import com.shihab.diplay.host.CarPlaySessionDisplay
+import com.shihab.diplay.session.CarPlaySessionDisplay
 import com.shihab.diplay.host.R
-import com.shihab.diplay.host.smoothVideoDelayMillis
-import com.shihab.diplay.location.AndroidCarPlayLocationProvider
 import com.shihab.diplay.media.AndroidMediaSink
-import com.shihab.diplay.media.OpusEncoderSupport
 import com.shihab.diplay.network.WirelessStartupFailure
 import com.shihab.diplay.orchestration.CarPlayController
-import com.shihab.diplay.orchestration.CarPlayRuntimeConfig
 import com.shihab.diplay.orchestration.CarPlayStatus
-import com.shihab.diplay.orchestration.CarPlayTransport
-import com.shihab.diplay.orchestration.ManualHotspotProvisioning
-import com.shihab.diplay.orchestration.ManualHotspotSecurity
-import com.shihab.diplay.orchestration.MfiTarget
 import com.shihab.diplay.orchestration.WirelessHotspotMode
-import com.shihab.diplay.transport.EvChargingConnectors
-import com.shihab.diplay.transport.Iap2IdentificationConfig
+import com.shihab.diplay.session.CarPlaySessionBuilt
+import com.shihab.diplay.session.CarPlaySessionFactory
 
 /**
  * Stage text mapping shared between [CarPlayHostActivity] and [CarPlayConnectService].
@@ -76,7 +56,11 @@ internal object CarPlayConnectText {
         is CarPlayStatus.Failed -> when (status.startupFailure) {
             WirelessStartupFailure.HOTSPOT_NOT_READY -> context.getString(R.string.hotspot_network_not_ready)
             WirelessStartupFailure.FIRST_TCP_TIMEOUT -> context.getString(R.string.first_tcp_timeout)
-            else -> context.getString(R.string.status_failed, status.message)
+            else -> if (status.message.contains("RFCOMM", ignoreCase = true)) {
+                context.getString(R.string.your_iphone_isn_t_available_unlock_it_and_check_bluetooth)
+            } else {
+                context.getString(R.string.status_failed, status.message)
+            }
         }
     }
 
@@ -117,16 +101,13 @@ internal class CarPlayStackBuilt(
     val controller: CarPlayController,
     val sink: AndroidMediaSink,
     val display: CarPlaySessionDisplay,
-)
+) {
+    constructor(built: CarPlaySessionBuilt) : this(built.controller, built.sink, built.display)
+}
 
 /**
  * Builds the full CarPlay controller stack without any View/Activity, so [CarPlayConnectService] can
- * drive the wireless handshake in the background. The sink is created with a null Surface; the host
- * attaches its surface later via `setSurface` when it adopts the session.
- *
- * Deliberately a headless simplification of CarPlayHostActivity.startCarPlay: it negotiates a sane
- * canvas from the persisted display size and re-negotiates through the existing restart path once the
- * host adopts and reports its real surface size.
+ * drive the wireless handshake in the background. Delegates to [CarPlaySessionFactory.buildHeadless].
  */
 internal object CarPlayConnectStack {
 
@@ -135,179 +116,7 @@ internal object CarPlayConnectStack {
         listener: AirPlaySessionListener,
         onStage: (String) -> Unit,
         onFailed: (String) -> Unit,
-    ): CarPlayStackBuilt {
-        val identity: AirPlayIdentity = AirPlayPersistence.loadIdentity(ctx)
-        val wirelessEnabled = AirPlayPersistence.loadWirelessEnabled(ctx)
-        val mfiTarget = AirPlayPersistence.loadMfiTarget(ctx)
-        val mfiI2cPath = AirPlayPersistence.loadMfiI2cPath(ctx)
-        val remoteMfiServer = AirPlayPersistence.loadRemoteMfiServer(ctx)
-        val remoteMfiToken = AirPlayPersistence.loadRemoteMfiToken(ctx)
-        val locationReportingEnabled = AirPlayPersistence.loadLocationReportingEnabled(ctx)
-        val wirelessHotspotMode = AirPlayPersistence.loadWirelessHotspotMode(ctx)
-        val existingWifiSsid = AirPlayPersistence.loadExistingWifiSsid(ctx)
-        val existingWifiPassphrase = AirPlayPersistence.loadExistingWifiPassphrase(ctx)
-        var manualHotspotSsid = AirPlayPersistence.loadManualHotspotSsid(ctx)
-        var manualHotspotPassphrase = AirPlayPersistence.loadManualHotspotPassphrase(ctx)
-        var manualHotspotSecurity = AirPlayPersistence.loadManualHotspotSecurity(ctx)
-        // Seamless manual hotspot credentials are invented once and persisted, mirroring the host.
-        if (wirelessHotspotMode == WirelessHotspotMode.MANUAL && manualHotspotSsid.isBlank()) {
-            val generated = ManualHotspotProvisioning.generate()
-            manualHotspotSsid = generated.ssid
-            manualHotspotPassphrase = generated.passphrase
-            manualHotspotSecurity = ManualHotspotSecurity.WPA2
-            AirPlayPersistence.saveManualHotspotSsid(ctx, generated.ssid)
-            AirPlayPersistence.saveManualHotspotPassphrase(ctx, generated.passphrase)
-            AirPlayPersistence.saveManualHotspotSecurity(ctx, ManualHotspotSecurity.WPA2)
-        }
-        val manualHotspotBand = AirPlayPersistence.loadManualHotspotBand(ctx)
-        val manualHotspotChannel = AirPlayPersistence.loadManualHotspotChannel(ctx)
-
-        val deviceId = DiPlayBootstrap.deviceId(identity)
-        val manufacturer = AirPlayPersistence.loadManufacturer(ctx).trim()
-            .ifBlank { AirPlayPersistence.DEFAULT_MANUFACTURER }
-        val model = AirPlayPersistence.loadModel(ctx).trim().ifBlank { AirPlayPersistence.DEFAULT_MODEL }
-        val config = CarPlayRuntimeConfig(
-            mfiTarget = mfiTarget,
-            linuxI2cPath = if (mfiTarget == MfiTarget.I2C) mfiI2cPath.trim() else null,
-            remoteMfiServer = remoteMfiServer.trim().takeIf { it.isNotEmpty() },
-            remoteMfiToken = remoteMfiToken.takeIf { it.isNotEmpty() },
-            identification = Iap2IdentificationConfig(
-                name = "75Play",
-                modelIdentifier = model,
-                manufacturer = manufacturer,
-                serialNumber = "75PLAY-" + deviceId.replace(":", ""),
-                firmwareVersion = "0.1.0",
-                hardwareVersion = "1.0",
-                carPlayUsbInterfaceNumber = 3,
-                locationInformationEnabled = locationReportingEnabled,
-                vehicleStatusEnabled = false,
-                chargingConnectors = EvChargingConnectors.CCS2_TYPE2,
-                vehicleSpeedEnabled = false,
-            ),
-            label = "75Play",
-            hostName = "75play-" + deviceId.replace(":", "").lowercase(),
-            hostMac = deviceId.split(":").map { it.toInt(16).toByte() }.toByteArray(),
-            wirelessBluetoothDeviceAddress = DiPlayPreferences.phoneAddress(ctx),
-            transport = CarPlayTransport.WIRELESS,
-            wirelessHotspotMode = wirelessHotspotMode,
-            wifiP2pPreferredChannel = AirPlayPersistence.loadWifiP2pPreferredChannel(ctx),
-            manualHotspotSsid = manualHotspotSsid.takeIf { it.isNotBlank() } ?: "75Play",
-            manualHotspotPassphrase = manualHotspotPassphrase,
-            manualHotspotBand = manualHotspotBand,
-            manualHotspotChannel = manualHotspotChannel,
-            manualHotspotSecurity = manualHotspotSecurity,
-            existingWifiSsid = existingWifiSsid,
-            existingWifiPassphrase = existingWifiPassphrase,
-            locationReportingEnabled = locationReportingEnabled,
-        )
-
-        // Headless size: prefer the persisted maximum-detected display, fall back to the real display.
-        val (maxW, maxH) = AirPlayPersistence.loadMaximumDetectedDisplay(ctx)
-        val real = DisplayMetrics()
-        runCatching {
-            (ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager)
-                .defaultDisplay.getRealMetrics(real)
-        }
-        val windowWidth = if (maxW > 0) maxW else real.widthPixels
-        val windowHeight = if (maxH > 0) maxH else real.heightPixels
-        val safeWidth = (windowWidth / 2 * 2).coerceAtLeast(2)
-        val safeHeight = (windowHeight / 2 * 2).coerceAtLeast(2)
-
-        val fps = AirPlayPersistence.loadFps(ctx)
-        // The sink fixes its pacing at construction time; the host adopts the session only when this
-        // matches the Smooth Video setting the host built its view with. Read the same persisted flag
-        // and compute the delay exactly like CarPlayHostActivity.createMediaSink.
-        val smoothVideo = AirPlayPersistence.loadSmoothVideo(ctx)
-        val sessionHevc = HevcSupport.usable(
-            AirPlayPersistence.loadHevcEnabled(ctx), false, HevcSupport.decoders(),
-        )
-        val baseDisplay = AirPlayDisplayConfig(
-            widthPixels = safeWidth,
-            heightPixels = safeHeight,
-            fps = fps,
-            primaryInputDevice = if (AndroidTvInputMode.shouldUseKnobAsPrimaryInput(ctx)) 3 else 1,
-        )
-        val scaled = CarPlayDisplayScale.applyPercent(baseDisplay, AirPlayPersistence.loadDisplayScalePercent(ctx))
-        val microphoneGranted = ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) ==
-            PackageManager.PERMISSION_GRANTED
-        val airPlayConfig = AirPlayConfig(
-            deviceName = "75Play",
-            deviceId = deviceId,
-            btMac = DiPlayBluetooth.localAddress(ctx) ?: deviceId,
-            sourceVersion = "950.7.1",
-            main = scaled,
-            rightHandDrive = AirPlayPersistence.loadRightHandDrive(ctx),
-            hevc = sessionHevc,
-            microphone = microphoneGranted,
-            microphoneOpus = OpusEncoderSupport.isAvailable(),
-            opusAudioOutput = true,
-            manufacturer = manufacturer,
-            model = model,
-            oemLabel = AirPlayPersistence.defaultOemLabel(ctx),
-            icons = listOf(loadIcon(ctx)),
-            videoInCar = false,
-            mainBufferedAudio = AirPlayPersistence.loadMainBufferedAudio(ctx),
-        )
-
-        val locationProvider = if (config.locationReportingEnabled) AndroidCarPlayLocationProvider(ctx) else null
-
-        val sink = AndroidMediaSink(
-            surface = null,
-            videoWidth = scaled.widthPixels,
-            videoHeight = scaled.heightPixels,
-            preferSoftwareHevcDecoder = false,
-            context = ctx,
-            onScreenStreamActiveChanged = { _, _ -> },
-            // Only a SurfaceView honours release timestamps; smooth video always selects one.
-            videoPacingDelayMillis = if (smoothVideo) smoothVideoDelayMillis(fps) else 0,
-        )
-        val media = CarPlayMediaEngine(
-            sink = sink,
-            microphoneEnabled = microphoneGranted,
-            audioCaptureDirectory = null,
-            callSpeakerphone = AirPlayPersistence.loadCallSpeakerphone(ctx),
-        )
-        val pairings = AirPlayPersistence.loadPairings(ctx) { id, key ->
-            AirPlayPersistence.savePairing(ctx, id, key)
-        }
-
-        val reporter: (CarPlayStatus) -> Unit = { status ->
-            val text = CarPlayConnectText.describe(ctx, status, wirelessHotspotMode, wirelessEnabled)
-            if (status is CarPlayStatus.Failed) onFailed(text) else onStage(text)
-        }
-
-        val controller = CarPlayController(
-            context = ctx,
-            config = config,
-            airPlayConfig = airPlayConfig,
-            identity = identity,
-            pairings = pairings,
-            listener = listener,
-            media = media,
-            reportStatus = reporter,
-            locationProvider = locationProvider,
-            vehicleStatusProvider = null,
-        )
-        // Media keys / now-playing are process-global on the controller; wire them here so they keep
-        // working after the host adopts the session (the host does not re-attach on adopt).
-        CarPlayMediaKeys.attach(ctx, controller)
-
-        val display = CarPlaySessionDisplay(
-            scaled.widthPixels, scaled.heightPixels,
-            rotation = 0, hideTopBar = true, hideBottomBar = true,
-            windowWidth, windowHeight,
-            viewAreas = null,
-        )
-        return CarPlayStackBuilt(controller, sink, display)
-    }
-
-    private fun loadIcon(ctx: Context): AirPlayIcon {
-        val encoded = ctx.resources.openRawResource(R.raw.ic_car_home).use { it.readBytes() }
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(encoded, 0, encoded.size, bounds)
-        if (bounds.outWidth <= 0 || bounds.outWidth != bounds.outHeight) {
-            throw IllegalStateException("Packaged AirPlay icon is invalid")
-        }
-        return AirPlayIcon(bounds.outWidth, bounds.outHeight, encoded)
-    }
+    ): CarPlayStackBuilt = CarPlayStackBuilt(
+        CarPlaySessionFactory.buildHeadless(ctx, listener, onStage, onFailed),
+    )
 }

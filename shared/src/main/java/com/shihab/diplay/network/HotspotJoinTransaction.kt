@@ -73,7 +73,9 @@ internal class HotspotJoinTransaction<C>(private val port: Port<C>, private val 
         guard(record.at(Stage.PENDING), token)?.let { return it }
         if (port.read() != record.target) return Result(Status.DRIFT, token, true)
         if (cancelled()) return Result(Status.CANCELLED, token, true)
-        try { port.write(record.original) } catch (_: Exception) { }
+        try { port.write(record.original) } catch (e: Exception) {
+            com.shihab.diplay.util.AppLog.w("HotspotJoinTx", "restore write original config failed", e)
+        }
         if (port.read() != record.original || !persist(record.at(Stage.RESTORED)))
             return Result(Status.RECOVERY_REQUIRED, token, true)
         return Result(Status.RESTORED, token)

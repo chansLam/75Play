@@ -1,9 +1,9 @@
 package com.shihab.diplay
 
 import android.content.Context
-import android.util.Log
 import com.shihab.diplay.bluetooth.BluetoothAddressResolver
 import com.shihab.diplay.bluetooth.CarPlayBluetoothManager
+import com.shihab.diplay.util.AppLog
 
 internal object DiPlayBluetooth {
     private const val TAG = "DiPlayBluetooth"
@@ -24,9 +24,9 @@ internal object DiPlayBluetooth {
         BluetoothAddressResolver.normalize(hybrid)?.let { return it }
         val resolved = BluetoothAddressResolver.resolve(context)
         if (resolved == null) {
-            Log.w(TAG, "localAddress unresolved (Android may hide the hardware MAC from apps)")
+            AppLog.w(TAG, "localAddress unresolved (Android may hide the hardware MAC from apps)")
         } else {
-            Log.i(TAG, "localAddress=$resolved")
+            AppLog.i(TAG, "localAddress=$resolved")
         }
         return resolved
     }

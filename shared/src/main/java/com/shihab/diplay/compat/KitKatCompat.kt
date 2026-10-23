@@ -1,12 +1,38 @@
 package com.shihab.diplay.compat
 
-import android.os.Build
+import java.util.concurrent.TimeUnit
 
 /**
  * KitKat compatibility shims for platform methods introduced after API 19, ported from
  * changan-upstream 5805824 (lint NewApi sweep). Only the helpers this tree actually calls are
- * defined here; other KitKat guards in this project are written inline against Build.VERSION.SDK_INT.
+ * defined here; other KitKat guards use [realSdkInt] so a spoofed SDK_INT stays on the KitKat path.
  */
+
+/**
+ * [Process.waitFor(long, TimeUnit)] is API 26. Desugar may not rewrite it on all KitKat builds,
+ * so poll [Process.exitValue] with a deadline instead.
+ * @return true if the process exited before the timeout, false if still alive (caller should destroy).
+ */
+fun Process.waitForMillis(timeoutMs: Long): Boolean {
+    require(timeoutMs >= 0L) { "timeoutMs must be non-negative" }
+    val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+    while (true) {
+        try {
+            exitValue()
+            return true
+        } catch (_: IllegalThreadStateException) {
+            val remainingNs = deadline - System.nanoTime()
+            if (remainingNs <= 0L) return false
+            val sleepMs = minOf(50L, TimeUnit.NANOSECONDS.toMillis(remainingNs).coerceAtLeast(1L))
+            try {
+                Thread.sleep(sleepMs)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return false
+            }
+        }
+    }
+}
 object Base64Compat {
     /** java.util.Base64.getEncoder() is API 26; android.util.Base64 has existed since API 1. */
     fun encodeToString(data: ByteArray): String = try {
@@ -33,10 +59,10 @@ object Base64Compat {
 
 /** MediaCodec#getInputBuffer(int) is API 21; the deprecated buffers array covers KitKat. */
 fun android.media.MediaCodec.inputBufferCompat(index: Int): java.nio.ByteBuffer? =
-    if (Build.VERSION.SDK_INT >= 21) getInputBuffer(index)
+    if (realSdkAtLeast(21)) getInputBuffer(index)
     else @Suppress("DEPRECATION") inputBuffers?.get(index)
 
 /** MediaCodec#getOutputBuffer(int) is API 21; the deprecated buffers array covers KitKat. */
 fun android.media.MediaCodec.outputBufferCompat(index: Int): java.nio.ByteBuffer? =
-    if (Build.VERSION.SDK_INT >= 21) getOutputBuffer(index)
+    if (realSdkAtLeast(21)) getOutputBuffer(index)
     else @Suppress("DEPRECATION") outputBuffers?.get(index)

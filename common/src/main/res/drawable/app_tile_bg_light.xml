@@ -1,7 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 应用格（浅）：淡冷霜，与卡片同系 -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="#477BA3C4" />
-    <corners android:radius="18dp" />
-    <stroke android:width="1dp" android:color="#99FFFFFF" />
-</shape>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape>
+            <solid android:color="#661496E8" />
+            <corners android:radius="14dp" />
+        </shape>
+    </item>
+    <item android:state_focused="true">
+        <shape>
+            <solid android:color="#E6FFFFFF" />
+            <corners android:radius="14dp" />
+            <stroke android:width="2dp" android:color="#FF1496E8" />
+        </shape>
+    </item>
+    <item>
+        <layer-list>
+            <item>
+                <shape>
+                    <gradient
+                        android:angle="270"
+                        android:startColor="#E6FFFFFF"
+                        android:endColor="#B8FFFFFF" />
+                    <corners android:radius="14dp" />
+                    <stroke android:width="1dp" android:color="#80FFFFFF" />
+                </shape>
+            </item>
+            <item>
+                <shape>
+                    <gradient
+                        android:angle="270"
+                        android:startColor="#59FFFFFF"
+                        android:centerColor="#00000000"
+                        android:endColor="#00000000"
+                        android:centerY="0.22" />
+                    <corners android:radius="14dp" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+</selector>

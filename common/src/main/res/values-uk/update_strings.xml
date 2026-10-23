@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="update_checking">Перевірка оновлень…</string>
+    <string name="update_up_to_date">Ви використовуєте найновішу версію.</string>
+    <string name="update_no_notes">Нотатки до випуску недоступні.</string>
+    <string name="update_parked_notice">Припаркуйтеся та від’єднайте CarPlay перед встановленням. Android попросить підтвердити встановлення.</string>
+    <string name="update_download">Завантажити оновлення</string>
+    <string name="update_downloading">Завантаження та перевірка APK…</string>
+    <string name="update_install_notice">Завантажений APK пройшов перевірку SHA-256, імені пакета та сертифіката підпису. Відкрити інсталятор Android зараз?</string>
+    <string name="update_install">Відкрити інсталятор</string>
+    <string name="update_disconnect_first">Від’єднайте CarPlay і припаркуйтеся перед завантаженням або встановленням оновлення.</string>
+    <string name="update_install_unavailable">Системний інсталятор недоступний на цьому пристрої.</string>
+    <string name="update_failed">Помилка оновлення</string>
+    <string name="update_verifying">Перевірка SHA-256 APK та сертифіката підпису…</string>
+    <string name="update_downloading_phase">Завантаження підписаного пакета оновлення</string>
+    <string name="update_manual_saved">Перевірену копію також збережено для ручного встановлення:
+%1$s</string>
+    <string name="update_manual_install_help">Ця головна система не прийняла системний intent інсталятора APK. Завантажений і перевірений APK збережено за адресою:
+
+%1$s
+
+На стоянці відкрийте файловий менеджер і виберіть цей APK із Завантажень. Якщо на пристрої немає інсталятора, скористайтеся ПК із ADB або інсталятором виробника.</string>
+    <string name="update_manual_install_no_copy">Головна система не прийняла системний intent інсталятора APK, а загальнодоступне сховище Завантажень було недоступне. Завантажте APK на комп’ютері з офіційного GitHub Release 75Play та встановіть його через ADB або інсталятор головної системи на стоянці.</string>
+    <string name="update_notes_heading">Що нового</string>
+    <string name="update_available_heading">Доступне оновлення</string>
+    <string name="update_available_subtitle">Доступно: %1$s</string>
+    <string name="update_available_description">Нові функції та виправлення готові до завантаження.</string>
+    <string name="update_ready_heading">Пакет оновлення готовий</string>
+    <string name="update_ready_subtitle">%1$s · Завантаження та перевірку завершено</string>
+    <string name="update_dialog_subtitle">Оновлення ПЗ 75Play</string>
+    <string name="update_progress_step_download">Завантаження пакета оновлення</string>
+    <string name="update_progress_step_verify">Перевірити SHA-256 і сертифікат підпису</string>
+    <string name="update_progress_step_prepare">Підготувати пакет інсталяції</string>
+    <string name="update_preparing">Підготовка інсталяційного пакета…</string>
+    <string name="update_continue_background">Продовжити у фоновому режимі</string>
+    <string name="update_tls_unavailable">Цей пристрій не може встановити безпечне TLS-з’єднання із сервером оновлень. Завантажте APK з офіційного GitHub Release через інший браузер або комп’ютер і встановіть його вручну.</string>
+</resources>

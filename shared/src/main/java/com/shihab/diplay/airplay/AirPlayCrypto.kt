@@ -133,7 +133,7 @@ object AirPlayCrypto {
         nonce: ByteArray,
         input: ByteArray,
         aad: ByteArray,
-        useDirectBuffers: Boolean = android.os.Build.VERSION.SDK_INT >= 31,
+        useDirectBuffers: Boolean = com.shihab.diplay.compat.realSdkInt() >= 31,
     ): ByteArray? {
         val state = platformState.get() ?: return null
         return try {

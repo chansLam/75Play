@@ -5,8 +5,8 @@ import android.content.Context
 import android.hardware.usb.UsbManager
 import android.net.wifi.WifiManager
 import android.os.Build
-import android.util.Log
 import javax.net.ssl.SSLContext
+import com.shihab.diplay.util.AppLog
 
 /** Read-only diagnostic: never logs identities, network addresses, credentials or USB serials. */
 internal object LegacyConnectionProbe {
@@ -49,6 +49,6 @@ internal object LegacyConnectionProbe {
     }
 
     fun log(context: Context) {
-        report(context).lineSequence().forEach { if (it.isNotBlank()) Log.i("DiPlayLegacyProbe", it) }
+        report(context).lineSequence().forEach { if (it.isNotBlank()) AppLog.i("DiPlayLegacyProbe", it) }
     }
 }

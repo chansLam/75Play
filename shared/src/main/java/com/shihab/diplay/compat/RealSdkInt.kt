@@ -1,6 +1,7 @@
 package com.shihab.diplay.compat
 
 import android.os.Build
+import androidx.annotation.ChecksSdkIntAtLeast
 
 /**
  * Returns the real API level, working around head units that fake
@@ -9,7 +10,7 @@ import android.os.Build
  * Product target is KitKat (`minSdk` / `targetSdk` 19). Prefer KitKat code paths; use this
  * when a spoofed SDK_INT would otherwise take a newer-API branch.
  */
-internal fun realSdkInt(): Int {
+fun realSdkInt(): Int {
     val reported = Build.VERSION.SDK_INT
     val release = Build.VERSION.RELEASE ?: return reported
     // Map 4.4.x release to API 19 regardless of what SDK_INT claims.
@@ -18,3 +19,7 @@ internal fun realSdkInt(): Int {
     }
     return reported
 }
+
+/** Lint-visible form of `realSdkInt() >= api`. */
+@ChecksSdkIntAtLeast(parameter = 0)
+fun realSdkAtLeast(api: Int): Boolean = realSdkInt() >= api

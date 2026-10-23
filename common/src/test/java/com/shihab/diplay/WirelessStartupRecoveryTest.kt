@@ -1,10 +1,8 @@
 package com.shihab.diplay
 import com.shihab.diplay.host.CarPlayBackgroundSession
+import com.shihab.diplay.host.WirelessStartupRecovery
 
 import android.os.Handler
-import android.os.Looper
-import android.view.View
-import android.widget.Button
 import com.shihab.diplay.network.WirelessStartupFailure
 import com.shihab.diplay.orchestration.CarPlayStatus
 import org.junit.After
@@ -25,7 +23,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 @LooperMode(LooperMode.Mode.PAUSED)
 class WirelessStartupRecoveryTest {
     private lateinit var activity: CarPlayHostActivity
-    private lateinit var retry: Button
     private val failure = CarPlayStatus.Failed("timeout", startupFailure = WirelessStartupFailure.FIRST_TCP_TIMEOUT)
 
     @Before fun setup() {
@@ -33,8 +30,6 @@ class WirelessStartupRecoveryTest {
         activity = Robolectric.buildActivity(CarPlayHostActivity::class.java).get()
         activity.setTheme(android.R.style.Theme_Material_NoActionBar)
         ReflectionHelpers.setField(CarPlayBackgroundSession, "owner", activity)
-        retry = Button(activity).apply { visibility = View.GONE }
-        ReflectionHelpers.setField(activity, "startupRetryButton", retry)
     }
 
     @After fun cleanup() {
@@ -46,7 +41,8 @@ class WirelessStartupRecoveryTest {
         ReflectionHelpers.callInstanceMethod<(CarPlayStatus) -> Unit>(activity, "createStatusReporter",
             from(Int::class.javaPrimitiveType, generation))(status)
     }
-    private fun budget() = ReflectionHelpers.getField<WirelessStartupRetryBudget>(activity, "startupRetryBudget")
+    private fun recovery() = ReflectionHelpers.getField<WirelessStartupRecovery>(activity, "wirelessStartup")
+    private fun budget() = recovery().budget
 
     @Test fun duplicateFailureAndCleanupErrorScheduleOnlyOneRetry() {
         report()
@@ -58,14 +54,14 @@ class WirelessStartupRecoveryTest {
 
     @Test fun exhaustedBudgetStopsAutomaticRecoveryAndExposesRetry() {
         repeat(6) { generation ->
-            ReflectionHelpers.setField(activity, "restartGeneration", generation)
+            ReflectionHelpers.setField(recovery(), "generation", generation)
             ReflectionHelpers.setField(activity, "reconnectScheduled", false)
             report(generation)
         }
         assertEquals(5, budget().retries)
-        assertTrue(ReflectionHelpers.getField(activity, "startupRetryStopped"))
+        assertTrue(recovery().stopped)
         assertFalse(ReflectionHelpers.getField(activity, "reconnectScheduled"))
-        assertEquals(View.VISIBLE, retry.visibility)
+        assertTrue(activity.startupFailurePresented.get())
         report(5, CarPlayStatus.Failed("Bluetooth socket closed"))
         assertFalse(ReflectionHelpers.getField(activity, "reconnectScheduled"))
     }
@@ -74,16 +70,12 @@ class WirelessStartupRecoveryTest {
         report(status = CarPlayStatus.Failed("Permission missing", startupFailure = WirelessStartupFailure.HOTSPOT_CONFIGURATION))
         assertEquals(0, budget().retries)
         assertFalse(ReflectionHelpers.getField(activity, "reconnectScheduled"))
-        assertEquals(View.VISIBLE, retry.visibility)
+        assertTrue(activity.startupFailurePresented.get())
     }
 
-    @Test fun staleGenerationUserDisconnectMenuAndDifferentOwnerCannotSchedule() {
+    @Test fun staleGenerationUserDisconnectAndDifferentOwnerCannotSchedule() {
         report(1)
         assertEquals(0, budget().retries)
-        ReflectionHelpers.setField(activity, "menuOpen", true)
-        report()
-        assertEquals(0, budget().retries)
-        ReflectionHelpers.setField(activity, "menuOpen", false)
         ReflectionHelpers.getField<AtomicBoolean>(activity, "shuttingDown").set(true)
         report()
         assertEquals(0, budget().retries)

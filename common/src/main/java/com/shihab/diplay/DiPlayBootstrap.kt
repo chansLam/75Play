@@ -164,4 +164,29 @@ internal object DiPlayPreferences {
     fun saveAutoConnect(context: Context, value: Boolean) {
         prefs(context).edit().putBoolean("auto_connect", value).apply()
     }
+
+    /** Home app grid + CarPlay app panel share this file (not the session prefs). */
+    private fun homeApps(context: Context) =
+        context.getSharedPreferences(HOME_APP_LIST, Context.MODE_PRIVATE)
+
+    fun homeAppHidden(context: Context): Set<String> =
+        homeApps(context).getString(KEY_HIDDEN_PACKAGES, "")?.split(",").orEmpty()
+            .filter { it.isNotBlank() }.toSet()
+
+    fun saveHomeAppHidden(context: Context, packages: Set<String>) {
+        // commit so a following grid reload sees the new set.
+        homeApps(context).edit().putString(KEY_HIDDEN_PACKAGES, packages.joinToString(",")).commit()
+    }
+
+    fun homeAppOrder(context: Context): List<String> =
+        homeApps(context).getString(KEY_APP_ORDER, "")?.split(",").orEmpty()
+            .filter { it.isNotBlank() }
+
+    fun saveHomeAppOrder(context: Context, packages: List<String>) {
+        homeApps(context).edit().putString(KEY_APP_ORDER, packages.joinToString(",")).apply()
+    }
+
+    private const val HOME_APP_LIST = "home_app_list"
+    private const val KEY_HIDDEN_PACKAGES = "hidden_packages"
+    private const val KEY_APP_ORDER = "app_order"
 }

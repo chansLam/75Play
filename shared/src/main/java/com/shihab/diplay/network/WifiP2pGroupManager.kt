@@ -14,9 +14,8 @@ import android.os.Build
 import android.os.HandlerThread
 import android.os.Looper
 import android.provider.Settings
-import android.util.Log
 import androidx.annotation.RequiresApi
-import com.shihab.diplay.transport.Iap2WirelessSecurity
+import com.shihab.diplay.model.Iap2WirelessSecurity
 import java.io.IOException
 import java.net.Inet4Address
 import java.net.Inet6Address
@@ -28,6 +27,7 @@ import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import com.shihab.diplay.util.AppLog
 
 /**
  * Creates a temporary Wi-Fi Direct group owner, preferring 5 GHz, that can also be joined as a legacy AP.
@@ -863,7 +863,7 @@ class WifiP2pGroupManager(
                 })
             }
         } catch (failure: RuntimeException) {
-            Log.w(TAG, "Wi-Fi P2P removeGroup could not be issued", failure)
+            AppLog.w(TAG, "Wi-Fi P2P removeGroup could not be issued", failure)
             latch.countDown()
         }
         if (!waitForCallback) return

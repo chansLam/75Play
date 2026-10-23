@@ -8,7 +8,7 @@ import android.net.wifi.p2p.WifiP2pManager
 import android.os.HandlerThread
 import android.os.Looper
 import android.os.SystemClock
-import com.shihab.diplay.transport.Iap2WirelessSecurity
+import com.shihab.diplay.model.Iap2WirelessSecurity
 import java.io.IOException
 import java.net.InetAddress
 import java.net.NetworkInterface
@@ -115,7 +115,10 @@ internal class LegacyWifiP2pGroupManager(
 
                 val ssid = group.networkName?.takeIf { it.isNotBlank() }
                 val passphrase = group.passphrase?.takeIf { it.isNotBlank() }
-                val interfaceName = group.getInterface()?.takeIf { it.isNotBlank() }
+                // getInterface() is API 30. A missing method is NoSuchMethodError, not Exception.
+                val interfaceName = runCatching {
+                    group.getInterface()?.takeIf { it.isNotBlank() }
+                }.getOrNull()
                 val connectionAddress = requestConnectionInfo(p2pChannel, 1_500)
                 val networkInterface = interfaceName?.let {
                     runCatching { NetworkInterface.getByName(it) }.getOrNull()
@@ -180,6 +183,12 @@ internal class LegacyWifiP2pGroupManager(
         } catch (error: Exception) {
             close()
             throw error
+        } catch (error: Throwable) {
+            close()
+            throw IOException(
+                "Legacy Wi-Fi Direct failed: ${error.javaClass.simpleName}",
+                error,
+            )
         }
     }
     override fun close() {
