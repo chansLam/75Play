@@ -18,7 +18,8 @@ import com.shihab.diplay.host.R
 
 /**
  * 圆形连接按钮。空闲时外圈轻轻呼吸；连接中外圈按阶段推进，并有一道彗星光；连上后换成成功环。
- * 圆里始终是同一个 CarPlay 画面标志。阶段句子和五步流程画在这个 View 外面，并且只在连接中出现。
+ * 空闲和连接中圆里是同一个 CarPlay 画面标志；已连接换成播放，点一下回到投屏。
+ * 阶段句子和五步流程画在这个 View 外面，并且只在连接中出现。
  */
 class ConnectOrb(context: Context) : View(context) {
     init {
@@ -139,10 +140,25 @@ class ConnectOrb(context: Context) : View(context) {
             trackPaint.strokeWidth = stroke
             canvas.drawCircle(cx, cy, reach - stroke, trackPaint)
         }
-        drawGlyph(canvas, cx, cy, disc)
+        if (connected) drawPlay(canvas, cx, cy, disc) else drawGlyph(canvas, cx, cy, disc)
     }
 
-    /** 圆内始终是同一个 CarPlay 画面标志：圆角屏幕和下面一条短底座。 */
+    /** 已连接：播放三角，点一下回到正在投屏的画面。 */
+    private fun drawPlay(canvas: Canvas, cx: Float, cy: Float, inner: Float) {
+        iconPaint.color = GlassColors.NAV_SELECTED_TEXT
+        iconPaint.style = Paint.Style.FILL
+        val height = inner * 0.46f
+        val width = height * 0.9f
+        val left = cx - width * 0.36f
+        iconPath.reset()
+        iconPath.moveTo(left, cy - height / 2f)
+        iconPath.lineTo(left + width, cy)
+        iconPath.lineTo(left, cy + height / 2f)
+        iconPath.close()
+        canvas.drawPath(iconPath, iconPaint)
+    }
+
+    /** 空闲和连接中：同一个 CarPlay 画面标志，圆角屏幕和下面一条短底座。 */
     private fun drawGlyph(canvas: Canvas, cx: Float, cy: Float, inner: Float) {
         iconPaint.color = GlassColors.NAV_SELECTED_TEXT
         iconPaint.style = Paint.Style.FILL

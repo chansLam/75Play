@@ -181,8 +181,8 @@ internal object CarPlaySessionFactory {
      * The sink is created with a null Surface; the host attaches its surface later via `setSurface`
      * when it adopts the session.
      *
-     * Negotiates a sane canvas from the persisted display size and re-negotiates through the
-     * existing restart path once the host adopts and reports its real surface size.
+     * The canvas uses the screen's current size and rotation. The host treats a mismatch as a
+     * layout change and reconnects, which leaves CarPlay black for the whole second handshake.
      */
     fun buildHeadless(
         ctx: Context,
@@ -199,15 +199,21 @@ internal object CarPlaySessionFactory {
             .ifBlank { AirPlayPersistence.DEFAULT_MANUFACTURER }
         val model = inputs.model.trim().ifBlank { AirPlayPersistence.DEFAULT_MODEL }
 
-        // Headless size: prefer the persisted maximum-detected display, fall back to the real display.
+        // Prefer the persisted maximum only when it is the same orientation as the screen now.
+        // A landscape maximum on a portrait screen (or the reverse) would not match the host
+        // window, and the host would reconnect.
         val (maxW, maxH) = AirPlayPersistence.loadMaximumDetectedDisplay(ctx)
         val real = DisplayMetrics()
+        var rotation = 0
         runCatching {
-            (ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager)
-                .defaultDisplay.getRealMetrics(real)
+            val display = (ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay
+            display.getRealMetrics(real)
+            rotation = display.rotation
         }
-        val windowWidth = if (maxW > 0) maxW else real.widthPixels
-        val windowHeight = if (maxH > 0) maxH else real.heightPixels
+        val savedMatchesOrientation = maxW > 0 && maxH > 0 &&
+            (maxW >= maxH) == (real.widthPixels >= real.heightPixels)
+        val windowWidth = if (savedMatchesOrientation) maxW else real.widthPixels
+        val windowHeight = if (savedMatchesOrientation) maxH else real.heightPixels
         val safeWidth = (windowWidth / 2 * 2).coerceAtLeast(2)
         val safeHeight = (windowHeight / 2 * 2).coerceAtLeast(2)
 
@@ -289,7 +295,9 @@ internal object CarPlaySessionFactory {
 
         val display = CarPlaySessionDisplay(
             scaled.widthPixels, scaled.heightPixels,
-            rotation = 0, hideTopBar = true, hideBottomBar = true,
+            rotation = rotation,
+            hideTopBar = AirPlayPersistence.loadHideTopBar(ctx),
+            hideBottomBar = AirPlayPersistence.loadHideBottomBar(ctx),
             windowWidth, windowHeight,
             viewAreas = null,
         )

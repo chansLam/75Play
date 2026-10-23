@@ -263,6 +263,9 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
             createSessionListener(generation),
             createStatusReporter(generation),
         )
+        if (snapshot.controller.activeAirPlaySessionToken() != null) {
+            CarPlayBackgroundSession.active = true
+        }
         snapshot.sink.setScreenStreamActiveChangedListener { type, active ->
             onScreenStreamStateChanged(wirelessStartup.generation, type, active)
         }

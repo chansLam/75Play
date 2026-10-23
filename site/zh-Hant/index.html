@@ -27,7 +27,7 @@
 <main>
   <section class="hero">
     <p class="brand">75Play</p>
-    <p class="kicker"><bdi>v2.0.1</bdi> · 長安 CS75 Plus 2020 · SoftAP</p>
+    <p class="kicker"><bdi>v2.0.1</bdi> · 長安 CS75 Plus 2020 · Wi‑Fi Direct</p>
     <h1>把 iPhone 的 CarPlay<br>無線投到車機。</h1>
     <p class="lede">開源無線 CarPlay 接收端。Wi‑Fi Direct / 車機熱點 / 區域網路，全螢幕沉浸，無須越獄、轉接盒或帳號。</p>
     <div class="actions">
@@ -42,7 +42,7 @@
   <section class="band features" id="features">
     <div class="band-inner">
       <h2>專為這台車做的</h2>
-      <ul class="feature-list"><li><strong>僅無線</strong><span>三種方式：Wi‑Fi Direct（預設）、車機熱點（SoftAP）、區域網路。本車無 TUN，已移除 USB 有線。</span></li><li><strong>全螢幕沉浸</strong><span>寬螢幕適配；CarPlay 內開啟車機應用；懸浮小白點返回。</span></li><li><strong>玻璃雙主題 UI</strong><span>主頁與設定依駕駛目標分組。</span></li><li><strong>一鍵連接</strong><span>切換 Wi‑Fi Direct / 車機熱點會自動準備網路；區域網路連上 Wi‑Fi 後自動連接 CarPlay。</span></li><li><strong>多語言</strong><span>簡 / 繁中文、英文、阿拉伯語、西班牙語、俄語、烏克蘭語。</span></li></ul>
+      <ul class="feature-list"><li><strong>僅無線</strong><span>三種方式：Wi‑Fi Direct（預設）、車機熱點（SoftAP）、區域網路。本車無 TUN，已移除 USB 有線。</span></li><li><strong>首頁連線</strong><span>空閒時是 CarPlay 標誌，已連線換成播放。點一下回到投屏。進度只在連線中顯示。</span></li><li><strong>全螢幕沉浸</strong><span>CarPlay 只放畫面和觸控。三指下滑回到 75Play，桌面圖示再打開則回到 CarPlay。</span></li><li><strong>設定留在殼層</strong><span>連線、顯示和關於都在 75Play 裡改。應用隱藏和排序，首頁與 CarPlay 共用一份。</span></li><li><strong>多語言</strong><span>簡 / 繁中文、英文、阿拉伯語、西班牙語、俄語、烏克蘭語。</span></li></ul>
       <p class="fine scope">僅支援長安 CS75 Plus 2020（OS_S311-WT · API 19 · armeabi-v7a）。</p>
     </div>
   </section>
@@ -71,7 +71,7 @@
     </div>
   </section>
 
-  <section class="band changelog" id="changelog"><div class="band-inner"><h2>版本歷史</h2><article class="release"><h3><bdi>v2.0.1</bdi></h3><ul><li><strong>壳层布局</strong>：贴边导航轨和顶栏（页名、连接状态、时钟）。主页不再上下叠卡，连接与车机应用左右铺满。</li><li><strong>应用列表</strong>：主页和 CarPlay 里的隐藏、排序共用同一份记录。</li><li><strong>开发者终端</strong>：关于页入口保留，打开前需确认。</li><li><strong>车机热点</strong>：启用收成一处，壳、开机和连接不再各写一套。</li><li><strong>虚报 Android 版本</strong>：系统仍是 4.4.2、但接口版本被报高时，画面、方控、麦克风、连接通知和检查更新留在 KitKat 可用的接口上。</li><li><strong>画面</strong>：首帧继续补发解码参数，输入缓冲保持 3MB；硬解失败时改用软解。解码缓冲按帧复用，减轻 30 fps 时的停顿。</li><li><strong>Wi-Fi Direct</strong>：版本被报高时仍走车机上的旧通道，不再误入 Android 8 才有的热点接口。</li><li><strong>壳层</strong>：主页、设置、关于来回切换时保留滚动位置和局域网列表。应用图标按下有反馈。Wi-Fi Direct 频道名称跟随当前语言。</li></ul></article><article class="release"><h3><bdi>v2.0.0</bdi></h3><ul><li><strong>玻璃双主题 UI</strong>：主页与设置重新设计、按司机目标分组排版。</li><li><strong>无线 CarPlay</strong>：内置 MFi 认证密钥；Wi‑Fi Direct / 车机热点（SoftAP）/ 局域网（Existing Wi‑Fi）；无需越狱、转接盒或账号。因车机无 TUN，已移除 USB 有线。</li><li><strong>一键连接</strong>：简化连接流程。</li><li><strong>全屏沉浸</strong>：CarPlay 铺满宽屏，默认 30 fps；CarPlay 内打开 / 管理车机应用；悬浮小白点返回。</li><li><strong>多语言</strong>：简 / 繁中文、英文、阿拉伯语、西班牙语、俄语、乌克兰语。</li><li><strong>安卓终端</strong>（实验性）、系统设置入口（<code><em>#518200#</em></code>）。</li></ul></article><p class="fine"><a href="https://github.com/chansLam/75Play/blob/main/CHANGELOG.md">查看完整 CHANGELOG</a></p></div></section>
+  <section class="band changelog" id="changelog"><div class="band-inner"><h2>版本歷史</h2><article class="release"><h3><bdi>v2.0.1</bdi></h3><ul><li><strong>壳层</strong>：贴边导航和顶栏（页名、连接状态、时钟）。主页上连接与车机应用左右铺开。</li><li><strong>连接</strong>：空闲和连接中是 CarPlay 标志，已连接换成播放，点一下回到投屏。进度只在连接中出现；连接中可以取消，已连接可以断开。三指回到主页后，顶栏保持已连接。</li><li><strong>进入 CarPlay</strong>：只承载画面和触控，不再盖加载层，也不在画面里放设置。</li><li><strong>返回</strong>：三指下滑回到 75Play。从桌面再次打开则回到 CarPlay。</li><li><strong>应用列表</strong>：主页和 CarPlay 里的隐藏、排序共用同一份记录。</li><li><strong>开发者终端</strong>：关于页入口保留，打开前需确认。</li><li><strong>车机热点</strong>：启用收成一处，壳、开机和连接不再各写一套。</li><li><strong>进入画面</strong>：后台连接记下当前屏幕旋转和窗口大小。Host 不再把不一致的旋转当成屏幕变化，拆掉会话再连一次。</li></ul></article><article class="release"><h3><bdi>v2.0.0</bdi></h3><ul><li><strong>玻璃双主题 UI</strong>：主页与设置重新设计、按司机目标分组排版。</li><li><strong>无线 CarPlay</strong>：内置 MFi 认证密钥；Wi‑Fi Direct / 车机热点（SoftAP）/ 局域网（Existing Wi‑Fi）；无需越狱、转接盒或账号。因车机无 TUN，已移除 USB 有线。</li><li><strong>一键连接</strong>：简化连接流程。</li><li><strong>全屏沉浸</strong>：CarPlay 铺满宽屏，默认 30 fps；CarPlay 内打开 / 管理车机应用；悬浮小白点返回。</li><li><strong>多语言</strong>：简 / 繁中文、英文、阿拉伯语、西班牙语、俄语、乌克兰语。</li><li><strong>安卓终端</strong>（实验性）、系统设置入口（<code><em>#518200#</em></code>）。</li></ul></article><p class="fine"><a href="https://github.com/chansLam/75Play/blob/main/CHANGELOG.md">查看完整 CHANGELOG</a></p></div></section>
 
   <section class="band meta" id="updates">
     <div class="band-inner split">

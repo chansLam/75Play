@@ -131,7 +131,7 @@ class CarPlayConnectService : Service() {
         controller = built.controller
         CarPlayBackgroundSession.store(
             built.controller, built.sink,
-            built.display.width, built.display.height,
+            built.display.windowWidth, built.display.windowHeight,
             this, built.display,
         ) { completion ->
             // Invoked by CarPlayBackgroundSession.stop() once the host has taken over or the user
@@ -161,6 +161,9 @@ class CarPlayConnectService : Service() {
             if (succeeded) return
             succeeded = true
             connecting = false
+            // The shell status reads this flag. The host adopts an already-active session and does
+            // not get another onSessionActive, so leaving it false kept the pill on「连接中」.
+            CarPlayBackgroundSession.active = true
             runCatching { startService(Intent(this@CarPlayConnectService, DiPlaySessionService::class.java)) }
             runCatching { sendBroadcast(ConnectBroadcasts.connected(this@CarPlayConnectService)) }
             // Keep running: the host adopts the controller next and stops us with stopService().

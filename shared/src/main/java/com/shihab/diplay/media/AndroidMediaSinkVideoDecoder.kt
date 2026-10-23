@@ -137,7 +137,8 @@ internal class VideoDecoder(
                         is VideoJob.SurfaceChanged -> changeSurface(job.surface)
                         is VideoJob.DetachSurface -> detach(job.request)
                         // Once per new surface, so it skips the rate limit an earlier request may still hold.
-                        is VideoJob.RefreshPicture -> if (decoder != null) {
+                        // Ask even before the codec exists: the keyframe can be the first thing it decodes.
+                        is VideoJob.RefreshPicture -> {
                             lastKeyFrameRequestNs = System.nanoTime()
                             requestKeyFrame()
                         }
@@ -396,13 +397,39 @@ internal class VideoDecoder(
             }
         }
         releaseDecoder()
-        lastConfig?.let(::configureDecoder)
+        val pending = lastConfig
+        if (pending != null) {
+            configureDecoder(pending)
+            // A freshly configured codec has no reference frames. Ask immediately; waiting for
+            // the next P-frame left the new surface black for a whole GOP.
+            if (decoder != null) {
+                lastKeyFrameRequestNs = System.nanoTime()
+                requestKeyFrame()
+            }
+        }
+    }
+
+    /**
+     * Keep decoding while the host view does not exist yet. On Android 6+ the codec can move
+     * onto that view with setOutputSurface and the next frame is already a picture. KitKat has
+     * no such move, so this returns false and the view's own surface waits for a keyframe.
+     */
+    private fun ensureParkingSurface(): Boolean {
+        if (realSdkInt() < Build.VERSION_CODES.M) return false
+        return try {
+            val consumer = parking ?: ParkingOutput(width, height).also { parking = it }
+            outputSurface = consumer.surface
+            true
+        } catch (error: Exception) {
+            AppLog.w(TAG, "video decoder could not start on a parking surface", error)
+            false
+        }
     }
 
     private fun feed(nalus: ByteArray, presentNs: Long = 0L) {
         val annexB = MediaCodecSupport.toAnnexB(nalus)
         val config = lastConfig ?: return
-        if (outputSurface == null) return
+        if (outputSurface == null && !ensureParkingSurface()) return
         if (annexB.isEmpty()) { recover("invalid video access unit"); return }
         if (!referenceChain.accepts(annexB, config.codec)) {
             requestKeyFrameIfDue()

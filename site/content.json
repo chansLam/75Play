@@ -2,7 +2,7 @@
   "zh-Hans": {
     "name": "简体中文",
     "dir": "ltr",
-    "tag": "长安 CS75 Plus 2020 · SoftAP",
+    "tag": "长安 CS75 Plus 2020 · Wi‑Fi Direct",
     "title": "把 iPhone 的 CarPlay\n无线投到车机。",
     "intro": "开源无线 CarPlay 接收端。Wi‑Fi Direct / 车机热点 / 局域网，全屏沉浸，无需越狱、转接盒或账号。",
     "download": "下载 APK",
@@ -25,16 +25,16 @@
         "text": "三种方式：Wi‑Fi Direct（默认）、车机热点（SoftAP）、局域网。本车无 TUN，已移除 USB 有线。"
       },
       {
+        "title": "主页连接",
+        "text": "空闲时是 CarPlay 标志，已连接换成播放。点一下回到投屏。进度只在连接中显示。"
+      },
+      {
         "title": "全屏沉浸",
-        "text": "宽屏适配；CarPlay 内打开车机应用；悬浮小白点一键返回。"
+        "text": "CarPlay 只放画面和触控。三指下滑回到 75Play，桌面图标再打开则回到 CarPlay。"
       },
       {
-        "title": "玻璃双主题 UI",
-        "text": "主页与设置按司机目标分组，昼夜主题一致。"
-      },
-      {
-        "title": "一键连接",
-        "text": "切换 Wi‑Fi Direct / 车机热点会自动准备网络；局域网连上 Wi‑Fi 后自动连接 CarPlay。"
+        "title": "设置留在壳层",
+        "text": "连接、显示和关于都在 75Play 里改。应用隐藏和排序，主页与 CarPlay 共用一份。"
       },
       {
         "title": "多语言",
@@ -68,7 +68,7 @@
   "zh-Hant": {
     "name": "繁體中文",
     "dir": "ltr",
-    "tag": "長安 CS75 Plus 2020 · SoftAP",
+    "tag": "長安 CS75 Plus 2020 · Wi‑Fi Direct",
     "title": "把 iPhone 的 CarPlay\n無線投到車機。",
     "intro": "開源無線 CarPlay 接收端。Wi‑Fi Direct / 車機熱點 / 區域網路，全螢幕沉浸，無須越獄、轉接盒或帳號。",
     "download": "下載 APK",
@@ -91,16 +91,16 @@
         "text": "三種方式：Wi‑Fi Direct（預設）、車機熱點（SoftAP）、區域網路。本車無 TUN，已移除 USB 有線。"
       },
       {
+        "title": "首頁連線",
+        "text": "空閒時是 CarPlay 標誌，已連線換成播放。點一下回到投屏。進度只在連線中顯示。"
+      },
+      {
         "title": "全螢幕沉浸",
-        "text": "寬螢幕適配；CarPlay 內開啟車機應用；懸浮小白點返回。"
+        "text": "CarPlay 只放畫面和觸控。三指下滑回到 75Play，桌面圖示再打開則回到 CarPlay。"
       },
       {
-        "title": "玻璃雙主題 UI",
-        "text": "主頁與設定依駕駛目標分組。"
-      },
-      {
-        "title": "一鍵連接",
-        "text": "切換 Wi‑Fi Direct / 車機熱點會自動準備網路；區域網路連上 Wi‑Fi 後自動連接 CarPlay。"
+        "title": "設定留在殼層",
+        "text": "連線、顯示和關於都在 75Play 裡改。應用隱藏和排序，首頁與 CarPlay 共用一份。"
       },
       {
         "title": "多語言",
@@ -134,7 +134,7 @@
   "en": {
     "name": "English",
     "dir": "ltr",
-    "tag": "Changan CS75 Plus 2020 · SoftAP",
+    "tag": "Changan CS75 Plus 2020 · Wi‑Fi Direct",
     "title": "Wireless CarPlay\nfor your CS75 Plus.",
     "intro": "Open-source wireless CarPlay receiver. Wi‑Fi Direct / car hotspot / existing Wi‑Fi (LAN), immersive display — no jailbreak, dongle, or account.",
     "download": "Download APK",
@@ -157,16 +157,16 @@
         "text": "Three modes: Wi‑Fi Direct (default), car hotspot (SoftAP), and existing Wi‑Fi / LAN. USB wired removed — this unit has no TUN."
       },
       {
+        "title": "Connect on the home screen",
+        "text": "A CarPlay mark while idle; a play icon once connected. Tap it to return to the picture. Progress shows only while connecting."
+      },
+      {
         "title": "Immersive display",
-        "text": "Wide-screen layout; launch head-unit apps from CarPlay; floating ball to return."
+        "text": "CarPlay is only the picture and touch. Three-finger swipe returns to 75Play; the launcher icon opens CarPlay again."
       },
       {
-        "title": "Glass dual-theme UI",
-        "text": "Home and settings grouped by driver goals."
-      },
-      {
-        "title": "One-tap connect",
-        "text": "Switching to Wi‑Fi Direct or car hotspot prepares the link automatically; LAN starts CarPlay after Wi‑Fi connects."
+        "title": "Settings stay on the shell",
+        "text": "Connection, display, and about are edited in 75Play. Hidden apps and order are shared with CarPlay."
       },
       {
         "title": "Languages",
@@ -191,7 +191,7 @@
   "es": {
     "name": "Español",
     "dir": "ltr",
-    "tag": "Changan CS75 Plus 2020 · SoftAP",
+    "tag": "Changan CS75 Plus 2020 · Wi‑Fi Direct",
     "title": "CarPlay inalámbrico\npara tu CS75 Plus.",
     "intro": "Receptor CarPlay inalámbrico de código abierto. Wi‑Fi Direct / hotspot del coche / Wi‑Fi existente (LAN), pantalla inmersiva — sin jailbreak, dongle ni cuenta.",
     "download": "Descargar APK",
@@ -214,16 +214,16 @@
         "text": "Tres modos: Wi‑Fi Direct (por defecto), hotspot del coche (SoftAP) y Wi‑Fi existente / LAN. Sin USB cableado (sin TUN)."
       },
       {
+        "title": "Conexión en inicio",
+        "text": "Marca de CarPlay en reposo; icono de reproducción al conectar. Tócalo para volver a la imagen. El progreso solo aparece mientras conecta."
+      },
+      {
         "title": "Pantalla inmersiva",
-        "text": "Pantalla ancha; apps del coche desde CarPlay; bola flotante."
+        "text": "CarPlay es solo imagen y toque. Tres dedos hacia abajo vuelven a 75Play; el icono del lanzador abre CarPlay otra vez."
       },
       {
-        "title": "UI de cristal",
-        "text": "Inicio y ajustes agrupados por objetivos del conductor."
-      },
-      {
-        "title": "Conexión rápida",
-        "text": "Cambiar a Wi‑Fi Direct o hotspot prepara el enlace solo; en LAN, CarPlay arranca tras unirse al Wi‑Fi."
+        "title": "Ajustes en la carcasa",
+        "text": "Conexión, pantalla y acerca de se editan en 75Play. Las apps ocultas y el orden se comparten con CarPlay."
       },
       {
         "title": "Idiomas",
@@ -248,7 +248,7 @@
   "ar": {
     "name": "العربية",
     "dir": "rtl",
-    "tag": "شانجان CS75 Plus 2020 · SoftAP",
+    "tag": "شانجان CS75 Plus 2020 · Wi‑Fi Direct",
     "title": "كار بلاي لاسلكي\nلشاشتك CS75 Plus.",
     "intro": "عميل كار بلاي لاسلكي مفتوح المصدر. Wi‑Fi Direct / نقطة اتصال السيارة / شبكة Wi‑Fi موجودة (LAN)، عرض غامر — بلا جيلبريك أو قطعة أو حساب.",
     "download": "تنزيل APK",
@@ -271,16 +271,16 @@
         "text": "ثلاثة أوضاع: Wi‑Fi Direct (افتراضي)، نقطة اتصال السيارة (SoftAP)، وشبكة Wi‑Fi موجودة / LAN. بدون USB سلكي (لا TUN)."
       },
       {
+        "title": "الاتصال من الرئيسية",
+        "text": "علامة CarPlay في الانتظار، وأيقونة تشغيل بعد الاتصال. اضغطها للعودة إلى الصورة. يظهر التقدم فقط أثناء الاتصال."
+      },
+      {
         "title": "عرض غامر",
-        "text": "شاشة عريضة؛ تطبيقات السيارة من كار بلاي؛ كرة عائمة."
+        "text": "كار بلاي صورة ولمس فقط. السحب بثلاثة أصابع يعود إلى 75Play، وأيقونة المشغّل تفتح كار بلاي من جديد."
       },
       {
-        "title": "واجهة زجاجية",
-        "text": "الرئيسية والإعدادات حسب أهداف السائق."
-      },
-      {
-        "title": "اتصال سريع",
-        "text": "التبديل إلى Wi‑Fi Direct أو نقطة الاتصال يجهّز الرابط تلقائيًا؛ في الشبكة المحلية يبدأ كار بلاي بعد الاتصال بـ Wi‑Fi."
+        "title": "الإعدادات في الغلاف",
+        "text": "الاتصال والعرض وحول التطبيق تُعدَّل في 75Play. إخفاء التطبيقات وترتيبها مشتركان مع كار بلاي."
       },
       {
         "title": "لغات",
@@ -305,7 +305,7 @@
   "ru": {
     "name": "Русский",
     "dir": "ltr",
-    "tag": "Changan CS75 Plus 2020 · SoftAP",
+    "tag": "Changan CS75 Plus 2020 · Wi‑Fi Direct",
     "title": "Беспроводной CarPlay\nдля вашего CS75 Plus.",
     "intro": "Открытый беспроводной клиент CarPlay. Wi‑Fi Direct / точка доступа авто / существующая Wi‑Fi (LAN), иммерсивный экран — без джейлбрейка, адаптера и аккаунта.",
     "download": "Скачать APK",
@@ -328,16 +328,16 @@
         "text": "Три режима: Wi‑Fi Direct (по умолчанию), точка доступа авто (SoftAP) и существующая Wi‑Fi / LAN. USB убран — нет TUN."
       },
       {
+        "title": "Подключение с главного экрана",
+        "text": "Знак CarPlay в простое и значок воспроизведения после подключения. Нажатие возвращает к картинке. Прогресс только во время подключения."
+      },
+      {
         "title": "Иммерсивный экран",
-        "text": "Широкий дисплей; приложения ГУ из CarPlay; плавающий шарик."
+        "text": "CarPlay — только картинка и касания. Свайп тремя пальцами возвращает в 75Play; значок запуска снова открывает CarPlay."
       },
       {
-        "title": "Стеклянный UI",
-        "text": "Главная и настройки по целям водителя."
-      },
-      {
-        "title": "Быстрое подключение",
-        "text": "Переключение на Wi‑Fi Direct или точку доступа готовит связь само; в LAN CarPlay стартует после подключения к Wi‑Fi."
+        "title": "Настройки в оболочке",
+        "text": "Подключение, экран и «О программе» меняются в 75Play. Скрытые приложения и порядок общие с CarPlay."
       },
       {
         "title": "Языки",
@@ -362,7 +362,7 @@
   "uk": {
     "name": "Українська",
     "dir": "ltr",
-    "tag": "Changan CS75 Plus 2020 · SoftAP",
+    "tag": "Changan CS75 Plus 2020 · Wi‑Fi Direct",
     "title": "Бездротовий CarPlay\nдля вашого CS75 Plus.",
     "intro": "Відкритий бездротовий клієнт CarPlay. Wi‑Fi Direct / точка доступу авто / наявна Wi‑Fi (LAN), імерсивний екран — без джейлбрейка, адаптера й облікового запису.",
     "download": "Завантажити APK",
@@ -385,16 +385,16 @@
         "text": "Три режими: Wi‑Fi Direct (за замовчуванням), точка доступу авто (SoftAP) і наявна Wi‑Fi / LAN. USB прибрано — немає TUN."
       },
       {
+        "title": "Підключення з головного екрана",
+        "text": "Знак CarPlay у простої та значок відтворення після підключення. Натискання повертає до зображення. Прогрес лише під час підключення."
+      },
+      {
         "title": "Імерсивний екран",
-        "text": "Широкий дисплей; програми ГУ з CarPlay; плаваюча кулька."
+        "text": "CarPlay — лише зображення й дотик. Свайп трьома пальцями повертає в 75Play; значок запуску знову відкриває CarPlay."
       },
       {
-        "title": "Скляний UI",
-        "text": "Головна й налаштування за цілями водія."
-      },
-      {
-        "title": "Швидке підключення",
-        "text": "Перемикання на Wi‑Fi Direct або точку доступу готує зв’язок само; у LAN CarPlay стартує після підключення до Wi‑Fi."
+        "title": "Налаштування в оболонці",
+        "text": "Підключення, екран і «Про програму» змінюються в 75Play. Приховані програми й порядок спільні з CarPlay."
       },
       {
         "title": "Мови",

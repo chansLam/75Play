@@ -268,7 +268,12 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         CarPlayBackgroundSession.stop { runOnUiThread { refreshStatus(); refreshHomeFragment() } }
     }
     override fun hasCarPlaySession(): Boolean = CarPlayBackgroundSession.hasSession()
-    override fun isCarPlayActive(): Boolean = CarPlayBackgroundSession.active
+    override fun isCarPlayActive(): Boolean {
+        // A parked session is still connected. The active flag is set when the phone accepts
+        // the session; hasSession covers the return from CarPlay if that callback already happened.
+        if (isCarPlayConnecting()) return false
+        return CarPlayBackgroundSession.active || CarPlayBackgroundSession.hasSession()
+    }
     override fun isCarPlayConnecting(): Boolean =
         // Only the explicit connect flow flags — do NOT use hasSession()&&!active here:
         // after Cancel, stop()/teardown is async and hasSession stays true briefly, which
@@ -1254,8 +1259,8 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
     private fun refreshStatus() {
         shellChrome.updateClock()
         shellChrome.updateRadios(radioProbe.snapshot())
-        val active = CarPlayBackgroundSession.active
-        val running = CarPlayBackgroundSession.hasSession()
+        val active = isCarPlayActive()
+        val running = !active && (isCarPlayConnecting() || CarPlayBackgroundSession.hasSession())
         val label: String
         val color: Int
         val fill: Int

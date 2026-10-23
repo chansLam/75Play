@@ -59,6 +59,8 @@ internal class HostVideoSurfaces(
             bridge.attach(surface)
             bridge.layout(width, height)
             bridge.schedule(width, height)
+            // The stream may already be running. Ask for a frame on this surface now.
+            bridge.refreshMainPicture()
         }
 
         override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, width: Int, height: Int) {
