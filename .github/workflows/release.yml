@@ -121,6 +121,7 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
+          chmod +x ./gradlew
           ./gradlew --no-daemon :mobile:assembleStandaloneRelease
           mkdir -p dist
           cp mobile/build/outputs/apk/release/mobile-release.apk "dist/${{ steps.meta.outputs.apk_name }}"
