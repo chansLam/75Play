@@ -120,8 +120,9 @@ internal class OpusEncoder(bitrate: Int) : Closeable {
             AppLog.w(TAG, "Opus microphone encoder unavailable", error)
             try {
                 created?.release()
-            } catch (_: Exception) {
+            } catch (t: Exception) {
                 // configure/start failed before the codec was usable
+                AppLog.w(TAG, "Opus encoder release after start failure failed", t)
             }
             null
         }
@@ -134,13 +135,15 @@ internal class OpusEncoder(bitrate: Int) : Closeable {
         val codec = codec ?: return
         try {
             codec.stop()
-        } catch (_: Exception) {
+        } catch (t: Exception) {
             // Best effort.
+            AppLog.w(TAG, "Opus encoder stop failed", t)
         }
         try {
             codec.release()
-        } catch (_: Exception) {
+        } catch (t: Exception) {
             // Best effort.
+            AppLog.w(TAG, "Opus encoder release failed", t)
         }
     }
 

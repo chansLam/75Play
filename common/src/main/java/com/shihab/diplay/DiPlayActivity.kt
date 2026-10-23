@@ -182,7 +182,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
                         WheelRootInjector.start(this)
                     }
                 }
-            }, "wheel-root-boot").start()
+            }, "wheel-root-boot").apply { isDaemon = true }.start()
             applyShell()
             ImmersiveBars.installAutoHide(this)
             showPage(page)
@@ -303,7 +303,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
                         showPage(page)
                     }
                 }
-            }, "root-navbar-apply").start()
+            }, "root-navbar-apply").apply { isDaemon = true }.start()
         } else {
             Thread({
                 AsyncDiagnosticLog.append(ActiveSessionLog.current, "RootNavbar: restore requested")
@@ -319,7 +319,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
                         showPage(page)
                     }
                 }
-            }, "root-navbar-apply").start()
+            }, "root-navbar-apply").apply { isDaemon = true }.start()
         }
     }
 
@@ -655,7 +655,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
                 setupError = err?.let { getString(R.string.setup_error_auth) }
                 if (err != null) AppLog.e("DiPlaySetup", "CarPlay authentication could not be loaded", err)
             }
-        }.start()
+        }.apply { isDaemon = true }.start()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -800,6 +800,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
     override fun onDestroy() {
         p2pGroupPoll?.let { handler.removeCallbacks(it) }
         p2pGroupPoll = null
+        handler.removeCallbacks(recheckStatusRunnable)
         wifiEnableGeneration++
         handler.removeCallbacks(automaticUpdateCheck)
         if (lazyUpdaterInitialized()) updater.close()
@@ -808,6 +809,11 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         cancelKeyLearning()
         shellConnect.release()
         radioProbe.stop()
+        // P1 leak兜底：开发者终端是单例 object，持有 PTY 子进程/overlay View，Activity 销毁时
+        // 若用户没手动关闭，子进程与窗口引用会泄漏。dismiss 幂等，重复调用安全。
+        runCatching { TerminalOverlay.dismiss(this) }
+        // P1 leak兜底：选机用的单线程 ExecutorService 是非 daemon，不 shutdown 会随 Activity 泄漏。
+        runCatching { phonePicker.shutdown() }
         super.onDestroy()
     }
 
@@ -869,7 +875,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
                 hotspotStartupResult = result
                 if (page == "home") showPage(page)
             }
-        }, "diplay-hotspot-startup").start()
+        }, "diplay-hotspot-startup").apply { isDaemon = true }.start()
     }
 
     private fun startupHotspotEligible(): Boolean =
@@ -1062,7 +1068,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
                         wifiEnableAttempts = 0
                         connect(wireless)
                     }
-                }, "enable-wifi-before-connect").start()
+                }, "enable-wifi-before-connect").apply { isDaemon = true }.start()
                 return
             }
             wifiEnableAttempts = 0
@@ -1106,7 +1112,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
                         if (isFinishing || (Build.VERSION.SDK_INT >= 17 && isDestroyed)) return@runOnUiThread
                         open()
                     }
-                }, "diplay-connect-after-close").start()
+                }, "diplay-connect-after-close").apply { isDaemon = true }.start()
             }
         } else {
             open()
@@ -1139,19 +1145,21 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
             onConnected = { openProjection() },
             onFailed = { msg ->
                 refreshStatus()
-                handler.postDelayed({ refreshStatus(); refreshHomeFragment() }, 250L)
+                handler.postDelayed(recheckStatusRunnable, 250L)
                 DiPlayDialog.showInfo(this, getString(R.string.connection_failed), msg, ok = getString(R.string.back))
             },
             onRefreshHome = {
                 refreshStatus()
                 refreshHomeFragment()
-                handler.postDelayed({ refreshStatus(); refreshHomeFragment() }, 250L)
+                handler.postDelayed(recheckStatusRunnable, 250L)
             },
         )
     }
     // 五档主题：跟随系统/环境光/浅色/暗黑/定时（环境光与定时由 Controller 驱动）
     private var nightModeController: CarPlayNightModeController? = null
     private val nightModeHandler = Handler(Looper.getMainLooper())
+    // P2: 匿名 lambda postDelayed 无法 removeCallbacks，抽成具名 Runnable 在 onDestroy 清理
+    private val recheckStatusRunnable = Runnable { refreshStatus(); refreshHomeFragment() }
 
     private fun startConnectFlow() {
         shellConnect.start()

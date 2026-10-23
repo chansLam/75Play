@@ -1,5 +1,7 @@
 package com.shihab.diplay.transport
 
+import com.shihab.diplay.util.AppLog
+
 import android.bluetooth.BluetoothSocket
 import java.io.IOException
 import java.io.InputStream
@@ -273,8 +275,9 @@ class BluetoothRfcommDuplexStream internal constructor(
     }
 
     private fun report(message: String) {
-        try { onDiagnostic(message) } catch (_: Exception) {
+        try { onDiagnostic(message) } catch (t: Exception) {
             // A diagnostic callback cannot prevent transport setup or owned-socket cleanup.
+            AppLog.w("BtRfcomm", "diagnostic callback failed", t)
         }
     }
 

@@ -40,7 +40,7 @@ internal class LegacyWifiP2pGroupManager(
         require(timeoutMillis > 0)
         checkPrerequisites()
 
-        val worker = HandlerThread("xcertplay-wifi-p2p-legacy").apply { start() }
+        val worker = HandlerThread("xcertplay-wifi-p2p-legacy").apply { isDaemon = true; start() }
         thread = worker
         val p2pChannel = manager.initialize(
             appContext,

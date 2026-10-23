@@ -535,4 +535,6 @@
     <string name="home_save_and_connect_carplay">Сохранить и подключить CarPlay</string>
     <string name="home_save_and_connect_wifi">Сохранить и подключить Wi-Fi</string>
     <string name="cd_floating_ball">Плавающая кнопка: нажмите для возврата в CarPlay, удерживайте для недавних приложений</string>
+    <string name="session_notification_text">CarPlay: соединение активно</string>
+    <string name="session_notification_disconnect">Отключить</string>
 </resources>

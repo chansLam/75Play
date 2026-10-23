@@ -95,7 +95,7 @@ object WheelRootInjector {
                 start(app)
             }
             onResult(result)
-        }, "wheel-root-learn").start()
+        }, "wheel-root-learn").apply { isDaemon = true }.start()
     }
 
     fun learned(context: Context): String? = prefs(context).getString(K_LEARNED, null)
@@ -214,7 +214,7 @@ object WheelRootInjector {
                     process = null
                 }
             }
-        }, "wheel-root-watch").start()
+        }, "wheel-root-watch").apply { isDaemon = true }.start()
         return true
     }
 
@@ -234,8 +234,9 @@ object WheelRootInjector {
             try {
                 Thread.sleep(timeoutMs)
                 destroyGetevent(p)
-            } catch (_: InterruptedException) {
+            } catch (t: InterruptedException) {
                 // learning finished early
+                AppLog.w(TAG, "wheel root learning watchdog interrupted", t)
             }
         }, "wheel-root-learn-watchdog").also {
             it.isDaemon = true

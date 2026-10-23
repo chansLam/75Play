@@ -71,6 +71,9 @@ public class ShellTermSession extends GenericTermSession {
             }
         };
         mWatcherThread.setName("Process watcher");
+        // Waiter blocks forever in TermExec.waitFor(mProcId); mark daemon so it never
+        // blocks JVM/app shutdown if the child process never exits.
+        mWatcherThread.setDaemon(true);
     }
 
     private void initializeSession() throws IOException {

@@ -535,4 +535,6 @@
     <string name="home_save_and_connect_carplay">حفظ والاتصال بـ CarPlay</string>
     <string name="home_save_and_connect_wifi">حفظ والاتصال بشبكة Wi-Fi</string>
     <string name="cd_floating_ball">الكرة العائمة: انقر للعودة إلى CarPlay، واضغط مطولًا لعرض التطبيقات الأخيرة</string>
+    <string name="session_notification_text">اتصال CarPlay قيد التشغيل</string>
+    <string name="session_notification_disconnect">قطع الاتصال</string>
 </resources>

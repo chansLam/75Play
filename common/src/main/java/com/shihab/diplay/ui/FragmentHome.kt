@@ -133,7 +133,16 @@ class FragmentHome : Fragment() {
 
     override fun onPause() {
         handler.removeCallbacks(tick)
+        // P1 leak兜底：onPause/onDestroyView 路径不经过 onHiddenChanged(true)，广播接收器
+        // 不会注销。stopWifiWatchers 幂等（每个 watcher.stop() 有 started 守卫 + runCatching）。
+        connectionTabs.stopWifiWatchers()
         super.onPause()
+    }
+
+    override fun onDestroyView() {
+        // Fragment 视图销毁时也要停掉扫描监听，避免 ViewModel/视图销毁后 receiver 仍存活。
+        connectionTabs.stopWifiWatchers()
+        super.onDestroyView()
     }
 
 
@@ -206,11 +215,11 @@ class FragmentHome : Fragment() {
             minimumHeight = LayoutMetrics.rowMinH(ctx)
             setPadding(0, LayoutMetrics.rowPadV(ctx) / 2, 0, 0)
         }
-        bluetoothDeviceText = label(ctx, ctx.getString(R.string.home_loading), LayoutMetrics.homeBodyTextSize(ctx), GlassColors.MUTED).apply {
+        val btView = label(ctx, ctx.getString(R.string.home_loading), LayoutMetrics.homeBodyTextSize(ctx), GlassColors.MUTED).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
-        }
-        btRow.addView(bluetoothDeviceText!!, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }.also { bluetoothDeviceText = it }
+        btRow.addView(btView, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         btRow.addView(GlassSettingsRows.ghostButton(ctx, ctx.getString(R.string.home_choose_device), cornerRadiusDp = 10) { host.choosePhone() })
         bottomHalf.addView(btRow)
         val modeRadius = LayoutMetrics.modeTabRadiusDp(ctx)

@@ -22,7 +22,7 @@ class BootReceiver : BroadcastReceiver() {
             } finally {
                 pending.finish()
             }
-        }, "diplay-boot").start()
+        }, "diplay-boot").apply { isDaemon = true }.start()
     }
 
     private fun bringUpBootHotspot(context: Context) {

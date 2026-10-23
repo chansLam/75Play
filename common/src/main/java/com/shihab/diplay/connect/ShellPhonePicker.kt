@@ -15,6 +15,8 @@ import com.shihab.diplay.host.R
 import com.shihab.diplay.ui.DiPlayDialog
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.ThreadFactory
+import java.util.concurrent.TimeUnit
 import com.shihab.diplay.util.AppLog
 
 /**
@@ -30,7 +32,22 @@ class ShellPhonePicker(
         val isConnected: Boolean,
     )
 
-    private val executor = Executors.newSingleThreadExecutor()
+    private val executor = Executors.newSingleThreadExecutor(
+        ThreadFactory { Thread(it, "shell-phone-picker").apply { isDaemon = true } },
+    )
+
+    /**
+     * P1 leak兜底：executor 是 daemon 单线程池，DiPlayActivity.onDestroy 时 shutdown 兜底，
+     * 否则后台线程 + 对 Activity 的引用会泄漏。幂等，重复调用安全。
+     */
+    fun shutdown() {
+        runCatching {
+            executor.shutdown()
+            if (!executor.awaitTermination(300, TimeUnit.MILLISECONDS)) {
+                executor.shutdownNow()
+            }
+        }
+    }
 
     /** 连接流程在等用户选机。选完后由调用方决定是否立刻 `connect(true)`。 */
     var pendingWireless = false

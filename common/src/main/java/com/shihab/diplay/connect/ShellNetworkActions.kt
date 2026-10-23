@@ -94,7 +94,7 @@ object ShellNetworkActions {
             }
             if (radioGeneration.get() != generation) return@Thread
             onReady()
-        }, "diplay-home-radio").start()
+        }, "diplay-home-radio").apply { isDaemon = true }.start()
     }
 
     fun closeCarHotspot(context: Context): Boolean = runCatching {

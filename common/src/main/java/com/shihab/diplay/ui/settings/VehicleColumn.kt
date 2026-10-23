@@ -85,7 +85,7 @@ internal class VehicleColumn(page: Fragment) : AboutColumnKit(page) {
                             if (!ok) DiPlayDialog.toast(ctx, ctx.getString(R.string.diplay_root_failed_fallback))
                         }
                     }
-                }, "wheel-root-enable").start()
+                }, "wheel-root-enable").apply { isDaemon = true }.start()
             } else {
                 wheelRootEnableGeneration++
                 WheelRootInjector.setEnabled(ctx, false)

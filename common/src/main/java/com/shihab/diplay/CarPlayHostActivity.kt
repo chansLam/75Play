@@ -100,6 +100,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.ThreadFactory
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
 import com.shihab.diplay.util.AppLog
@@ -417,9 +418,13 @@ class CarPlayHostActivity : ComponentActivity() {
             if (sidePanelShown) mainHandler.postDelayed(this, SIDE_PANEL_REFRESH_MILLIS)
         }
     }
-    internal val teardownExecutor: ExecutorService = Executors.newSingleThreadExecutor()
-    private val airPlayCommandExecutor: ExecutorService = Executors.newSingleThreadExecutor()
-    internal val appsCatalogExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    // P1: single-thread executors must run on daemon threads so they cannot block process exit.
+    private val teardownDaemonFactory = ThreadFactory { Thread(it, "carplay-teardown").apply { isDaemon = true } }
+    private val airPlayCommandDaemonFactory = ThreadFactory { Thread(it, "carplay-airplay-cmd").apply { isDaemon = true } }
+    private val appsCatalogDaemonFactory = ThreadFactory { Thread(it, "carplay-apps-catalog").apply { isDaemon = true } }
+    internal val teardownExecutor: ExecutorService = Executors.newSingleThreadExecutor(teardownDaemonFactory)
+    private val airPlayCommandExecutor: ExecutorService = Executors.newSingleThreadExecutor(airPlayCommandDaemonFactory)
+    internal val appsCatalogExecutor: ExecutorService = Executors.newSingleThreadExecutor(appsCatalogDaemonFactory)
     internal val hostLogView = HostLogView(this, mainHandler)
     // Some head units (e.g. BYD DiLink) update resources.configuration for day/night
     // without delivering onConfigurationChanged, so poll while the activity is visible.
@@ -545,7 +550,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun unregisterDeferredAdoptReceiver() {
-        deferredAdoptReceiver?.let { runCatching { unregisterReceiver(it) } }
+        deferredAdoptReceiver?.let { receiver -> try { unregisterReceiver(receiver) } catch (t: Exception) { AppLog.w(TAG, "unregister deferred adopt receiver failed", t) } }
         deferredAdoptReceiver = null
     }
 
@@ -762,7 +767,6 @@ class CarPlayHostActivity : ComponentActivity() {
         hideTopBar = savedHideTopBar
         hideBottomBar = savedHideBottomBar
         harmanFullscreenEnabled = savedHarmanFullscreen
-        maybeStartCarPlay()
         applyFullscreenMode()
         if (systemBarsChanged) refreshDisplaySizeAfterLayout()
         if (!pictureVisible) showVideoLoading() else controller?.reportEveryVideoFrame = false
@@ -953,6 +957,8 @@ class CarPlayHostActivity : ComponentActivity() {
         if (crashDiagnosticLog === sessionLog) crashDiagnosticLog = null
         if (ActiveSessionLog.current === sessionLog) ActiveSessionLog.current = null
         sessionLog = null
+        // P2: drop any remaining posted callbacks/messages on the main handler as a final safety net.
+        mainHandler.removeCallbacksAndMessages(null)
         super.onDestroy()
     }
 
@@ -1171,6 +1177,7 @@ class CarPlayHostActivity : ComponentActivity() {
             val failedCanvas = support
             smallerUiFallback = true
             uiScalePercent = CarPlayUiScale.DEFAULT
+            AirPlayPersistence.saveUiScalePercent(this, uiScalePercent)
             scaledDisplay = resolutionDisplay
             appendLog("Larger CarPlay canvas unavailable reason=${failedCanvas.reason}; using Default icon and text size")
             // Removing the smaller-controls enlargement may leave a separately enlarged resolution.
@@ -1186,6 +1193,8 @@ class CarPlayHostActivity : ComponentActivity() {
             resolutionFallback = true
             displayScalePercent = 100
             displayScaleTenths = CarPlayDisplayScale.DEFAULT_TENTHS
+            AirPlayPersistence.saveDisplayScalePercent(this, displayScalePercent)
+            AirPlayPersistence.saveDisplayScaleTenths(this, displayScaleTenths)
             resolutionDisplay = baseDisplay
             scaledDisplay = CarPlayUiScale.apply(resolutionDisplay, uiScalePercent)
             appendLog("Enlarged CarPlay resolution unavailable reason=${support.reason}; using 100%")

@@ -247,6 +247,9 @@ public class TermSession {
         mEmulator.setKeyListener(mKeyListener);
 
         mIsRunning = true;
+        // P1: mark terminal I/O threads as daemon so they cannot block JVM/process teardown.
+        mReaderThread.setDaemon(true);
+        mWriterThread.setDaemon(true);
         mReaderThread.start();
         mWriterThread.start();
     }

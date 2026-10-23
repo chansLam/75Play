@@ -100,7 +100,7 @@ internal object CarHotspotAdbFallback {
                 if (remaining <= 0) return false
                 try {
                     return task.get(minOf(remaining, TimeUnit.MILLISECONDS.toNanos(100)), TimeUnit.NANOSECONDS)
-                } catch (_: TimeoutException) { }
+                } catch (t: TimeoutException) { AppLog.w(TAG, "ADB fallback poll timed out; retrying", t) }
             }
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()

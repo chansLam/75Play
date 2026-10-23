@@ -534,4 +534,6 @@
     <string name="reconnect_required_message">部分设置需重新连接 CarPlay 才能生效。是否保存并重新连接？</string>
     <!-- 无障碍内容描述（cd_ 前缀） -->
     <string name="cd_floating_ball">悬浮球：点按返回 CarPlay，长按打开最近任务</string>
+    <string name="session_notification_text">CarPlay 连接已运行</string>
+    <string name="session_notification_disconnect">断开连接</string>
 </resources>

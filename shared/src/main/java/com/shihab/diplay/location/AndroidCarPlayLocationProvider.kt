@@ -100,8 +100,9 @@ class AndroidCarPlayLocationProvider(
         if (!shouldUnregister) return
         try {
             locationManager.removeUpdates(listener)
-        } catch (_: Exception) {
+        } catch (t: Exception) {
             // Already unregistered.
+            AppLog.w(TAG, "remove location updates failed", t)
         }
     }
 

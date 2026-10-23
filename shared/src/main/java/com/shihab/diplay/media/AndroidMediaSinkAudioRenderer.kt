@@ -163,8 +163,9 @@ internal class AudioRenderer(
                 diagnosticStage = "stats"
                 logStatsIfDue()
             }
-        } catch (_: InterruptedException) {
+        } catch (t: InterruptedException) {
             // Worker shut down.
+            AppLog.w(TAG, "audio renderer worker interrupted", t)
         } catch (error: Exception) {
             if (running) {
                 AppLog.e(TAG, "audio renderer worker failed", error)
@@ -906,13 +907,15 @@ internal class AudioRenderer(
         if (codec != null) {
             try {
                 codec.stop()
-            } catch (_: Exception) {
+            } catch (t: Exception) {
                 // Best effort.
+                AppLog.w(TAG, "audio codec stop failed", t)
             }
             try {
                 codec.release()
-            } catch (_: Exception) {
+            } catch (t: Exception) {
                 // Best effort.
+                AppLog.w(TAG, "audio codec release failed", t)
             }
         }
         val soft = softwareOpusDecoder
@@ -923,17 +926,20 @@ internal class AudioRenderer(
         if (track != null) {
             try {
                 track.pause()
-            } catch (_: Exception) {                // Best effort.
+            } catch (t: Exception) {                // Best effort.
+                AppLog.w(TAG, "audio track pause failed", t)
             }
             try {
                 track.flush()
-            } catch (_: Exception) {
+            } catch (t: Exception) {
                 // Best effort.
+                AppLog.w(TAG, "audio track flush failed", t)
             }
             try {
                 track.release()
-            } catch (_: Exception) {
+            } catch (t: Exception) {
                 // Best effort.
+                AppLog.w(TAG, "audio track release failed", t)
             }
         }
     }

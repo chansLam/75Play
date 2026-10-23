@@ -123,7 +123,7 @@ class WifiP2pGroupManager(
             startAttempt = attempt
         }
 
-        val thread = HandlerThread("xcertplay-wifi-p2p").apply { start() }
+        val thread = HandlerThread("xcertplay-wifi-p2p").apply { isDaemon = true; start() }
         attempt.thread = thread
         val deadlineNanos = deadlineAfter(timeoutMillis)
         val credentials = randomCredentials()

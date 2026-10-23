@@ -1,5 +1,7 @@
 package com.shihab.diplay
 
+import com.shihab.diplay.util.AppLog
+
 import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
@@ -27,8 +29,9 @@ internal object DiagnosticExportStore {
         if (realSdkInt() >= Build.VERSION_CODES.Q) {
             try {
                 return SavedReport(saveToDownloads(context.contentResolver, fileName, report))
-            } catch (_: Exception) {
+            } catch (t: Exception) {
                 // Preserve the report even when the OEM's public storage provider is absent.
+                AppLog.w("DiagnosticExportStore", "save to Downloads failed; falling back", t)
             }
         }
         val saved = try {

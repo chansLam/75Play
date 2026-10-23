@@ -166,7 +166,9 @@ class SmoothVideoHostLifecycleTest {
 
         assertNull(getField("controller"))
         assertFalse("The rebuilding host must not keep the session slot", CarPlayBackgroundSession.isOwner(activity))
-        assertFalse(CarPlayBackgroundSession.hasSession())
+        // The recreated host (a new Activity object) starts its own session immediately once its
+        // prerequisites are resolved; the slot is no longer owned by the old activity above.
+        assertTrue(CarPlayBackgroundSession.hasSession())
         assertEquals(0, stop.calls)
 
         // So the rebuilt host starts its own session instead of waiting for one.

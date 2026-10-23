@@ -58,6 +58,13 @@ internal object CarPlayMediaKeys {
         publish = ::onArtworkDecoded,
         discard = Bitmap::recycle,
     )
+    /**
+     * Guards every mutable field below. All check-then-act / swap / increment sequences
+     * (controller↔expected comparison, focusOwner/focusEventRevision handshake, artwork
+     * cache mutation, nowPlaying/artwork swap) run while this lock is held. External
+     * listeners (the CarPlay sink) are always invoked outside the lock.
+     */
+    private val lock = Any()
     private var artworkOwner: Any? = null
     private var controller: CarPlayController? = null
     private var session: MediaSession? = null
@@ -79,40 +86,42 @@ internal object CarPlayMediaKeys {
     private val artworkCache = LinkedHashMap<Int, Bitmap?>()
     private var placeholder: Bitmap? = null
 
-    @Synchronized
     fun attach(context: Context, next: CarPlayController) {
-        if (controller !== next) {
-            releaseLocked()
-            artworkOwner = artworkQueue.newSession()
+        synchronized(lock) {
+            if (controller !== next) {
+                releaseLocked()
+                artworkOwner = artworkQueue.newSession()
+            }
+            appContext = context.applicationContext
+            controller = next
+            next.playbackListener = { playing -> onIphonePlaying(next, playing) }
+            next.nowPlayingListener = { update -> onNowPlayingChanged(next, update) }
+            next.artworkListener = { id, bytes -> onArtworkChanged(next, id, bytes) }
+            updateWheelKeyReceiver(context)
         }
-        appContext = context.applicationContext
-        controller = next
-        next.playbackListener = { playing -> onIphonePlaying(next, playing) }
-        next.nowPlayingListener = { update -> onNowPlayingChanged(next, update) }
-        next.artworkListener = { id, bytes -> onArtworkChanged(next, id, bytes) }
-        updateWheelKeyReceiver(context)
     }
 
     /** Ends key handling for [expected]; a newer controller's state is left alone. */
-    @Synchronized
     fun detach(expected: CarPlayController?) {
-        if (expected == null || controller !== expected) return
-        expected.playbackListener = null
-        expected.nowPlayingListener = null
-        expected.artworkListener = null
-        controller = null
-        releaseLocked()
+        synchronized(lock) {
+            if (expected == null || controller !== expected) return
+            expected.playbackListener = null
+            expected.nowPlayingListener = null
+            expected.artworkListener = null
+            controller = null
+            releaseLocked()
+        }
     }
 
     /** Called when CarPlay music starts or stops; may run on any thread. */
     fun onMediaAudioChanged(active: Boolean) {
-        mainHandler.post { synchronized(this) { updateLocked(active) } }
+        mainHandler.post { synchronized(lock) { updateLocked(active) } }
     }
 
     /** The iPhone started or stopped playing; may run on any thread. */
     private fun onIphonePlaying(expected: CarPlayController, playing: Boolean) {
         if (playing) mainHandler.post {
-            synchronized(this) {
+            synchronized(lock) {
                 if (controller === expected) regainFocusLocked(onIphonePlaybackResume = true)
             }
         }
@@ -121,7 +130,7 @@ internal object CarPlayMediaKeys {
     /** Publishes the iPhone's retained metadata through Android's system media session. */
     private fun onNowPlayingChanged(expected: CarPlayController, update: CarPlayNowPlaying) {
         mainHandler.post {
-            synchronized(this) {
+            synchronized(lock) {
                 if (controller !== expected) return@synchronized
                 val previousArtwork = artwork
                 if (nowPlaying.artworkTransferId != update.artworkTransferId) {
@@ -140,24 +149,26 @@ internal object CarPlayMediaKeys {
         }
     }
 
-    @Synchronized
     private fun onArtworkChanged(expected: CarPlayController, id: Int, bytes: ByteArray) {
-        if (controller !== expected) return
-        artworkOwner?.let { artworkQueue.submit(it, id, bytes) }
+        synchronized(lock) {
+            if (controller !== expected) return
+            artworkOwner?.let { artworkQueue.submit(it, id, bytes) }
+        }
     }
 
-    @Synchronized
     private fun onArtworkDecoded(expected: Any, id: Int, decoded: Bitmap?) {
-        if (artworkOwner !== expected) {
-            decoded?.recycle()
-            return
-        }
-        artworkCache.remove(id)
-        artworkCache[id] = decoded
-        while (artworkCache.size > MAX_CACHED_ARTWORK) artworkCache.remove(artworkCache.keys.first())
-        if (nowPlaying.artworkTransferId == id) {
-            artwork = decoded
-            if (realSdkInt() >= 21) session?.setMetadata(androidMetadata(nowPlaying, shownArtworkLocked()))
+        synchronized(lock) {
+            if (artworkOwner !== expected) {
+                decoded?.recycle()
+                return
+            }
+            artworkCache.remove(id)
+            artworkCache[id] = decoded
+            while (artworkCache.size > MAX_CACHED_ARTWORK) artworkCache.remove(artworkCache.keys.first())
+            if (nowPlaying.artworkTransferId == id) {
+                artwork = decoded
+                if (realSdkInt() >= 21) session?.setMetadata(androidMetadata(nowPlaying, shownArtworkLocked()))
+            }
         }
     }
 
@@ -272,7 +283,7 @@ internal object CarPlayMediaKeys {
 
     private fun onFocusChanged(expectedController: CarPlayController, owner: Any, change: Int,
         grantedRevision: Long? = null) {
-        val current = synchronized(this) {
+        val current = synchronized(lock) {
             if (controller !== expectedController || focusOwner !== owner ||
                 (grantedRevision != null && grantedRevision != focusEventRevision)) false
             else {
@@ -366,7 +377,7 @@ internal object CarPlayMediaKeys {
             AppLog.i(TAG, "media key $source -> car video player $index")
             return
         }
-        val sent = synchronized(this) { controller }?.sendMediaButton(index) ?: false
+        val sent = synchronized(lock) { controller }?.sendMediaButton(index) ?: false
         AppLog.i(TAG, "media key $source -> CarPlay $index sent=$sent")
     }
 
@@ -374,10 +385,11 @@ internal object CarPlayMediaKeys {
      * Entry point for focused-window steering-wheel media KeyEvents (KitKat ROMs such as the CS75
      * wheel that send no AVRCP MEDIA_BUTTON broadcast). The caller holds no lock.
      */
-    @Synchronized
     internal fun onHardwareMediaButton(index: Int, source: String) {
-        if (controller == null) return
-        send(index, source)
+        synchronized(lock) {
+            if (controller == null) return
+            send(index, source)
+        }
     }
 
     private val callback by lazy { if (realSdkInt() >= 21) CarPlayMediaCallback(
@@ -408,12 +420,13 @@ internal object CarPlayMediaKeys {
      * the MediaSession. Returns true when CarPlay consumed the key (the caller aborts the
      * broadcast so the car's mediacenter does not act on it too).
      */
-    @Synchronized
     fun handleWheelMediaKey(keyCode: Int): Boolean {
-        if ((session == null && legacyClient == null) || controller == null) return false
-        val index = CarPlayMediaButton.forKeyCode(keyCode) ?: return false
-        send(index, KeyEvent.keyCodeToString(keyCode))
-        return true
+        synchronized(lock) {
+            if ((session == null && legacyClient == null) || controller == null) return false
+            val index = CarPlayMediaButton.forKeyCode(keyCode) ?: return false
+            send(index, KeyEvent.keyCodeToString(keyCode))
+            return true
+        }
     }
 
     /**

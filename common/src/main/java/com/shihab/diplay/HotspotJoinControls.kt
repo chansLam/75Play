@@ -1,5 +1,7 @@
 package com.shihab.diplay
 
+import com.shihab.diplay.util.AppLog
+
 import android.app.Activity
 import com.shihab.diplay.ui.DiPlayDialog
 import android.widget.Button
@@ -32,7 +34,7 @@ internal class HotspotJoinControls(private val activity: Activity, private val s
         }
         override fun execute(block: () -> Unit) {
             cancelled.set(false)
-            Thread(block, "diplay-hotspot-join").start()
+            Thread(block, "diplay-hotspot-join").apply { isDaemon = true }.start()
         }
         override fun cancel() { cancelled.set(true); repair?.cancel() }
     }
@@ -91,7 +93,7 @@ internal class HotspotJoinControls(private val activity: Activity, private val s
         backend.execute {
             if (closed) return@execute
             val outcome = try { backend.run(action, token) }
-                catch (_: Exception) { HotspotJoinRepair.Result(HotspotJoinRepair.Code.UNKNOWN) }
+                catch (t: Exception) { AppLog.w("HotspotJoinControls", "hotspot join repair failed", t); HotspotJoinRepair.Result(HotspotJoinRepair.Code.UNKNOWN) }
             activity.runOnUiThread {
                 if (!closed) { busy = false; result = outcome; display() }
             }

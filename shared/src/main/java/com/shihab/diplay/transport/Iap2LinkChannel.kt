@@ -1,5 +1,7 @@
 package com.shihab.diplay.transport
 
+import com.shihab.diplay.util.AppLog
+
 import java.io.IOException
 import java.util.ArrayDeque
 import kotlin.math.min
@@ -209,8 +211,9 @@ class Iap2LinkChannel private constructor(
     private fun reportHandshakeProgress(message: String) {
         try {
             onHandshakeProgress(message)
-        } catch (_: Exception) {
+        } catch (t: Exception) {
             // Logging must never change the Bluetooth protocol state.
+            AppLog.w("Iap2Link", "handshake progress callback failed", t)
         }
     }
 
@@ -280,8 +283,9 @@ class Iap2LinkChannel private constructor(
                     outcome.completed?.let { completed ->
                         try {
                             onArtwork(completed)
-                        } catch (_: Exception) {
+                        } catch (t: Exception) {
                             // A UI/consumer callback cannot terminate the control link.
+                            AppLog.w("Iap2Link", "artwork callback failed", t)
                         }
                     }
                 }

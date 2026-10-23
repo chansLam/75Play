@@ -62,7 +62,7 @@ internal class HomeConnectionTabs(
             Thread({
                 host.enableWifi()
                 home.view?.post { if (home.isAdded) refresh() }
-            }, "diplay-enable-wifi").start()
+            }, "diplay-enable-wifi").apply { isDaemon = true }.start()
         }
         FocusSupport.attachRow(wifiRow)
         col.addView(wifiRow)
@@ -123,7 +123,7 @@ internal class HomeConnectionTabs(
                 Thread({
                     host.openCarHotspot()
                     home.view?.post { if (home.isAdded) refresh() }
-                }, "diplay-open-hotspot").start()
+                }, "diplay-open-hotspot").apply { isDaemon = true }.start()
             }, lpFull(ctx, ViewGroup.LayoutParams.WRAP_CONTENT))
             return col
         }
@@ -389,7 +389,7 @@ internal class HomeConnectionTabs(
                     }
                 }
             }
-        }.start()
+        }.apply { isDaemon = true }.start()
     }
 
     private fun label(ctx: android.content.Context, text: String, size: Float, color: Int, bold: Boolean = false): TextView =

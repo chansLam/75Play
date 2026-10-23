@@ -535,4 +535,6 @@
     <string name="home_save_and_connect_carplay">Guardar y conectar CarPlay</string>
     <string name="home_save_and_connect_wifi">Guardar y conectar Wi-Fi</string>
     <string name="cd_floating_ball">Botón flotante: tóquelo para volver a CarPlay, manténgalo pulsado para ver las recientes</string>
+    <string name="session_notification_text">CarPlay conexión activa</string>
+    <string name="session_notification_disconnect">Desconectar</string>
 </resources>

@@ -6,8 +6,6 @@ import com.shihab.diplay.DiPlayActivity
 import com.shihab.diplay.WheelKeyService
 import android.content.Intent
 import android.graphics.PixelFormat
-import android.os.Handler
-import android.os.Looper
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.MotionEvent
@@ -34,7 +32,6 @@ internal object FloatingBall {
     private const val BALL_SIZE_DP = 56
     private const val TOP_MARGIN_DP = 96
 
-    private val main = Handler(Looper.getMainLooper())
     private var root: View? = null
     private var onTapAction: (() -> Unit)? = null
     private var onLongPressAction: (() -> Unit)? = null
@@ -160,6 +157,10 @@ internal object FloatingBall {
     fun hide() {
         val view = root ?: return
         root = null
+        // P1 leak兜底：onTap/onLongPress lambda 捕获 DiPlayActivity 引用，hide 后必须清空，
+        // 否则单例 FloatingBall 持有 Activity 直到下次 show() 覆盖。
+        onTapAction = null
+        onLongPressAction = null
         @Suppress("DEPRECATION")
         val windowManager = view.context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
         runCatching { windowManager?.removeViewImmediate(view) }

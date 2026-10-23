@@ -1005,8 +1005,9 @@ internal fun teardownStreamTypes(body: Any?): List<Int>? {
 internal fun safeClose(closeable: Closeable?) {
     try {
         closeable?.close()
-    } catch (_: Exception) {
+    } catch (t: Exception) {
         // Best-effort close.
+        AppLog.w("AirPlay", "best-effort close failed", t)
     }
 }
 

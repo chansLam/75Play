@@ -35,7 +35,7 @@ class CarAppLauncherActivity : Activity() {
             runOnUiThread {
                 if (!isFinishing) showApps(apps)
             }
-        }, "car-app-catalog").start()
+        }, "car-app-catalog").apply { isDaemon = true }.start()
     }
 
     private fun showApps(apps: List<CarAppCatalog.App>) {
@@ -70,7 +70,7 @@ class CarAppLauncherActivity : Activity() {
             runOnUiThread {
                 if (!isFinishing) showApps(apps)
             }
-        }, "car-app-catalog-refresh").start()
+        }, "car-app-catalog-refresh").apply { isDaemon = true }.start()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

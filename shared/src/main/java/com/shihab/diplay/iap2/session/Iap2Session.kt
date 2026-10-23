@@ -1,5 +1,7 @@
 package com.shihab.diplay.iap2.session
 
+import com.shihab.diplay.util.AppLog
+
 import com.shihab.diplay.iap2.body.Iap2BodyBuilder
 import com.shihab.diplay.iap2.body.Iap2BodyReader
 import com.shihab.diplay.iap2.catalog.Iap2Endpoint
@@ -108,8 +110,9 @@ class Iap2Session private constructor(
     private fun emitTrace(message: String) {
         try {
             onTrace(message)
-        } catch (_: Exception) {
+        } catch (t: Exception) {
             // Logging must never change protocol behavior.
+            AppLog.w("Iap2Session", "trace callback failed", t)
         }
     }
 

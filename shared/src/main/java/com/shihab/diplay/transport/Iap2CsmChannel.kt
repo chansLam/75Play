@@ -1,5 +1,7 @@
 package com.shihab.diplay.transport
 
+import com.shihab.diplay.util.AppLog
+
 import com.shihab.diplay.iap2.wire.Iap2CsmFramer
 import com.shihab.diplay.iap2.wire.Iap2Frame
 import java.io.IOException
@@ -180,8 +182,9 @@ class Iap2CsmChannel private constructor(
         terminalize(error)
         try {
             close()
-        } catch (_: Throwable) {
+        } catch (t: Exception) {
             // The original Error is the failure the caller must observe.
+            AppLog.w("Iap2Csm", "fatal close failed", t)
         }
         throw error
     }

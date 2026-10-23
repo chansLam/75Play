@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>75Play 全面体检报告（修复后基线 · 2026-10-24）</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='5' fill='%2337d8f0'/><text x='12' y='17' font-size='13' text-anchor='middle' fill='%230f1419' font-family='monospace' font-weight='bold'>7</text></svg>">
+<style>
+  :root{--bg:#0f1419;--card:#171e26;--line:#243040;--ink:#e8eef4;--muted:#93a4b5;--accent:#37d8f0;--good:#3ecf8e;--warn:#f5b942;--bad:#ef6a6a;--chip:#1e2a36}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:15px;line-height:1.65}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 20px 80px}
+  header{border-bottom:1px solid var(--line);padding-bottom:20px;margin-bottom:24px}
+  h1{font-size:26px;margin:0 0 6px}
+  .sub{color:var(--muted);font-size:13px}
+  h2{font-size:19px;margin:36px 0 12px;border-left:3px solid var(--accent);padding-left:10px}
+  h3{font-size:15px;margin:18px 0 8px;color:var(--accent)}
+  .score-hero{display:flex;gap:16px;flex-wrap:wrap;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;margin:16px 0}
+  .big{font-size:44px;font-weight:700;color:var(--good)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .card .k{color:var(--muted);font-size:12.5px}
+  .card .v{font-size:22px;font-weight:600;margin-top:2px}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13.5px;background:var(--card);border:1px solid var(--line);border-radius:8px;overflow:hidden;table-layout:fixed}
+  th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;word-wrap:break-word}
+  th{background:var(--chip);color:var(--muted);font-weight:600}
+  tr:last-child td{border-bottom:0}
+  .tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:600}
+  .p0{background:rgba(239,106,106,.15);color:var(--bad)}
+  .p1{background:rgba(245,185,66,.15);color:var(--warn)}
+  .p2{background:rgba(55,216,240,.12);color:var(--accent)}
+  .ok{background:rgba(62,207,142,.15);color:var(--good)}
+  code{background:#0b0f14;border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:#aee6f5;word-break:break-all}
+  .muted{color:var(--muted)}
+  .bar{height:8px;background:var(--chip);border-radius:4px;overflow:hidden;margin-top:6px}
+  .bar i{display:block;height:100%;background:var(--accent)}
+  ul{margin:6px 0 6px 18px;padding:0}li{margin:3px 0}
+  @media (max-width:700px){.wrap{padding:20px 10px 60px}h1{font-size:21px}table{display:block;overflow-x:auto;white-space:normal}th,td{min-width:110px;font-size:12.5px}.card .v{font-size:19px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>75Play 全面体检报告（修复后基线）</h1>
+  <div class="sub">HEAD c6f8530 + 本地修复（未提交）· 检查 2026-10-24 · 全新只读扫描，未改代码 · 323 个 Kotlin 文件 / 54,080 行自有代码</div>
+</header>
+
+<div class="score-hero">
+  <div class="big">A-</div>
+  <div>
+    <div style="font-size:17px;font-weight:600">总体 87 / 100 —— 运行时泄漏已收敛，单测全绿；剩余债务集中在空 catch 与上帝类</div>
+    <div class="muted" style="font-size:13.5px;margin-top:4px">编译 0 错误 · 单测 1242/1242 全绿 · 0 P0 · 仅 1 个 P1 · 运行时较修复前显著提升</div>
+  </div>
+</div>
+
+<h2>一、七维评分</h2>
+<div class="grid">
+  <div class="card"><div class="k">编译健康度</div><div class="v" style="color:var(--good)">A+</div><div class="muted">三模块 compileDebugKotlin 0 错误（实跑）</div><div class="bar"><i style="width:99%;background:var(--good)"></i></div></div>
+  <div class="card"><div class="k">单测健康度</div><div class="v" style="color:var(--good)">A+</div><div class="muted">common 579/579 · shared 663/663 全绿（实跑）</div><div class="bar"><i style="width:100%;background:var(--good)"></i></div></div>
+  <div class="card"><div class="k">代码质量</div><div class="v" style="color:var(--warn)">C+</div><div class="muted">空 catch 57 处 · 无守卫 !! 3 处 · TODO/GlobalScope 0</div><div class="bar"><i style="width:62%"></i></div></div>
+  <div class="card"><div class="k">运行时健康</div><div class="v" style="color:var(--good)">A-</div><div class="muted">8.7/10 · 0 P0 · 仅 1 P1 · Receiver 全配对</div><div class="bar"><i style="width:87%;background:var(--good)"></i></div></div>
+  <div class="card"><div class="k">UI 健康度</div><div class="v" style="color:var(--warn)">B-</div><div class="muted">硬编码色 ~70 · 反馈覆盖 ~60% · 无过度绘制</div><div class="bar"><i style="width:72%"></i></div></div>
+  <div class="card"><div class="k">多语言</div><div class="v" style="color:var(--good)">A-</div><div class="muted">603 key × 6 语言零缺失 · es 少量漏译</div><div class="bar"><i style="width:92%;background:var(--good)"></i></div></div>
+  <div class="card"><div class="k">架构健康</div><div class="v" style="color:var(--warn)">B-</div><div class="muted">无环 · 2 个 2000+ 行上帝类 · 根包 72 文件</div><div class="bar"><i style="width:75%"></i></div></div>
+</div>
+
+<h2>二、编译与单测实跑</h2>
+<table>
+  <colgroup><col style="width:32%"><col style="width:53%"><col style="width:15%"></colgroup>
+  <tr><th>检查项</th><th>实跑结果</th><th>结论</th></tr>
+  <tr><td><code>:shared/:common/:mobile:compileDebugKotlin</code></td><td>BUILD SUCCESSFUL，0 错误（仅既有 deprecation 警告）</td><td><span class="tag ok">通过</span></td></tr>
+  <tr><td><code>:common:testDebugUnitTest</code></td><td>579 例，0 失败 0 错误</td><td><span class="tag ok">全绿</span></td></tr>
+  <tr><td><code>:shared:testDebugUnitTest</code></td><td>663 例，0 失败 0 错误</td><td><span class="tag ok">全绿</span></td></tr>
+</table>
+
+<h2>三、问题清单</h2>
+<h3>P0（必崩必漏）：无</h3>
+<p class="muted">主路径（连接→投屏→断开、Service 握手、音视频解码）在正常生命周期下无每次必崩/必漏点。</p>
+
+<h3>P1（高概率出问题）— 1 条</h3>
+<table>
+  <colgroup><col style="width:32%"><col style="width:48%"><col style="width:20%"></colgroup>
+  <tr><th>问题</th><th>证据</th><th>说明</th></tr>
+  <tr>
+    <td>PTY 子进程 + 非 daemon watcher 挂在进程级单例，清理依赖单点</td>
+    <td><code>TerminalOverlay.kt:36-42,181-191</code>；<code>ShellTermSession.java:64,68,218</code>（mWatcherThread 未 daemon）；兜底在 <code>DiPlayActivity.onDestroy:813</code></td>
+    <td>单例持 Activity Context View + PTY 子进程；若 Activity 被系统回收未走干净 onDestroy，shell 进程与非 daemon 线程永存。已加 onDestroy 兜底但脆弱。建议：mWatcherThread 设 daemon + dismiss 改为生命周期自动兜底</td>
+  </tr>
+</table>
+
+<h3>P2（隐患）— 汇总</h3>
+<table>
+  <colgroup><col style="width:26%"><col style="width:74%"></colgroup>
+  <tr><th>类别</th><th>证据 file:line</th></tr>
+  <tr><td>无守卫 !!（车机 NPE 即黑屏）</td><td><code>AppLocale.kt:87</code> arg!!；<code>ManualHotspotReadiness.kt:59</code> address!!；<code>CarPlayController.kt:755</code> linuxI2cPath!!</td></tr>
+  <tr><td>空 catch 吞异常</td><td>共 57 处；吞 Throwable 最严重：<code>P2pConfigBuildDiagnostics.kt:46</code>、<code>Iap2CsmChannel.kt:183</code>；media 包集中：AudioRenderer 5 处 / MicrophoneUplink 4 处 / OpusEncoder 2 处</td></tr>
+  <tr><td>mainHandler 销毁未统一 remove</td><td><code>CarPlayController.kt:1549,1455</code> postDelayed，close()（:551-602）未 removeCallbacksAndMessages（靠 runnable 内自失效，不堆积）</td></tr>
+  <tr><td>非 daemon watch 线程</td><td><code>WheelRootInjector.kt:156,66</code> 两个 root watch 线程阻塞 readLine()，正常 stop 靠 destroy 子进程 EOF</td></tr>
+  <tr><td>可见性窗口</td><td><code>AndroidMediaSinkVideoDecoder.kt:50</code> outputSurface 裸 var 未 @Volatile（相邻 decoder 已是 @Volatile）</td></tr>
+  <tr><td>UI 硬编码色</td><td>~70 处绕过 GlassColors：重灾区 <code>DiPlayUpdateDialogs.kt</code> 14 处、<code>CarPlayHostActivity.kt:2151-2158</code> MENU_* 8 色、<code>SettingsTheme.kt</code> 11 处</td></tr>
+  <tr><td>UI 硬编码字号</td><td><code>DiPlayDialog.kt</code> 11 处；<code>CarPlayHostActivity.kt:1006</code> 大时钟 72f；<code>SettingsWidgets.kt</code> 7 处</td></tr>
+  <tr><td>按压反馈/焦点漏接</td><td>46 个 click 目标反馈覆盖约 60%；漏点：<code>DiPlayActivity.kt:355</code>、<code>HotspotJoinControls.kt:18</code>、<code>GlassDropdown.kt:74</code>、<code>GlassSwitch.kt:45</code>；<code>CarPlayHostActivity.kt:1021</code> 全屏按钮无焦点</td></tr>
+  <tr><td>无障碍</td><td>缺 contentDescription：<code>CarPlayAppPanels.kt:545</code>、<code>DiPlayDialog.kt:616</code>、<code>HomeAppDragFloat.kt:41</code></td></tr>
+  <tr><td>触控目标偏小</td><td><code>FragmentHome.kt:187</code> minHeight 22dp；<code>ShellChrome.kt:295,358</code> 状态胶囊 26dp</td></tr>
+  <tr><td>通知硬编码英文</td><td><code>DiPlaySessionService.kt:34,35,38</code> setContentTitle/setContentText/addAction 字面量</td></tr>
+  <tr><td>i18n 漏译</td><td>values-es 约 5-7 常用词抄英文（auto/audio/error/app_launcher_title/joystick）；ar/es/ru 缺 strings_contrib_audio.xml 占位文件</td></tr>
+  <tr><td>重复代码</td><td>activityOf() 3 处拷贝（DiPlayDialog/Toast/GlassDropdown）；label() 3 处拷贝（FragmentHome/HomeAppGrid/HomeConnectionTabs）；WifiP2pGroupManager vs Legacy 双实现骨架雷同</td></tr>
+</table>
+
+<h2>四、量化指标</h2>
+<div class="grid">
+  <div class="card"><div class="k">TODO/FIXME/HACK</div><div class="v">0</div></div>
+  <div class="card"><div class="k">GlobalScope / runBlocking</div><div class="v">0 / 0</div></div>
+  <div class="card"><div class="k">裸 Log（业务代码）</div><div class="v" style="color:var(--good)">0</div><div class="muted">全走 AppLog 封装</div></div>
+  <div class="card"><div class="k">裸 !!</div><div class="v">21</div><div class="muted">3 处无守卫</div></div>
+  <div class="card"><div class="k">空 catch</div><div class="v" style="color:var(--bad)">57</div><div class="muted">2 处吞 Throwable</div></div>
+  <div class="card"><div class="k">&gt;1000 行文件</div><div class="v">4</div><div class="muted">最大 2163 行</div></div>
+  <div class="card"><div class="k">&gt;100 行方法</div><div class="v">24</div><div class="muted">最长 261 行</div></div>
+  <div class="card"><div class="k">单例 object</div><div class="v">170</div><div class="muted">危险的集中 3-4 处</div></div>
+  <div class="card"><div class="k">strings 基准</div><div class="v">603</div><div class="muted">6 语言 key 零缺失</div></div>
+  <div class="card"><div class="k">layer-list &gt;3 层</div><div class="v" style="color:var(--good)">0</div></div>
+</div>
+
+<h2>五、做得好的地方（本次实跑确认）</h2>
+<ul>
+  <li><b>编译+单测双绿</b>：三模块编译 0 错误，common/shared 1242 用例全绿。</li>
+  <li><b>Receiver 全配对</b>：WifiListWatcher 在 onPause/onDestroyView 都停；Bluetooth/ConnectService/HostActivity 注销均有 finally/runCatching 守卫。</li>
+  <li><b>线程几乎全 daemon</b>：AirPlay/audio/network executor 均 daemon，CarPlayController.close() 逐线程 shutdownNow + awaitTermination。</li>
+  <li><b>媒体释放严谨</b>：MicrophoneUplink 同步 release AudioRecord/socket/encoder；AudioRenderer codec/track stop+release；ParkingOutput quitSafely。</li>
+  <li><b>模块依赖无环</b>：mobile→common→shared，无反向依赖；vendored 代码物理隔离。</li>
+  <li><b>i18n key 同步干净</b>：6 语言 603 key 零缺失、零多余、占位符零错位。</li>
+</ul>
+
+<h2>六、优先整改建议（Top 5）</h2>
+<ol>
+  <li><b>TerminalOverlay 加固</b>：ShellTermSession 的 mWatcherThread 设 daemon；dismiss 不依赖单 Activity 单点。</li>
+  <li><b>3 处无守卫 !! 加显式校验</b>：AppLocale:87 / ManualHotspotReadiness:59 / CarPlayController:755，失败时给可读错误而非 NPE 黑屏。</li>
+  <li><b>空 catch 补日志</b>：优先 media 包 15 处 + 2 处吞 Throwable；至少 AppLog.w 留痕。</li>
+  <li><b>CarPlayController.close() 补</b> <code>mainHandler.removeCallbacksAndMessages(null)</code>。</li>
+  <li><b>通知文案入 strings</b>：DiPlaySessionService 3 处英文硬编码。</li>
+</ol>
+
+<p class="muted" style="margin-top:32px;font-size:12.5px">本报告为 2026-10-24 全新只读扫描产出，所有数据基于本次实跑。未改代码、未提交、未推送，版本号 2.0.1 未动。</p>
+</div>
+</body>
+</html>

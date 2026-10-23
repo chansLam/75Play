@@ -148,7 +148,7 @@ internal class HomeAppGrid(
             // Fragment 可能已在 post 前 detach（用户切页/离开），此时 renderAppGrid 里 dp()→requireContext() 会抛
             // "not attached to a context" 闪退，故 post 回来先检查 isAdded。
             handler.post { if (fragment.isAdded) renderAppGrid(grid, apps) }
-        }.start()
+        }.apply { isDaemon = true }.start()
     }
 
     private fun renderAppGrid(grid: LinearLayout, apps: List<CarAppCatalog.App>) {
@@ -557,7 +557,7 @@ internal class HomeAppGrid(
                     onDismiss = { reloadAppGrid() },
                 )
             }
-        }.start()
+        }.apply { isDaemon = true }.start()
     }
 
     private fun confirmUninstall(app: CarAppCatalog.App) {

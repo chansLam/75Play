@@ -1,5 +1,7 @@
 package com.shihab.diplay
 
+import com.shihab.diplay.util.AppLog
+
 import com.shihab.diplay.compat.realSdkInt
 import java.io.Closeable
 import java.io.File
@@ -67,8 +69,9 @@ internal class SessionLogFile(val file: File) : Closeable {
                     runCatching(block)
                 }
             }
-        } catch (_: RejectedExecutionException) {
+        } catch (t: RejectedExecutionException) {
             // Shutting down; drop the line.
+            AppLog.w("SessionLogFile", "log executor rejected; dropping line", t)
         }
     }
 

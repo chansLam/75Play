@@ -1,5 +1,7 @@
 package com.shihab.diplay.network
 
+import com.shihab.diplay.util.AppLog
+
 import java.io.Closeable
 import java.net.Inet4Address
 import java.net.Inet6Address
@@ -82,8 +84,9 @@ internal class WirelessStartupDiagnostics(
                 emitSnapshot(snapshot)
                 Thread.sleep(intervalMillis)
             }
-        } catch (_: InterruptedException) {
+        } catch (t: InterruptedException) {
             // Teardown interrupts sleep or an in-flight Android callback wait.
+            AppLog.w("WirelessStartupDiag", "wireless sample observer interrupted", t)
         }
     }
 
@@ -103,8 +106,9 @@ internal class WirelessStartupDiagnostics(
     }
 
     private fun emit(message: String) {
-        try { log(message) } catch (_: RuntimeException) {
+        try { log(message) } catch (t: RuntimeException) {
             // An observer cannot fail startup or teardown.
+            AppLog.w("WirelessStartupDiag", "wireless diagnostic observer failed", t)
         }
     }
 }

@@ -168,7 +168,7 @@ class ShellDiagnostics(
                     )
                 }
             }
-        }, "diplay-export").start()
+        }, "diplay-export").apply { isDaemon = true }.start()
     }
 
     private fun showReport(report: String) {

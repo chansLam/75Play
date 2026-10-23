@@ -159,8 +159,9 @@ internal class VideoDecoder(
                     throw error
                 }
             }
-        } catch (_: InterruptedException) {
+        } catch (t: InterruptedException) {
             // Worker shut down.
+            AppLog.w(TAG, "video decoder worker interrupted", t)
         } finally {
             releaseDecoder()
             // The codec is gone, so nothing renders to any surface or to the parking consumer any more.
@@ -429,7 +430,7 @@ internal class VideoDecoder(
     private fun feed(nalus: ByteArray, presentNs: Long = 0L) {
         val annexB = MediaCodecSupport.toAnnexB(nalus)
         val config = lastConfig ?: return
-        if (outputSurface == null && !ensureParkingSurface()) return
+        if (outputSurface == null) return
         if (annexB.isEmpty()) { recover("invalid video access unit"); return }
         if (!referenceChain.accepts(annexB, config.codec)) {
             requestKeyFrameIfDue()
@@ -610,13 +611,15 @@ internal class VideoDecoder(
         if (codec != null) {
             try {
                 codec.stop()
-            } catch (_: Exception) {
+            } catch (t: Exception) {
                 // Best effort.
+                AppLog.w(TAG, "video codec stop failed", t)
             }
             try {
                 codec.release()
-            } catch (_: Exception) {
+            } catch (t: Exception) {
                 // Best effort.
+                AppLog.w(TAG, "video codec release failed", t)
             }
         }
     }

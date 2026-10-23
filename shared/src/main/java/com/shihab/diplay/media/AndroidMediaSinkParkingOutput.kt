@@ -10,7 +10,7 @@ import android.view.Surface
 internal class ParkingOutput(width: Int, height: Int) {
     private val consumerLock = Any()
     private var closed = false
-    private val thread = android.os.HandlerThread("carplay-video-parking").apply { start() }
+    private val thread = android.os.HandlerThread("carplay-video-parking").apply { isDaemon = true; start() }
     private val reader: android.media.ImageReader
     val surface: Surface
     /** The looper the consumer drains on, never the main one. */

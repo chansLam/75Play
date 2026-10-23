@@ -1,5 +1,7 @@
 package com.shihab.diplay.mfi
 
+import com.shihab.diplay.util.AppLog
+
 import com.shihab.diplay.transport.I2cTransport
 import com.shihab.diplay.transport.I2cTransportException
 
@@ -103,8 +105,9 @@ class MfiAuthenticationClient(
         while (true) {
             try {
                 if (readByte(AUTH_CONTROL_STATUS_REGISTER) == AUTH_SUCCESS_STATUS) break
-            } catch (_: I2cTransportException) {
+            } catch (t: I2cTransportException) {
                 // A polling read can be transiently unavailable while the chip is computing.
+                AppLog.w("MfiAuth", "MFI auth status poll read failed", t)
             }
             if (System.nanoTime() >= deadlineNanos) {
                 throw MfiAuthenticationFailedException(bestEffortErrorCode())

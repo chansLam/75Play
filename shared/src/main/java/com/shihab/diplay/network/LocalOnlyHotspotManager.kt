@@ -1,5 +1,7 @@
 package com.shihab.diplay.network
 
+import com.shihab.diplay.util.AppLog
+
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.wifi.SoftApConfiguration
@@ -217,8 +219,9 @@ class LocalOnlyHotspotManager(context: Context, private val onDiagnostic: (Strin
                     throw IOException("LocalOnlyHotspot custom startup failed", failure.cause)
                 }
                 // Unsupported firmware retains the ordinary Android-generated AP.
-            } catch (_: SecurityException) {
+            } catch (t: SecurityException) {
                 // No privileged permission is requested to enable this optional path.
+                AppLog.w("LocalOnlyHotspot", "custom hotspot channel set blocked", t)
             }
         }
         // Main-loop callback delivery survives cancellation to close late reservations.
@@ -819,8 +822,9 @@ class LocalOnlyHotspotManager(context: Context, private val onDiagnostic: (Strin
         if (lock == null) return
         try {
             if (lock.isHeld) lock.release()
-        } catch (_: RuntimeException) {
+        } catch (t: RuntimeException) {
             // close() is best-effort; the hotspot reservation remains the authoritative owner.
+            AppLog.w("LocalOnlyHotspot", "multicast lock release failed", t)
         }
     }
 

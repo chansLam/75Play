@@ -52,23 +52,26 @@ object AppLog {
         if (debug) Log.i(tag, msg, tr)
     }
 
+    // w/e always forward, but android.util.Log is not available under the plain JVM unit
+    // runner (it throws "not mocked"). Swallow such failures so a logging call can never
+    // break production paths that deliberately swallow their own exceptions.
     @JvmStatic
     fun w(tag: String, msg: String) {
-        Log.w(tag, msg)
+        runCatching { Log.w(tag, msg) }
     }
 
     @JvmStatic
     fun w(tag: String, msg: String, tr: Throwable?) {
-        Log.w(tag, msg, tr)
+        runCatching { Log.w(tag, msg, tr) }
     }
 
     @JvmStatic
     fun e(tag: String, msg: String) {
-        Log.e(tag, msg)
+        runCatching { Log.e(tag, msg) }
     }
 
     @JvmStatic
     fun e(tag: String, msg: String, tr: Throwable?) {
-        Log.e(tag, msg, tr)
+        runCatching { Log.e(tag, msg, tr) }
     }
 }

@@ -1,0 +1,132 @@
+{
+  "src": "75play-体检报告-20261024.html",
+  "url": "file:///home/user/Doubao/chats/38446869135830274/75Play-github/75play-%E4%BD%93%E6%A3%80%E6%8A%A5%E5%91%8A-20261024.html",
+  "outdir": "/home/user/Doubao/chats/38446869135830274/75Play-github/_shots",
+  "include": [
+    "lint",
+    "screenshots",
+    "structure"
+  ],
+  "shots": {
+    "desktop": {
+      "revealed": 0,
+      "screenshot": "/home/user/Doubao/chats/38446869135830274/75Play-github/_shots/75play-体检报告-20261024_desktop.jpg",
+      "screenshotBytes": 220600,
+      "truncated": false,
+      "structure": {
+        "title": "75Play 全面体检报告（修复后基线 · 2026-10-24）",
+        "firstH1": "75Play 全面体检报告（修复后基线）",
+        "viewport": {
+          "w": 1440,
+          "h": 900
+        },
+        "fullpage": {
+          "w": 1440,
+          "h": 3144
+        },
+        "counts": {
+          "section": 0,
+          "h1": 1,
+          "h2": 6,
+          "img": 0,
+          "canvas": 0,
+          "svg": 0,
+          "links": 0,
+          "buttons": 0
+        }
+      },
+      "consoleErrors": [],
+      "consoleWarnings": [],
+      "horizontalOverflow": [],
+      "resourceErrors": []
+    },
+    "mobile": {
+      "revealed": 0,
+      "slices": [
+        "/home/user/Doubao/chats/38446869135830274/75Play-github/_shots/75play-体检报告-20261024_mobile_p1of2.jpg",
+        "/home/user/Doubao/chats/38446869135830274/75Play-github/_shots/75play-体检报告-20261024_mobile_p2of2.jpg"
+      ],
+      "sliceHint": "按顺序 Read slices 里的各分片。",
+      "truncated": false,
+      "structure": {
+        "title": "75Play 全面体检报告（修复后基线 · 2026-10-24）",
+        "firstH1": "75Play 全面体检报告（修复后基线）",
+        "viewport": {
+          "w": 390,
+          "h": 844
+        },
+        "fullpage": {
+          "w": 390,
+          "h": 5760
+        },
+        "counts": {
+          "section": 0,
+          "h1": 1,
+          "h2": 6,
+          "img": 0,
+          "canvas": 0,
+          "svg": 0,
+          "links": 0,
+          "buttons": 0
+        }
+      },
+      "consoleErrors": [],
+      "consoleWarnings": [],
+      "horizontalOverflow": [],
+      "resourceErrors": []
+    }
+  },
+  "engine": "playwright",
+  "chromiumExec": "/opt/vm/preinstall/ms-playwright/chromium-1169/chrome-linux/chrome",
+  "elapsedSec": 6.82,
+  "schemaVersion": 2,
+  "status": "pass",
+  "engineInfo": {
+    "name": "playwright",
+    "degraded": false,
+    "degradedReasons": []
+  },
+  "input": {
+    "original": "75play-体检报告-20261024.html",
+    "resolvedPath": "/home/user/Doubao/chats/38446869135830274/75Play-github/75play-体检报告-20261024.html",
+    "baseUrl": "file:///home/user/Doubao/chats/38446869135830274/75Play-github/75play-%E4%BD%93%E6%A3%80%E6%8A%A5%E5%91%8A-20261024.html",
+    "protocol": "file",
+    "cwd": "/home/user/Doubao/chats/38446869135830274/75Play-github",
+    "mediaMode": {
+      "reducedMotion": true
+    }
+  },
+  "artifacts": {
+    "screenshots": [
+      {
+        "viewport": "desktop",
+        "path": "/home/user/Doubao/chats/38446869135830274/75Play-github/_shots/75play-体检报告-20261024_desktop.jpg",
+        "size": 220600,
+        "visualCoverage": {
+          "complete": true,
+          "reason": null
+        }
+      },
+      {
+        "viewport": "mobile",
+        "tiles": [
+          "/home/user/Doubao/chats/38446869135830274/75Play-github/_shots/75play-体检报告-20261024_mobile_p1of2.jpg",
+          "/home/user/Doubao/chats/38446869135830274/75Play-github/_shots/75play-体检报告-20261024_mobile_p2of2.jpg"
+        ],
+        "visualCoverage": {
+          "complete": true,
+          "reason": null
+        }
+      }
+    ]
+  },
+  "summary": {
+    "blocker": 0,
+    "error": 0,
+    "warning": 0,
+    "info": 0
+  },
+  "findings": [],
+  "prioritizedActions": [],
+  "reportPath": "/home/user/Doubao/chats/38446869135830274/75Play-github/_shots/report.json"
+}

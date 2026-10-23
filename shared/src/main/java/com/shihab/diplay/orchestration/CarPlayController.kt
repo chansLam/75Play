@@ -69,6 +69,7 @@ import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.ThreadFactory
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -152,9 +153,15 @@ class CarPlayController(
     private val diagnosticAttempt = diagnosticAttempts.incrementAndGet()
     private val diagnosticRun = AtomicInteger()
     private val bluetoothAdapter = BluetoothCompat.getAdapter(appContext)
-    private val executor: ExecutorService = Executors.newSingleThreadExecutor()
-    private val touchExecutor: ExecutorService = Executors.newSingleThreadExecutor()
-    private val tunnelExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val executor: ExecutorService = Executors.newSingleThreadExecutor(
+        ThreadFactory { Thread(it, "diplay-carplay-main").apply { isDaemon = true } },
+    )
+    private val touchExecutor: ExecutorService = Executors.newSingleThreadExecutor(
+        ThreadFactory { Thread(it, "diplay-carplay-touch").apply { isDaemon = true } },
+    )
+    private val tunnelExecutor: ExecutorService = Executors.newSingleThreadExecutor(
+        ThreadFactory { Thread(it, "diplay-carplay-tunnel").apply { isDaemon = true } },
+    )
     private val mainHandler = Handler(Looper.getMainLooper())
     private val lifecycleLock = Any()
     @Volatile private var uiListener: AirPlaySessionListener? = listener
@@ -554,6 +561,9 @@ class CarPlayController(
             closed = true
             dashboardMapOutputVisible = false
         }
+        // Drop any pending main-thread callbacks/posts before tearing down executors,
+        // otherwise posted continuations may fire against a half-closed controller.
+        mainHandler.removeCallbacksAndMessages(null)
         firstTcpWatchdog?.terminate()
         startupTimer.shutdownNow()
         (hotspot as? ManualHotspotManager)?.close()
@@ -653,8 +663,9 @@ class CarPlayController(
                     }
                 }
             }
-        } catch (_: java.util.concurrent.RejectedExecutionException) {
+        } catch (t: java.util.concurrent.RejectedExecutionException) {
             // Closing the controller also discards the pending restore.
+            AppLog.w(TAG, "dashboard restore rejected while closing", t)
         }
     }
 
@@ -752,7 +763,9 @@ class CarPlayController(
     private fun openLinuxMfi() {
         executor.execute {
             try {
-                val transport = LinuxI2cTransport.open(config.linuxI2cPath!!)
+                val i2cPath = config.linuxI2cPath
+                    ?: throw IllegalStateException("I2C backend selected but linuxI2cPath not configured")
+                val transport = LinuxI2cTransport.open(i2cPath)
                 try {
                     mfiSession = MfiSession(MfiRuntime.scan(transport), transport)
                     debugLog("mfi Linux I2C coprocessor ready path=${config.linuxI2cPath}")
@@ -1819,8 +1832,9 @@ class CarPlayController(
         vpnBound = false
         try {
             appContext.unbindService(serviceConnection)
-        } catch (_: Exception) {
+        } catch (t: Exception) {
             // The service may have already been unbound.
+            AppLog.w(TAG, "VPN unbindService failed", t)
         }
         vpnService = null
     }
@@ -1836,8 +1850,9 @@ class CarPlayController(
             executor.execute {
                 try {
                     session.close()
-                } catch (_: Exception) {
+                } catch (t: Exception) {
                     // Best effort.
+                    AppLog.w(TAG, "session close failed on executor", t)
                 }
             }
         }
@@ -1876,8 +1891,9 @@ class CarPlayController(
             // The redactor reserves "PHONE " for private phone-side log captures.
             val diagnosticPhase = phase.name
             debugLog("$CONNECTION_DIAGNOSTIC_PREFIX attempt=$diagnosticAttempt run=${diagnosticRun.get()} phase=$diagnosticPhase $message")
-        } catch (_: Exception) {
+        } catch (t: Exception) {
             // Optional diagnostics must not change transport or shutdown behavior.
+            AppLog.w(TAG, "connection diagnostic log failed", t)
         }
     }
 

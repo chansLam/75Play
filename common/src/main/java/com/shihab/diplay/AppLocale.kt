@@ -84,7 +84,13 @@ object AppLocale {
             when (arg) {
                 is Context -> Context::class.java
                 is String -> String::class.java
-                else -> arg!!.javaClass
+                // None of the reflected PlatformAppLocales methods take a nullable parameter;
+                // a null here means a caller passed an unexpected argument. Fail loudly with a
+                // readable message instead of an NPE off `arg!!`.
+                null -> throw IllegalStateException(
+                    "platformLocales($method): unexpected null argument (expected Context or String)",
+                )
+                else -> arg.javaClass
             }
         }.toTypedArray()
         return type.getMethod(method, *parameterTypes).invoke(null, *args)

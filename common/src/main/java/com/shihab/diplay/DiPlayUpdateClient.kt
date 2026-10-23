@@ -229,7 +229,7 @@ internal object DiPlayUpdateClient {
         try {
             System.setProperty("java.net.preferIPv4Stack", "true")
             System.setProperty("java.net.preferIPv6Addresses", "false")
-        } catch (_: Exception) {}
+        } catch (t: Exception) { AppLog.w("DiPlayUpdate", "preferIPv4 stack property set failed", t) }
     }
 
     private data class LegacyTls(val factory: SSLSocketFactory, val trust: X509TrustManager)
@@ -253,8 +253,9 @@ internal object DiPlayUpdateClient {
                     val cert = factory.generateCertificate(certPem.byteInputStream())
                     store.setCertificateEntry("update-root-$index", cert)
                     loaded++
-                } catch (_: Exception) {
+                } catch (t: Exception) {
                     // Skip unparseable certificates on old Android; keep the rest.
+                    AppLog.w("DiPlayUpdate", "update CA certificate parse failed", t)
                 }
             }
             if (loaded == 0) throw IOException("Bundled update trust roots are empty")

@@ -32,7 +32,7 @@ class NavigationWidget : AppWidgetProvider() {
 internal object NavigationWidgetUpdater {
     private const val MIN_INTERVAL_MILLIS = 1_000L
 
-    private val worker = Handler(HandlerThread("diplay-widget").apply { start() }.looper)
+    private val worker = Handler(HandlerThread("diplay-widget").apply { isDaemon = true; start() }.looper)
     @Volatile private var context: Context? = null
     private var lastRender = 0L // worker thread
     private var pending = false // worker thread

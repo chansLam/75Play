@@ -55,7 +55,7 @@ class DiPlayApplication : MultiDexApplication() {
                     bootLog("rootnavbar-done")
                 },
                 "root-navbar",
-            ).start()
+            ).apply { isDaemon = true }.start()
         } else {
             bootLog("rootnavbar-requested-false")
         }

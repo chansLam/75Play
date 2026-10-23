@@ -441,7 +441,7 @@ class WheelKeyService : AccessibilityService() {
                 } finally {
                     restoring.set(false)
                 }
-            }, "diplay-wheel-keys-restore").start()
+            }, "diplay-wheel-keys-restore").apply { isDaemon = true }.start()
         }
 
         /**

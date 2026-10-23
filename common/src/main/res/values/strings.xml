@@ -534,4 +534,7 @@
     <string name="reconnect_required_message">Some settings need a CarPlay reconnect to take effect. Save and reconnect now?</string>
     <!-- Accessibility content descriptions (cd_ prefix) -->
     <string name="cd_floating_ball">Floating ball: tap to return to CarPlay, long-press for recents</string>
+    <!-- Foreground session notification (DiPlaySessionService) -->
+    <string name="session_notification_text">CarPlay connection running</string>
+    <string name="session_notification_disconnect">Disconnect</string>
 </resources>

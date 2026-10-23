@@ -265,7 +265,7 @@ class CarPlayConnectService : Service() {
         // stopService after the host adopts must not close the live controller.
         // A cancel or a service death before adoption still tears the wireless stack down.
         if (!hostAdopted()) teardown()
-        runCatching { controlReceiver?.let { unregisterReceiver(it) } }
+        try { controlReceiver?.let { unregisterReceiver(it) } } catch (t: Exception) { AppLog.w(TAG, "unregister control receiver failed", t) }
         controlReceiver = null
         runCatching { wakeLock?.let { if (it.isHeld) it.release() } }
         wakeLock = null

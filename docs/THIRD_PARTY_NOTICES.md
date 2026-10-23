@@ -6,9 +6,9 @@
 
 | 上游 | 说明 | 跟踪分支 | 最新提交（移植对照） |
 | --- | --- | --- | --- |
-| [DiPlay](https://github.com/shihabal3amri/DiPlay) | 主上游 / 接收端主体 | `main` | [`6d3b8a8c`](https://github.com/shihabal3amri/DiPlay/commit/6d3b8a8c) · 2026-10-17（**最新 tip = V0.2.21**（PR #920）；本批仅更新跟踪哈希，**未移植** V0.2.21 新增功能：意大利语、双击触发 Siri、导入车机热点详情、车辆原厂音乐律动、黑色圆角遮罩；有线连接 / BYD 相关不适用跳过。此前已移植至 `b309eae9`，下次从该提交之后查增量） |
+| [DiPlay](https://github.com/shihabal3amri/DiPlay) | 主上游 / 接收端主体 | `main` | [`4487c689`](https://github.com/shihabal3amri/DiPlay/commit/4487c689) · 2026-10-22（**最新 tip**；本批仅更新跟踪哈希，新增全部为网站下载量统计、发布说明、BYD/吉利仪表集群地图，均不适用 SoftAP 专版，无可移植内容。此前已移植至 `b309eae9`，下次从该提交之后查增量） |
 | [diplay-changan](https://github.com/c80361619/diplay-changan) | 长安 CS75（2018）Android 4.4.2 / i.MX6 | `kitkat` | [`959279ea21`](https://github.com/c80361619/diplay-changan/commit/959279ea21) · 2026-10-16（**上次移植点**；本批已移植 `51f03374` 无线 IPv4 优先/协议族切换，解决反复重连） |
-| [DiPlay-Legacy-Android](https://github.com/programmerguohuajing/DiPlay-Legacy-Android) | Legacy / KitKat 兼容 | `main` | [`395c2bbc`](https://github.com/programmerguohuajing/DiPlay-Legacy-Android/commit/395c2bbc) · 2026-10-18（**最新 tip**；本批仅更新跟踪哈希，未移植后续 ci 修复。此前已移植至 `054c6b58` 平台 AAC 解码器退化自动切换软解（Issue #170）；跳过 `535ed22f` 纯测试文件、`8276f7af` usbbt 外置 USB 蓝牙/有线连接（本地排除 usbbt/有线），下次从该提交之后查增量） |
+| [DiPlay-Legacy-Android](https://github.com/programmerguohuajing/DiPlay-Legacy-Android) | Legacy / KitKat 兼容 | `main` | [`46d0047f`](https://github.com/programmerguohuajing/DiPlay-Legacy-Android/commit/46d0047f) · 2026-10-23（**最新 tip = v0.2.90**；本批仅更新跟踪哈希，新增为自定义图标大小限制、USB 权限诊断日志，大部分不适用 SoftAP 专版，无可移植内容。此前已移植至 `054c6b58` 平台 AAC 解码器退化自动切换软解（Issue #170）；下次从该提交之后查增量） |
 
 目标机型为 CS75 Plus **2020** SoftAP，并非上述仓库的直接 fork；合入为改写移植（port）。建议 commit：`merge(changan|legacy): port <hash> …`。
 

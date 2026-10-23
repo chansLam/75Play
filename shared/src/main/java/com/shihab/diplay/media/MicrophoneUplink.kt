@@ -437,13 +437,15 @@ internal class MicrophoneUplink(
         }
         try {
             recorder?.stop()
-        } catch (_: Exception) {
+        } catch (t: Exception) {
             // Best effort; release below is authoritative.
+            AppLog.w(TAG, "microphone recorder stop failed", t)
         }
         try {
             socket?.close()
-        } catch (_: Exception) {
+        } catch (t: Exception) {
             // Best effort.
+            AppLog.w(TAG, "microphone socket close failed", t)
         }
         thread?.let { worker ->
             try {
@@ -468,15 +470,17 @@ internal class MicrophoneUplink(
         recorder = null
         try {
             currentRecorder?.release()
-        } catch (_: Exception) {
+        } catch (t: Exception) {
             // Best effort.
+            AppLog.w(TAG, "microphone recorder release failed", t)
         }
         val currentSocket = socket
         socket = null
         try {
             currentSocket?.close()
-        } catch (_: Exception) {
+        } catch (t: Exception) {
             // Best effort.
+            AppLog.w(TAG, "microphone socket close failed", t)
         }
         val currentEncoder = opusEncoder
         opusEncoder = null

@@ -152,6 +152,16 @@ object GlassColors {
     }
 
 
+    // ---- 弹层 / 系统应用浮层（深色浮板，压在主屏之上）----
+    /** 弹层面板底：近不透明蓝炭，比 [CARD] 更实，KitKat 无模糊也能压住底图。 */
+    val POPUP_FILL: Int get() = if (isDark) 0xF2141C28.toInt() else 0xF4FFFFFF.toInt()
+    /** 弹层细边：夜间淡青，日间淡墨。 */
+    val POPUP_STROKE: Int get() = if (isDark) 0x33A8D4FF else 0x33203348
+    /** 弹层背后的压暗 scrim。 */
+    val POPUP_SCRIM: Int get() = if (isDark) 0xB3000000.toInt() else 0x80000000.toInt()
+    /** 弹层内胶囊/次级动作钮的半透明底（关闭胶囊、Done 钮）。 */
+    val POPUP_CHIP_FILL: Int get() = if (isDark) 0x28FFFFFF else 0x33102033
+
     // ---- 应用更新弹窗（固定 navy/cyan 品牌色，不随昼夜切换）----
     val UPDATE_CYAN: Int get() = 0xFF0ECDFA.toInt()
     val UPDATE_BLUE: Int get() = 0xFF0096F4.toInt()

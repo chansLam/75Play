@@ -55,8 +55,18 @@ internal fun selectHotspotInterface(snapshot: HotspotNetworkSnapshot, log: (Stri
             "scope=${(address as? Inet6Address)?.scopeId ?: 0} evidence=$reason " +
             "ap=${snapshot.apInterfaces?.let { if (owned) "yes" else "no" } ?: "unobservable"} " +
             "defaultConflict=${owned && (upstream || snapshot.defaultInterface == iface.name)}")
-        if (reason != "platform_ap" && reason != "wireless_non_upstream") null
-        else (if (owned) 100 else 0) to HotspotSelection(iface.name, iface.index, address!!)
+        if (reason != "platform_ap" && reason != "wireless_non_upstream") {
+            null
+        } else {
+            // `address` is InetAddress?; the classifier above usually short-circuits a null
+            // address into "address_unavailable", but guard explicitly so a race / missed case
+            // logs a readable line and drops the candidate instead of throwing an NPE off `address!!`.
+            val selectedAddress = address ?: run {
+                log("hotspot candidate iface=${iface.name} index=${iface.index} skipped: address unresolved despite evidence=$reason")
+                return@mapNotNull null
+            }
+            (if (owned) 100 else 0) to HotspotSelection(iface.name, iface.index, selectedAddress)
+        }
     }.sortedWith(compareByDescending<Pair<Int, HotspotSelection>> { it.first }.thenBy { it.second.name })
         .firstOrNull()?.second
 }
