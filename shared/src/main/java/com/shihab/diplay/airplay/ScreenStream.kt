@@ -32,7 +32,8 @@ class ScreenStream(
          * A frame with the iPhone's frame time ([senderNanos], from the header) and when its body finished
          * arriving ([arrivalNanos], System.nanoTime). Listeners that do not pace frames ignore both.
          */
-        fun onFrame(naluBytes: ByteArray, senderNanos: Long, arrivalNanos: Long) = onFrame(naluBytes)
+        fun onFrame(naluBytes: ByteArray, senderNanos: Long, arrivalNanos: Long, byteCount: Int = naluBytes.size) =
+            onFrame(naluBytes)
         fun onClosed(cause: Throwable?) {}
     }
 
@@ -77,13 +78,14 @@ class ScreenStream(
             val input = sock.getInputStream()
             while (!closed.get()) {
                 stats.reading()
-                val header = readFully(input, HEADER_LEN) ?: break
+                if (!readInto(input, header, HEADER_LEN)) break
                 val bodySize = readU32Le(header, 0)
                 if (bodySize > MAX_BODY) break
-                val body = readFully(input, bodySize) ?: break
+                body = ensure(body, bodySize)
+                if (!readInto(input, body, bodySize)) break
                 val arrivalNanos = System.nanoTime()
                 stats.received(HEADER_LEN + bodySize)
-                onMessage(header, body, stats, arrivalNanos)
+                onMessage(header, body, bodySize, stats, arrivalNanos)
                 stats.processed()
             }
         } catch (error: Exception) {
@@ -96,15 +98,15 @@ class ScreenStream(
         }
     }
 
-    private fun onMessage(header: ByteArray, body: ByteArray, stats: StreamReceiveStats, arrivalNanos: Long) {
+    private fun onMessage(header: ByteArray, body: ByteArray, bodySize: Int, stats: StreamReceiveStats, arrivalNanos: Long) {
         when (header[OPCODE_OFFSET].toInt() and 0xff) {
             OP_VIDEO_FRAME -> {
-                val payload = if (body.size >= ScreenCodec.TAG_SIZE) {
+                val opened = if (bodySize >= ScreenCodec.TAG_SIZE) {
                     val start = System.nanoTime()
                     try {
-                        ScreenCodec.decryptFrame(key, frameCounter.get(), header, body)
+                        ScreenCodec.decryptFrame(key, frameCounter.get(), header, body, bodySize)
                             .also {
-                                stats.decrypted(System.nanoTime() - start, body.size)
+                                stats.decrypted(System.nanoTime() - start, bodySize)
                                 frameCounter.incrementAndGet()
                                 decryptFailures.set(0)
                             }
@@ -121,36 +123,50 @@ class ScreenStream(
                         return
                     }
                 } else {
-                    body
+                    val exact = body.copyOf(bodySize.coerceAtLeast(0))
+                    exact to exact.size
                 }
+                val (payload, payloadLength) = opened
+                ScreenCodec.lengthPrefixedToAnnexB(payload, payloadLength)
                 if (firstFrameLogged.compareAndSet(false, true)) {
                     AppLog.i(
                         TAG,
-                        "video first decrypted frame sealed=${body.size} plain=${payload.size} " +
+                        "video first decrypted frame sealed=$bodySize plain=$payloadLength " +
                         "head=${payload.hexPrefix(16)} chacha=${AirPlayCrypto.chachaImplementation}",
                     )
                 }
-                listener.onFrame(ScreenCodec.lengthPrefixedToAnnexB(payload), ScreenCodec.senderNanos(header), arrivalNanos)
+                listener.onFrame(
+                    payload,
+                    ScreenCodec.senderNanos(header),
+                    arrivalNanos,
+                    payloadLength,
+                )
             }
             OP_VIDEO_CONFIG -> {
-                val (codec, codecData) = ScreenCodec.detectConfig(body)
-                AppLog.i(TAG, "video codec config codec=$codec body=${body.size} data=${codecData.size}")
+                val config = body.copyOf(bodySize)
+                val (codec, codecData) = ScreenCodec.detectConfig(config)
+                AppLog.i(TAG, "video codec config codec=$codec body=$bodySize data=${codecData.size}")
                 listener.onCodec(codec)
                 listener.onConfig(codecData)
             }
         }
     }
 
-    private fun readFully(input: InputStream, length: Int): ByteArray? {
-        if (length < 0) return null
-        val output = ByteArray(length)
+    private val header = ByteArray(HEADER_LEN)
+    private var body = ByteArray(64 * 1024)
+
+    private fun ensure(buffer: ByteArray, length: Int): ByteArray =
+        if (buffer.size >= length) buffer else ByteArray(length).also { body = it }
+
+    private fun readInto(input: InputStream, dest: ByteArray, length: Int): Boolean {
+        if (length < 0 || length > dest.size) return false
         var offset = 0
         while (offset < length) {
-            val read = input.read(output, offset, length - offset)
-            if (read < 0) return null
+            val read = input.read(dest, offset, length - offset)
+            if (read < 0) return false
             offset += read
         }
-        return output
+        return true
     }
 
     private companion object {
@@ -188,9 +204,29 @@ object ScreenCodec {
 
     private const val SENDER_TIME_OFFSET = 8
 
-    fun decryptFrame(key: ByteArray, counter: Long, header: ByteArray, body: ByteArray): ByteArray =
-        if (body.size < TAG_SIZE) body
-        else AirPlayCrypto.chachaOpen(key, AirPlayCrypto.nonce64(counter), body, header)
+    fun decryptFrame(
+        key: ByteArray,
+        counter: Long,
+        header: ByteArray,
+        body: ByteArray,
+        bodyLength: Int = body.size,
+    ): Pair<ByteArray, Int> {
+        if (bodyLength < TAG_SIZE) {
+            val exact = body.copyOf(bodyLength.coerceAtLeast(0))
+            return exact to exact.size
+        }
+        val plainLength = bodyLength - TAG_SIZE
+        val storage = VideoFrameBuffers.take(plainLength)
+        return try {
+            val written = AirPlayCrypto.chachaOpenDirectInto(
+                key, AirPlayCrypto.nonce64(counter), header, body, bodyLength, storage,
+            )
+            storage to written
+        } catch (error: Exception) {
+            VideoFrameBuffers.give(storage)
+            throw error
+        }
+    }
 
     /**
      * Replaces each four-byte NAL length with an Annex B start code in place.
@@ -198,26 +234,27 @@ object ScreenCodec {
      * The payload is left untouched unless every length-prefixed NAL is valid, so malformed
      * input keeps its original bytes for the normal decoder error path.
      */
-    fun lengthPrefixedToAnnexB(payload: ByteArray): ByteArray {
-        if (payload.size < 4 || payload.startsWithStartCode()) return payload
+    fun lengthPrefixedToAnnexB(payload: ByteArray, length: Int = payload.size): ByteArray {
+        val limit = length.coerceIn(0, payload.size)
+        if (limit < 4 || payload.startsWithStartCode()) return payload
 
         var offset = 0
-        while (offset + 4 <= payload.size) {
-            val length = readU32Be(payload, offset)
+        while (offset + 4 <= limit) {
+            val nalu = readU32Be(payload, offset)
             offset += 4
-            if (length <= 0 || offset + length > payload.size) return payload
-            offset += length
+            if (nalu <= 0 || offset + nalu > limit) return payload
+            offset += nalu
         }
-        if (offset != payload.size) return payload
+        if (offset != limit) return payload
 
         offset = 0
-        while (offset + 4 <= payload.size) {
-            val length = readU32Be(payload, offset)
+        while (offset + 4 <= limit) {
+            val nalu = readU32Be(payload, offset)
             payload[offset] = 0
             payload[offset + 1] = 0
             payload[offset + 2] = 0
             payload[offset + 3] = 1
-            offset += 4 + length
+            offset += 4 + nalu
         }
         return payload
     }

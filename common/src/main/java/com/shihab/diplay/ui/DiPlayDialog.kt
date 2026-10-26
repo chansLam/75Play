@@ -203,11 +203,8 @@ object DiPlayDialog {
                 setColor(GlassColors.ACCENT)
                 setStroke(0, android.graphics.Color.TRANSPARENT)
             } else {
-                setColor(if (GlassColors.isDark) 0x00000000 else 0xFFFFFFFF.toInt())
-                setStroke(
-                    GlassColors.dp(context, 1),
-                    if (GlassColors.isDark) 0x66FFFFFF.toInt() else 0xFF0F172A.toInt(),
-                )
+                setColor(GlassColors.CARD)
+                setStroke(0, android.graphics.Color.TRANSPARENT)
             }
         }
 
@@ -237,7 +234,7 @@ object DiPlayDialog {
         setOnClickListener { listener() }
         // 方向盘确定键可触发；聚焦叠青描边（主/危险钮圆角 16，次级 12）。
         isFocusable = true
-        FocusSupport.attachStrokeOverlay(this, cornerRadiusDp = 10)
+        FocusSupport.attachStrokeOverlay(this, cornerRadiusDp = 14)
     }
 
     /**

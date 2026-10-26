@@ -45,8 +45,9 @@ class DiPlayApplication : MultiDexApplication() {
         bootLog("oncreate-after-super")
         setupCrashHandler()
         bootLog("handler-registered")
-        // Apply the root-level "hide system navigation bar globally" on cold start when enabled.
-        // Background thread + runCatching so a missing / failing su can never crash startup.
+        // Set the navbar property on cold start. Do not kill surfaceflinger here: this process
+        // is the launcher, so that kill would start us again and loop. The settings switch is
+        // the only path that restarts the display stack, and only when getprop differs.
         if (RootNavbar.hiddenRequested(this)) {
             bootLog("rootnavbar-requested-true")
             Thread(

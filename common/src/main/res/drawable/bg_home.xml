@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 壳层底（暗）：夜景照片为主，只在顶和底压一点，玻璃才压得住字。 -->
+<!-- 壳层底（暗）：夜景留在画面里，只在上下轻轻压一点。 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
         <bitmap
@@ -10,10 +10,10 @@
         <shape>
             <gradient
                 android:angle="270"
-                android:startColor="#66060A14"
-                android:centerColor="#00000000"
-                android:endColor="#59060A14"
-                android:centerY="0.45" />
+                android:startColor="#40000000"
+                android:centerColor="#14000000"
+                android:endColor="#59000000"
+                android:centerY="0.5" />
         </shape>
     </item>
 </layer-list>

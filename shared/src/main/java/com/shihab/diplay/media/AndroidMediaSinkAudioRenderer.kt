@@ -337,7 +337,18 @@ internal class AudioRenderer(
         val built: AudioTrack
         var routeLabel: String
         diagnosticStage = "track-build"
-        if (streamOverride == 0) {
+        if (selection.channel == AudioChannel.NAVIGATION) {
+            val streamType = if (streamOverride != 0) streamOverride else 10
+            routeLabel = "streamType=$streamType"
+            @Suppress("DEPRECATION")
+            built = AudioTrack(
+                streamType, format.sampleRate, channelMask, encoding,
+                plan.trackBufferBytes, AudioTrack.MODE_STREAM,
+            )
+            if (built.state != AudioTrack.STATE_INITIALIZED) {
+                AppLog.w(TAG, "navigation streamType=$streamType rejected; not falling back to STREAM_MUSIC")
+            }
+        } else if (streamOverride == 0) {
             attributes = null
             routeLabel = "usage"
             val preferredStream = streamType()
@@ -437,7 +448,7 @@ internal class AudioRenderer(
         // calls/navigation through their own channel settings (0 = fall back to mapped stream).
         AudioChannel.MEDIA -> mediaChannel
         AudioChannel.PHONE -> callChannel
-        AudioChannel.NAVIGATION -> navigationChannel
+        AudioChannel.NAVIGATION -> if (navigationChannel != 0) navigationChannel else 10
         // 0 falls through to the selection stream (notification), not silent STREAM_MUSIC.
         AudioChannel.ASSISTANT -> mediaChannel
     }
@@ -543,19 +554,12 @@ internal class AudioRenderer(
         when (format.codec) {
             AudioCodecKind.LPCM -> writePcm(byteSwapS16(rtp.copyOfRange(12, rtp.size)))
             AudioCodecKind.AAC_LC -> {
-                val accessUnit = rtp.copyOfRange(12, rtp.size)
-                if (accessUnit.isNotEmpty()) {
+                if (rtp.size > 12) {
                     if (!firstAacPayloadLogged) {
                         firstAacPayloadLogged = true
-                        AppLog.i(
-                            TAG,
-                            "audio AAC access unit bytes=${accessUnit.size}",
-                        )
+                        AppLog.i(TAG, "audio AAC access unit bytes=${rtp.size - 12}")
                     }
-                    feedCodec(
-                        MediaCodecSupport.adtsFrame(accessUnit, format.sampleRate, format.channels),
-                        timestampUs,
-                    )
+                    feedAac(rtp, 12, rtp.size - 12, timestampUs)
                 }
             }
             AudioCodecKind.OPUS -> {
@@ -598,6 +602,46 @@ internal class AudioRenderer(
             outputBuffers++
             writePcm(pcm, 0, pcm.size)
         }
+    }
+
+    private fun feedAac(packet: ByteArray, offset: Int, length: Int, presentationTimeUs: Long) {
+        val codec = codec ?: run {
+            decoderUnavailablePackets++
+            return
+        }
+        diagnosticStage = "decoder-input"
+        val frameLength = length + 7
+        val index = VideoInputPump.acquire(
+            running = { running }, drain = { drainCodec(codec) },
+            dequeue = { codec.dequeueInputBuffer(INPUT_TIMEOUT_US) },
+        )
+        if (index < 0) {
+            inputDropped++
+            if (inputDropped == 1) {
+                AppLog.w(
+                    TAG,
+                    "audio decoder input unavailable codec=${format.codec} " +
+                        "queued=$inputQueued dropped=$inputDropped",
+                )
+            }
+            return
+        }
+        val input = codec.inputBufferCompat(index) ?: return
+        input.clear()
+        if (frameLength <= input.remaining()) {
+            MediaCodecSupport.putAdtsHeader(input, frameLength, format.sampleRate, format.channels)
+            input.put(packet, offset, length)
+            codec.queueInputBuffer(index, 0, frameLength, presentationTimeUs, 0)
+            inputQueued++
+            if (!firstInputQueuedLogged) {
+                firstInputQueuedLogged = true
+                AppLog.i(TAG, "audio decoder first input codec=${format.codec} bytes=$frameLength")
+            }
+        } else {
+            codec.queueInputBuffer(index, 0, 0, 0, 0)
+            inputDropped++
+        }
+        drainCodec(codec)
     }
 
     private fun feedCodec(payload: ByteArray, presentationTimeUs: Long) {

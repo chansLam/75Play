@@ -8,6 +8,7 @@ import com.shihab.diplay.AirPlayPersistence
 import com.shihab.diplay.AsyncDiagnosticLog
 import com.shihab.diplay.CarPlayConnectService
 import com.shihab.diplay.CarPlayMediaKeys
+import com.shihab.diplay.CarPlayVolumeTarget
 import com.shihab.diplay.CarPlayVideo
 import com.shihab.diplay.CarPlayViewAreas
 import com.shihab.diplay.DiagnosticRedactor
@@ -72,6 +73,7 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
                 }
             },
             onMediaAudioChanged = CarPlayMediaKeys::onMediaAudioChanged,
+            onNavigationAudible = CarPlayVolumeTarget::navigation,
             callEchoCancellation = AirPlayPersistence.loadCallEchoCancellation(this),
             callVoiceFilter = AirPlayPersistence.loadCallVoiceFilter(this),
             callSpeakerphone = { AirPlayPersistence.loadCallSpeakerphone(this) },
@@ -415,7 +417,7 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
             return
         }
         val size = activeDisplaySize ?: return
-        val transportReady = if (wirelessEnabled) wirelessPermissionsReady else vpnReady
+        val transportReady = if (wirelessEnabled) wirelessPermissionsReady else wirelessReady
         val locationReady = !locationReportingEnabled || locationPermissionAvailable
         if (
             !transportReady ||

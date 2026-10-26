@@ -5,21 +5,21 @@ import com.shihab.diplay.AirPlayPersistence
 import com.shihab.diplay.CarPlayNightMode
 
 /**
- * 75Play 双主题色板。浅色用浅色令牌，其余用暗色。
+ * 75Play 双主题。两套都是能透出座舱底图的玻璃，不再用实心色块。
  *
- * 底是座舱照片，只在边上压一点，让照片露出来。
- * 面板是半透玻璃，细边带一点青。选中条和连接球用实心电光青，球外有一圈光。
+ * 面板不描边。夜景是一层更深的炭色罩，日景是一层能透出底图的薄白，不要铺成实底。
+ * 日景标题和正文是纯黑，次级字用同一支黑、只降低不透明度。主操作是系统蓝，蓝底上的字是白。
  *
  * ## 对照
  * | Token | 暗色 | 浅色 |
  * | --- | --- | --- |
- * | INK | `#F7FBFF` | `#102033` |
- * | BODY | `#D6E4F2` | `#243044` |
- * | MUTED | `#A9BDD4` | `#5A6D80` |
- * | DIM | `#7E96B0` | `#7A8B9C` |
- * | ACCENT | `#2EC6FF` | `#1496E8` |
- * | SURFACE | `#B30A1428` | `#D6FFFFFF` |
- * | BACKGROUND | `#071018` | `#E7EEF5` |
+ * | INK | `#F5F5F7` | `#000000` |
+ * | BODY | `#E5E5EA` | `#000000` |
+ * | MUTED | `#AEAEB2` | `#B3000000` |
+ * | DIM | `#8E8E93` | `#80000000` |
+ * | ACCENT | `#0A84FF` | `#007AFF` |
+ * | SURFACE | `#CC1C1C1E` | `#BFFFFFFF` |
+ * | BACKGROUND | `#000000` | `#F2F2F7` |
  */
 object GlassColors {
     /** 由 DiPlayActivity 依据主题模式 Controller 维护。 */
@@ -28,84 +28,96 @@ object GlassColors {
 
     // ---- 文字 ----
     /** 固定昼夜取色（不等当前 isDark）：WaitingScreenColors 等按显式 night 取色的场景用。 */
-    fun inkFor(dark: Boolean): Int = if (dark) 0xFFF7FBFF.toInt() else 0xFF102033.toInt()
+    fun inkFor(dark: Boolean): Int = if (dark) 0xFFF5F5F7.toInt() else 0xFF000000.toInt()
     val INK: Int get() = inkFor(isDark)
-    val TEXT_BODY: Int get() = if (isDark) 0xFFD6E4F2.toInt() else 0xFF243044.toInt()
-    val MUTED: Int get() = if (isDark) 0xFFA9BDD4.toInt() else 0xFF5A6D80.toInt()
-    fun dimFor(dark: Boolean): Int = if (dark) 0xFF7E96B0.toInt() else 0xFF7A8B9C.toInt()
+    val TEXT_BODY: Int get() = if (isDark) 0xFFE5E5EA.toInt() else 0xFF000000.toInt()
+    val MUTED: Int get() = if (isDark) 0xFFAEAEB2.toInt() else 0xB3000000.toInt()
+    fun dimFor(dark: Boolean): Int = if (dark) 0xFF8E8E93.toInt() else 0x80000000.toInt()
     val DIM: Int get() = dimFor(isDark)
     val TEXT_PRIMARY: Int get() = INK
     val TEXT_MUTED: Int get() = MUTED
 
-    // ---- 强调（青蓝）----
-    /** 主交互色：实心选中条、开关、连接球。夜间是电光青，日间收深一档。 */
-    val ACCENT: Int get() = if (isDark) 0xFF2EC6FF.toInt() else 0xFF1496E8.toInt()
-    /** 选中胶囊和主按钮的上沿，比 [ACCENT] 更亮。 */
-    val ACCENT_LIFT: Int get() = if (isDark) 0xFF5EDCFF.toInt() else 0xFF3EC4F5.toInt()
+    // ---- 强调（系统蓝）----
+    /** 主交互色：选中胶囊、开关、连接钮。夜间用 iOS 深色模式蓝，日间用系统蓝。 */
+    val ACCENT: Int get() = if (isDark) 0xFF0A84FF.toInt() else 0xFF007AFF.toInt()
+    /** 选中胶囊和主按钮的上沿。 */
+    val ACCENT_LIFT: Int get() = if (isDark) 0xFF64B4FF.toInt() else 0xFF4DA2FF.toInt()
     /** 选中胶囊和主按钮的下沿。 */
-    val ACCENT_DEEP: Int get() = if (isDark) 0xFF1496E0.toInt() else 0xFF0E86D4.toInt()
-    /** 次级强调。空闲状态用中性字，不再用亮青。 */
-    val ACCENT2: Int get() = if (isDark) 0xFFD6E4F2.toInt() else 0xFF102033.toInt()
+    val ACCENT_DEEP: Int get() = if (isDark) 0xFF0060CC.toInt() else 0xFF0056C7.toInt()
+    /** 次级强调。空闲状态用中性字。 */
+    val ACCENT2: Int get() = if (isDark) 0xFFE5E5EA.toInt() else 0xFF000000.toInt()
     /** cap / 值胶囊上的字。 */
     val CAP_TEXT: Int get() = INK
     val ACCENT_GRADIENT_START: Int get() = ACCENT
     val ACCENT_GRADIENT_END: Int get() = ACCENT
-    /** 连接球：上沿接近白，中间电光青，下沿收成深蓝。球外一圈 [ORB_GLOW]。 */
-    val ORB_LENS_TOP: Int get() = 0xFFB8F4FF.toInt()
-    val ORB_LENS_MID: Int get() = 0xFF1AB6F2.toInt()
-    val ORB_LENS_BOTTOM: Int get() = 0xFF0676C4.toInt()
-    val ORB_GLOW: Int get() = 0xFF2EC6FF.toInt()
-    val ORB_RIM: Int get() = 0x99FFFFFF.toInt()
-    val ORB_HIGHLIGHT: Int get() = 0x66FFFFFF
+    /** 玻璃高光。连接钮自己画圆片，这些留给仍引用它们的旧绘制。 */
+    val ORB_LENS_TOP: Int get() = 0xF2FFFFFF.toInt()
+    val ORB_LENS_MID: Int get() = ACCENT
+    val ORB_LENS_BOTTOM: Int get() = ACCENT_DEEP
+    val ORB_GLOW: Int get() = ACCENT
+    val ORB_RIM: Int get() = plateRim()
+    val ORB_HIGHLIGHT: Int get() = plateSheen()
     val ORB_HIGHLIGHT_FADE: Int get() = 0x00FFFFFF
 
-    /** 很淡的强调底，压在夜景上仍能分开。 */
-    val ACCENT_SOFT_FILL: Int get() = withAlpha(ACCENT, if (isDark) 0x47 else 0x2E)
-    val ACCENT_CAP_FILL: Int get() = withAlpha(ACCENT, if (isDark) 0x5C else 0x38)
-    val ACCENT_SOFT_STROKE: Int get() = withAlpha(ACCENT, if (isDark) 0xB3 else 0xCC)
+    /** 值胶囊的蓝底。夜景更深，日景是白霜上的一层淡蓝。 */
+    val ACCENT_SOFT_FILL: Int get() = withAlpha(ACCENT, if (isDark) 0x55 else 0x24)
+    val ACCENT_CAP_FILL: Int get() = withAlpha(ACCENT, if (isDark) 0x72 else 0x3D)
+    val ACCENT_SOFT_STROKE: Int get() = withAlpha(ACCENT, if (isDark) 0xCC else 0xE6)
 
     // ---- 状态 ----
-    val WARNING: Int get() = if (isDark) 0xFFFB923C.toInt() else 0xFFC2410C.toInt()
-    val SUCCESS: Int get() = if (isDark) 0xFF4ADE80.toInt() else 0xFF15803D.toInt()
-    val ALERT: Int get() = if (isDark) 0xFFFBBF24.toInt() else 0xFFB45309.toInt()
+    val WARNING: Int get() = if (isDark) 0xFFFF9F0A.toInt() else 0xFFC93400.toInt()
+    val SUCCESS: Int get() = if (isDark) 0xFF30D158.toInt() else 0xFF248A3D.toInt()
+    val ALERT: Int get() = if (isDark) 0xFFFFD60A.toInt() else 0xFFB8860B.toInt()
 
     // ---- 导航 / 按钮字 ----
-    val NAV_SELECTED: Int get() = ACCENT_SOFT_FILL
-    /** 青蓝主按钮上的深青墨，两套主题共用。 */
-    val NAV_SELECTED_TEXT: Int get() = 0xFF042F2E.toInt()
-    val NAV_UNSELECTED: Int get() = if (isDark) 0xFFA9BDD4.toInt() else 0xFF3E5164.toInt()
+    /** 选中导航是一块蓝玻璃。日景淡一些，黑字才站得住。 */
+    val NAV_SELECTED: Int get() = withAlpha(ACCENT, if (isDark) 0x73 else 0x47)
+    /** 系统蓝主按钮上的白字，两套主题共用。 */
+    val NAV_SELECTED_TEXT: Int get() = 0xFFFFFFFF.toInt()
+    val NAV_UNSELECTED: Int get() = if (isDark) 0xFFAEAEB2.toInt() else 0xCC000000.toInt()
     val BTN_SECONDARY_TEXT: Int get() = INK
-    /** 连接方式 Tab 的轨道。选中项另用实心 [ACCENT]。 */
-    val CHIP_IDLE_FILL: Int get() = if (isDark) 0x66101830 else 0x66FFFFFF
-    val DIVIDER: Int get() = if (isDark) 0x332E8CFF else 0x33203348
-    val OVERLAY: Int get() = if (isDark) 0xC0060A12.toInt() else 0x66102033
-    fun backgroundFor(dark: Boolean): Int = if (dark) 0xFF071018.toInt() else 0xFFE7EEF5.toInt()
+    /** 连接方式分段的轨道。夜景提亮，日景在白霜上压一层淡墨，选中项另用实心蓝。 */
+    val CHIP_IDLE_FILL: Int get() = if (isDark) 0x33FFFFFF else 0x14000000
+    val DIVIDER: Int get() = if (isDark) 0x33FFFFFF else 0x381C1C1E
+    val OVERLAY: Int get() = if (isDark) 0x99000000.toInt() else 0x59000000
+    fun backgroundFor(dark: Boolean): Int = if (dark) 0xFF000000.toInt() else 0xFFF2F2F7.toInt()
     val BACKGROUND: Int get() = backgroundFor(isDark)
-    /** 导航条的兜底色。界面用 [dockBg]。 */
-    val DOCK: Int get() = if (isDark) 0xB30A1428.toInt() else 0xD6FFFFFF.toInt()
-    /** 顶栏里的小胶囊槽。 */
-    val GLASS_CHIP: Int get() = if (isDark) 0x66203358 else 0xB8FFFFFF.toInt()
-    /** 玻璃细边，带一点青，和夜景玻璃的亮边一致。 */
-    val GLASS_RIM: Int get() = if (isDark) 0x4D7EB8FF else 0x99FFFFFF.toInt()
-    /** 1dp 分隔线，跟着面板透。 */
-    val GLASS_EDGE: Int get() = DIVIDER
+    /** 导航条。界面用 [dockBg]。 */
+    val DOCK: Int get() = if (isDark) 0xCC1C1C1E.toInt() else 0xBFFFFFFF.toInt()
+    /** 顶栏里的小胶囊槽。夜景提亮，日景在白霜上压一层淡墨。 */
+    val GLASS_CHIP: Int get() = if (isDark) 0x3DFFFFFF else 0x16000000
+    /** 发丝边。焦点改用 [ACCENT] 加粗。 */
+    val GLASS_RIM: Int get() = plateRim()
+    /** 1dp 分隔线，两头淡出。浅色用墨线，否则会消失在日景里。 */
+    val GLASS_EDGE: Int get() = if (isDark) 0x2EFFFFFF else 0x28000000
     val SURFACE: Int get() = DOCK
     /** 未选中的小控件凹槽（勾选框等），不是卡片底。 */
-    val CARD: Int get() = if (isDark) 0xA60C1830.toInt() else 0xC4FFFFFF.toInt()
-    val CARD_ALT: Int get() = if (isDark) 0x8C081428.toInt() else 0x99FFFFFF.toInt()
-    val INPUT: Int get() = if (isDark) 0xCC0A1424.toInt() else 0xE6FFFFFF.toInt()
+    val CARD: Int get() = if (isDark) 0x24FFFFFF else 0x12000000
+    val CARD_ALT: Int get() = if (isDark) 0x14FFFFFF else 0x0A000000
+    val INPUT: Int get() = if (isDark) 0x66000000 else 0x14000000
 
     val BTN_PRIMARY: Int get() = if (isDark) R.drawable.btn_primary else R.drawable.btn_primary_light
     val BTN_PRIMARY_BORDER: Int get() = ACCENT
     val BTN_SECONDARY: Int get() = if (isDark) R.drawable.btn_secondary else R.drawable.btn_secondary_light
     val BTN_DANGER: Int get() = if (isDark) R.drawable.btn_danger else R.drawable.btn_danger_light
-    val BTN_DANGER_BORDER: Int get() = if (isDark) 0xFF7F1D1D.toInt() else 0xFFFECACA.toInt()
+    val BTN_DANGER_BORDER: Int get() = if (isDark) 0xFFFF6961.toInt() else 0xFFFF3B30.toInt()
     val BTN_SUCCESS: Int get() = if (isDark) 0xFF14532D.toInt() else 0xFFDCFCE7.toInt()
     val BTN_SUCCESS_BORDER: Int get() = if (isDark) 0xFF166534.toInt() else 0xFF86EFAC.toInt()
 
-    /** 次级按钮的玻璃底。描边用 [GHOST_STROKE]，焦点传入 [ACCENT] 时加粗。 */
-    val GHOST_FILL: Int get() = if (isDark) 0x8C12203A.toInt() else 0xB8FFFFFF.toInt()
-    val GHOST_STROKE: Int get() = GLASS_RIM
+    /** 次级按钮的玻璃底。不描边，靠填充从面板上浮起来。 */
+    val GHOST_FILL: Int get() = if (isDark) 0x33FFFFFF else 0x14000000
+    val GHOST_STROKE: Int get() = plateRim()
+
+    /** 面板填充。夜景更沉。日景留出底图，不要铺成一片白。 */
+    fun plateFill(): Int = if (isDark) 0xB31C1C1E.toInt() else 0xA0FFFFFF.toInt()
+    /** 玻璃上沿。和 [plateFill] 相同，避免再盖出半截。 */
+    fun plateTop(): Int = plateFill()
+    /** 玻璃下沿。和 [plateFill] 相同。 */
+    fun plateBottom(): Int = plateFill()
+    /** 不再单独铺高光。保留给仍引用它的绘制，浓度跟玻璃本身一致。 */
+    fun plateSheen(): Int = plateFill()
+    /** 发丝边。暗色是白边，浅色是墨边，否则会融进日景。 */
+    fun plateRim(): Int = if (isDark) 0x73FFFFFF else 0x801C1C1E.toInt()
 
     fun dp(context: android.content.Context, value: Int): Int =
         (value * context.resources.displayMetrics.density).toInt()
@@ -122,13 +134,10 @@ object GlassColors {
     fun navSelected(): Int = if (isDark) R.drawable.nav_item_selected else R.drawable.nav_item_selected_light
     fun toastBg(): Int = if (isDark) R.drawable.toast_bg else R.drawable.toast_bg_light
 
-    fun ghostDrawable(context: android.content.Context, cornerRadiusDp: Int = 10, stroke: Int = GHOST_STROKE): android.graphics.drawable.GradientDrawable =
-        android.graphics.drawable.GradientDrawable(
-            android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
-            intArrayOf(if (isDark) 0xA6182C4E.toInt() else 0xE6FFFFFF.toInt(), GHOST_FILL),
-        ).apply {
-            // 焦点态传入 ACCENT：描边加粗到 2dp，方向盘选中时一眼可见。
-            setStroke(maxOf(1, dp(context, if (stroke == ACCENT) 2 else 1)), stroke)
+    fun ghostDrawable(context: android.content.Context, cornerRadiusDp: Int = 14, stroke: Int = GHOST_STROKE): android.graphics.drawable.GradientDrawable =
+        android.graphics.drawable.GradientDrawable().apply {
+            setColor(GHOST_FILL)
+            if (stroke == ACCENT) setStroke(maxOf(1, dp(context, 2)), stroke)
             cornerRadius = dp(context, cornerRadiusDp).toFloat()
         }
 
@@ -152,15 +161,15 @@ object GlassColors {
     }
 
 
-    // ---- 弹层 / 系统应用浮层（深色浮板，压在主屏之上）----
-    /** 弹层面板底：近不透明蓝炭，比 [CARD] 更实，KitKat 无模糊也能压住底图。 */
-    val POPUP_FILL: Int get() = if (isDark) 0xF2141C28.toInt() else 0xF4FFFFFF.toInt()
-    /** 弹层细边：夜间淡青，日间淡墨。 */
-    val POPUP_STROKE: Int get() = if (isDark) 0x33A8D4FF else 0x33203348
-    /** 弹层背后的压暗 scrim。 */
-    val POPUP_SCRIM: Int get() = if (isDark) 0xB3000000.toInt() else 0x80000000.toInt()
+    // ---- 弹层 / 系统应用浮层（压在主屏之上，仍留一点底图）----
+    /** 弹层面板：比卡片更实，字才读得清，浅色仍留一点底图。 */
+    val POPUP_FILL: Int get() = if (isDark) 0xF21C1C1E.toInt() else 0xF7FFFFFF.toInt()
+    /** 弹层不再另描一圈。方向盘焦点仍用 [ACCENT]。 */
+    val POPUP_STROKE: Int get() = 0x00000000
+    /** 弹层背后的压暗。 */
+    val POPUP_SCRIM: Int get() = if (isDark) 0x99000000.toInt() else 0x59000000
     /** 弹层内胶囊/次级动作钮的半透明底（关闭胶囊、Done 钮）。 */
-    val POPUP_CHIP_FILL: Int get() = if (isDark) 0x28FFFFFF else 0x33102033
+    val POPUP_CHIP_FILL: Int get() = if (isDark) 0x33FFFFFF else 0x33007AFF
 
     // ---- 应用更新弹窗（固定 navy/cyan 品牌色，不随昼夜切换）----
     val UPDATE_CYAN: Int get() = 0xFF0ECDFA.toInt()

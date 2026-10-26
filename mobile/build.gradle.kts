@@ -37,8 +37,8 @@ android {
         multiDexEnabled = true
         multiDexKeepProguard = file("multidex-config.pro")
         testInstrumentationRunner = "com.shihab.diplay.T3LegacyInstrumentation"
-        versionCode = 201
-        versionName = "2.0.1"
+        versionCode = 202
+        versionName = "2.0.2"
         ndk {
             // CS75 Plus car: armeabi-v7a. Override with -PnativeAbi=x86 for an emulator package.
             abiFilters += listOf(providers.gradleProperty("nativeAbi").orElse("armeabi-v7a").get())

@@ -45,13 +45,18 @@ internal class MediaPacketLagGuard(private val clockRate: Int) {
             congestionSinceNs = 0
             return 0
         }
+        // One recovery drops at most 500 ms. A multi-second Wi-Fi clump must not jump
+        // the whole backlog to the 500 ms target in a single pass.
+        val trimTarget = maxOf(RECOVERY_TARGET_NS, delayNs - MAX_RECOVERY_TRIM_NS)
         var removed = 0
         while (queue.isNotEmpty() &&
             pendingFrames(queue, newestSample, timestampOf) * 1_000_000_000L /
-            clockRate.coerceAtLeast(1) > RECOVERY_TARGET_NS) {
+            clockRate.coerceAtLeast(1) > trimTarget) {
             if (queue.poll() == null) break
             removed++
         }
+        recovering = false
+        congestionSinceNs = 0
         return removed
     }
 
@@ -60,6 +65,7 @@ internal class MediaPacketLagGuard(private val clockRate: Int) {
         const val CONGESTION_THRESHOLD_NS = 1_500_000_000L
         const val CONGESTION_GRACE_NS = 1_500_000_000L
         const val RECOVERY_TARGET_NS = 500_000_000L
+        const val MAX_RECOVERY_TRIM_NS = 500_000_000L
         const val RECOVERY_END_NS = 200_000_000L
     }
 }

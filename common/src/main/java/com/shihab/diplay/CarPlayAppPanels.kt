@@ -103,7 +103,6 @@ object CarPlayAppPanels {
                     shape = GradientDrawable.RECTANGLE
                     cornerRadius = context.dp(10).toFloat()
                     setColor(GlassColors.POPUP_CHIP_FILL)
-                    setStroke(context.dp(1), GlassColors.GLASS_RIM)
                 }
                 isFocusable = true
                 FocusSupport.attachStrokeOverlay(this, cornerRadiusDp = 10)

@@ -11,6 +11,7 @@ import com.shihab.diplay.AirPlayPersistence
 import com.shihab.diplay.AndroidTvInputMode
 import com.shihab.diplay.CarPlayConnectText
 import com.shihab.diplay.CarPlayMediaKeys
+import com.shihab.diplay.CarPlayVolumeTarget
 import com.shihab.diplay.DiPlayBluetooth
 import com.shihab.diplay.DiPlayBootstrap
 import com.shihab.diplay.DiPlayPreferences
@@ -340,6 +341,7 @@ internal object CarPlaySessionFactory {
         onScreenStreamActiveChanged = { _, _ -> },
         // Only a SurfaceView honours release timestamps; smooth video always selects one.
         videoPacingDelayMillis = videoPacingDelayMillis(smoothVideo, fps),
+        onNavigationAudible = CarPlayVolumeTarget::navigation,
     )
 }
 

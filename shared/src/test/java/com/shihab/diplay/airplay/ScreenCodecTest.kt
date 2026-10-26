@@ -3,6 +3,7 @@ package com.shihab.diplay.airplay
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ScreenCodecTest {
@@ -31,6 +32,24 @@ class ScreenCodecTest {
 
         assertSame(payload, ScreenCodec.lengthPrefixedToAnnexB(payload))
         assertArrayEquals(original, payload)
+    }
+
+    @Test fun lengthLimitDoesNotReadBytesPastTheFrame() {
+        val payload = byteArrayOf(0, 0, 0, 1, 0x41, 0, 0, 0, 5, 0x40)
+        val originalTail = payload.copyOfRange(5, payload.size)
+        assertSame(payload, ScreenCodec.lengthPrefixedToAnnexB(payload, 5))
+        assertArrayEquals(byteArrayOf(0, 0, 0, 1, 0x41), payload.copyOf(5))
+        assertArrayEquals(originalTail, payload.copyOfRange(5, payload.size))
+    }
+
+    @Test fun frameBuffersComeBackAfterTheyAreReturned() {
+        val taken = VideoFrameBuffers.take(12_345)
+        assertTrue(taken.size >= 12_345)
+        VideoFrameBuffers.give(taken)
+        assertSame(taken, VideoFrameBuffers.take(12_345))
+        VideoFrameBuffers.give(taken)
+        VideoFrameBuffers.give(ByteArray(12_345))
+        assertSame(taken, VideoFrameBuffers.take(12_000))
     }
 
     @Test fun readsTheFrameTimeFromTheScreenHeader() {

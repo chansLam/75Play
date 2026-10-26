@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 壳层底（浅）：日景照片为主，只罩一层很薄的白。 -->
+<!-- 壳层底（浅）：日景照片直接露出来。 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
         <bitmap
@@ -10,10 +10,10 @@
         <shape>
             <gradient
                 android:angle="270"
-                android:startColor="#33FFFFFF"
+                android:startColor="#14000000"
                 android:centerColor="#00000000"
-                android:endColor="#1A102033"
-                android:centerY="0.5" />
+                android:endColor="#22000000"
+                android:centerY="0.55" />
         </shape>
     </item>
 </layer-list>

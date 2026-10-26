@@ -67,6 +67,8 @@ internal class BufferedAudioStream(
         Thread({ feed() }, "airplay-buffered-feed").apply { isDaemon = true; start() }
     }
 
+    private var bodyBuffer = ByteArray(2048)
+
     private fun receive() {
         var accepted: Socket? = null
         try {
@@ -86,11 +88,12 @@ internal class BufferedAudioStream(
                     close()
                     return
                 }
-                val body = ByteArray(length - LENGTH_BYTES)
-                input.readFully(body)
-                val frame = open(key, body)
+                val payloadBytes = length - LENGTH_BYTES
+                if (bodyBuffer.size < payloadBytes) bodyBuffer = ByteArray(payloadBytes)
+                input.readFully(bodyBuffer, 0, payloadBytes)
+                val frame = open(key, bodyBuffer, payloadBytes)
                 if (frame == null) {
-                    if (failures++ < 3) log("Buffered audio: frame did not open (${body.size} bytes)")
+                    if (failures++ < 3) log("Buffered audio: frame did not open ($payloadBytes bytes)")
                     continue
                 }
                 receivedBytes += length
@@ -342,18 +345,21 @@ internal class BufferedAudioStream(
          * One buffered frame: RTP header, ChaCha20-Poly1305 ciphertext and tag sealed with [key] (the
          * header's timestamp and SSRC as associated data), then an 8-byte nonce. Null when it does not open.
          */
-        internal fun open(key: ByteArray, body: ByteArray): Frame? {
-            if (body.size < RTP_HEADER + TAG_BYTES + NONCE_BYTES) return null
+        internal fun open(key: ByteArray, body: ByteArray, length: Int = body.size): Frame? {
+            if (length < RTP_HEADER + TAG_BYTES + NONCE_BYTES || length > body.size) return null
             // This wire format has exactly a 12-byte RTP v2 header; extensions, padding and CSRCs
             // cannot be interpreted as ciphertext or passed to the AAC renderer.
             if ((body[0].toInt() and 0xff) != 0x80) return null
-            val sealedEnd = body.size - NONCE_BYTES
-            val nonce = ByteArray(12).also { body.copyInto(it, 4, sealedEnd, body.size) }
+            val sealedEnd = length - NONCE_BYTES
+            val nonce = ByteArray(12).also { body.copyInto(it, 4, sealedEnd, length) }
             val payload = runCatching {
-                AirPlayCrypto.chachaOpen(key, nonce, body.copyOfRange(RTP_HEADER, sealedEnd), body.copyOfRange(4, RTP_HEADER))
+                AirPlayCrypto.chachaOpenRange(key, nonce, body, 4, RTP_HEADER - 4, body, RTP_HEADER, sealedEnd - RTP_HEADER)
             }.getOrNull() ?: return null
             val sequence = ((body[2].toInt() and 0xff) shl 8) or (body[3].toInt() and 0xff)
-            return Frame(sequence, u32(body, 4), body.copyOf(RTP_HEADER) + payload)
+            val rtp = ByteArray(RTP_HEADER + payload.size)
+            body.copyInto(rtp, 0, 0, RTP_HEADER)
+            payload.copyInto(rtp, RTP_HEADER)
+            return Frame(sequence, u32(body, 4), rtp)
         }
 
         /**

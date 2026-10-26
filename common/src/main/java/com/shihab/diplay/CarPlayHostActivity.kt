@@ -360,7 +360,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private var manualHotspotSecurity = ManualHotspotSecurity.OPEN
     private var awaitingWirelessPermissions = false
     private var awaitingLocationPermission = false
-    internal var vpnReady = false
+    internal var wirelessReady = false
     private var hotspotStatus = CarPlayHostWirelessSettings.HotspotStatus(state = "off")
     internal var latestStage = "Preparing CarPlay"
     private var darkMode = false
@@ -634,7 +634,7 @@ class CarPlayHostActivity : ComponentActivity() {
         if (wirelessEnabled) {
             requestWirelessPermissions()
         } else {
-            requestVpnConsent()
+            markWirelessListenerReady()
         }
     }
 
@@ -653,11 +653,10 @@ class CarPlayHostActivity : ComponentActivity() {
         ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
 
-    private fun requestVpnConsent() {
-        // This head unit has no /dev/tun and no VPN consent dialog, and the wireless AirPlay
-        // listener binds directly on the SoftAP address — no VPN/tun is ever established, so
-        // no consent is needed. Keep the readiness flag so startup proceeds immediately.
-        vpnReady = true
+    private fun markWirelessListenerReady() {
+        // The wireless AirPlay listener is an ordinary service on the SoftAP address.
+        // There is no tun interface and no consent step; startup can proceed immediately.
+        wirelessReady = true
         maybeStartCarPlay()
     }
 
@@ -715,6 +714,7 @@ class CarPlayHostActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        CarPlayVolumeTarget.attach(this)
         // CarPlay is in front: hide the floating ball (return to DiPlay via three-finger swipe).
         FloatingBall.hide()
         val savedNightMode = AirPlayPersistence.loadCarPlayNightMode(this)
@@ -835,7 +835,7 @@ class CarPlayHostActivity : ComponentActivity() {
         // Steering-wheel media keys reach the focused window on KitKat ROMs that send no AVRCP
         // MEDIA_BUTTON broadcast: forward them to the iPhone as CarPlay HID presses.
         CarPlayMediaButton.forKeyCode(event.keyCode)?.let { index ->
-            if (event.action == KeyEvent.ACTION_UP && event.repeatCount == 0) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
                 appendLog("Wheel key ${KeyEvent.keyCodeToString(event.keyCode)} -> HID $index")
                 CarPlayMediaKeys.onHardwareMediaButton(index, KeyEvent.keyCodeToString(event.keyCode))
             }
@@ -881,6 +881,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onPause() {
+        CarPlayVolumeTarget.detach(this)
         nightModeController.pause()
         super.onPause()
     }
@@ -888,7 +889,7 @@ class CarPlayHostActivity : ComponentActivity() {
     override fun onStop() {
         notePicture(false)
         closePicturePanel()
-        // The controller, USB/iAP2 link, and VPN attachment intentionally outlive the UI.
+        // The controller, USB/iAP2 link, and wireless listener intentionally outlive the UI.
         isActivityStarted = false
         logThemeState(ThemeModeDiagnostics.Source.STOP, resources.configuration)
         mainHandler.removeCallbacks(pollConfiguration)

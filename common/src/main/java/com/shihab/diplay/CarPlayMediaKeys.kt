@@ -386,10 +386,12 @@ internal object CarPlayMediaKeys {
      * wheel that send no AVRCP MEDIA_BUTTON broadcast). The caller holds no lock.
      */
     internal fun onHardwareMediaButton(index: Int, source: String) {
-        synchronized(lock) {
-            if (controller == null) return
-            send(index, source)
+        val target = synchronized(lock) { controller }
+        if (target == null) {
+            AppLog.w(TAG, "media key $source dropped: no CarPlay session")
+            return
         }
+        send(index, source)
     }
 
     private val callback by lazy { if (realSdkInt() >= 21) CarPlayMediaCallback(

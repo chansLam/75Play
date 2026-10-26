@@ -3,7 +3,6 @@ package com.shihab.diplay.ui.shell
 
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.InsetDrawable
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -20,14 +19,16 @@ import com.shihab.diplay.ui.FragmentAbout
 import com.shihab.diplay.ui.FragmentHome
 import com.shihab.diplay.ui.FragmentSetting
 import com.shihab.diplay.ui.GlassColors
+import com.shihab.diplay.ui.HudNavDrawable
 import com.shihab.diplay.ui.LayoutMetrics
+import com.shihab.diplay.ui.SpindleDivider
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /**
  * 壳层左侧窄导航、顶栏和 Fragment 容器。
- * 宽屏左轨和顶栏共用一条底边，标志与页名齐平。选中是玻璃胶囊。
+ * 宽屏左轨和页面之间、顶栏和内容之间，各有一条两头尖的分割线。
  * 顶栏右侧分成连接状态、无线电、日期时钟三组。竖屏目的地在底栏，选中同样是胶囊。
  * 页 id 仍由 [ShellNavigator] 持有。三页各留一个 Fragment，切换时 show/hide，避免拆掉滚动和扫描列表。
  */
@@ -67,25 +68,49 @@ class ShellChrome(
         navEntries.clear()
         val wide = LayoutMetrics.isWide(activity)
         val root = LinearLayout(activity).apply {
-            orientation = if (wide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+            orientation = LinearLayout.VERTICAL
             setBackgroundResource(GlassColors.bgHome())
         }
         val container = FrameLayout(activity)
         container.id = R.id.fragment_container
         fragmentContainer = container
-        val content = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
-        content.addView(buildStatusBar(), LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, LayoutMetrics.statusBarH(activity),
-        ))
-        content.addView(container, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f,
-        ))
         if (wide) {
-            root.addView(buildLeftNav(), LinearLayout.LayoutParams(
+            val header = LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setBackgroundResource(GlassColors.dockBg())
+            }
+            header.addView(railMark(), LinearLayout.LayoutParams(
                 LayoutMetrics.navWidth(activity), ViewGroup.LayoutParams.MATCH_PARENT,
             ))
-            root.addView(content, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+            header.addView(buildStatusBar(embedded = true), LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.MATCH_PARENT, 1f,
+            ))
+            root.addView(header, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, LayoutMetrics.statusBarH(activity),
+            ))
+            val body = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }
+            body.addView(buildLeftNav(withMark = false), LinearLayout.LayoutParams(
+                LayoutMetrics.navWidth(activity), ViewGroup.LayoutParams.MATCH_PARENT,
+            ))
+            body.addView(SpindleDivider(activity).apply { vertical = true }, LinearLayout.LayoutParams(
+                dp(12), ViewGroup.LayoutParams.MATCH_PARENT,
+            ))
+            body.addView(container, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+            root.addView(body, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f,
+            ))
         } else {
+            val content = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+            content.addView(buildStatusBar(embedded = false), LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, LayoutMetrics.statusBarH(activity),
+            ))
+            content.addView(SpindleDivider(activity), LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(14),
+            ))
+            content.addView(container, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f,
+            ))
             root.addView(content, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f,
             ))
@@ -104,12 +129,12 @@ class ShellChrome(
     }
 
     /** 顶栏连接胶囊：字、底、描边和前面的圆点一起换。壳还没装上时忽略。 */
-    fun applyStatus(label: String, color: Int, fill: Int, stroke: Int) {
+    fun applyStatus(label: String, color: Int, fill: Int, @Suppress("UNUSED_PARAMETER") stroke: Int) {
         val chip = status ?: return
         chip.text = label
         chip.setTextColor(color)
         statusBackground?.setColor(fill)
-        statusBackground?.setStroke(maxOf(1, dp(1)), stroke)
+        statusBackground?.setStroke(0, 0)
         statusDot?.setColor(color)
     }
 
@@ -244,18 +269,30 @@ class ShellChrome(
         if (fm.isStateSaved) tx.commitAllowingStateLoss() else tx.commitNow()
     }
 
-    /** 顶栏用完整栏目名；左侧轨只放短标签，避免 112dp 轨里挤长句。 */
-    private fun pageTitle(target: String): String = when (target) {
-        ShellNavigator.HOME -> activity.getString(R.string.diplay_nav_home)
-        ShellNavigator.ABOUT -> activity.getString(R.string.diplay_nav_vehicle_system)
-        else -> activity.getString(R.string.diplay_nav_display_audio)
+    /** 顶栏用完整栏目名；竖屏只用导航短标签，给连接状态和时钟留位置。 */
+    private fun pageTitle(target: String): String {
+        if (!LayoutMetrics.isWide(activity)) {
+            return when (target) {
+                ShellNavigator.HOME -> activity.getString(R.string.diplay_nav_home)
+                ShellNavigator.ABOUT -> activity.getString(R.string.settings_vehicle)
+                else -> activity.getString(R.string.settings)
+            }
+        }
+        return when (target) {
+            ShellNavigator.HOME -> activity.getString(R.string.diplay_nav_home)
+            ShellNavigator.ABOUT -> activity.getString(R.string.diplay_nav_vehicle_system)
+            else -> activity.getString(R.string.diplay_nav_display_audio)
+        }
     }
 
-    /** 顶栏：页名在左，右侧是连接胶囊、无线电胶囊、日期和时钟。目的地在左轨或竖屏底栏。 */
-    private fun buildStatusBar(): View {
+    /**
+     * 顶栏：页名在左，右侧是连接胶囊、无线电胶囊、日期和时钟。
+     * 宽屏时嵌进整条顶栏，和左侧标志共用同一块底，不再另铺一层。
+     */
+    private fun buildStatusBar(embedded: Boolean): View {
         val bar = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundResource(GlassColors.dockBg())
+            if (!embedded) setBackgroundResource(GlassColors.dockBg())
         }
         val row = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -263,6 +300,7 @@ class ShellChrome(
             val ph = LayoutMetrics.pagePad(activity)
             setPadding(ph, 0, ph, 0)
         }
+        val wide = LayoutMetrics.isWide(activity)
         statusTitle = TextView(activity).apply {
             setTextColor(GlassColors.TEXT_PRIMARY)
             textSize = LayoutMetrics.headerTitleSize(activity)
@@ -272,9 +310,9 @@ class ShellChrome(
             includeFontPadding = false
         }
         row.addView(statusTitle, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-            marginEnd = dp(12)
+            marginEnd = dp(if (wide) 12 else 8)
         })
-        statusBackground = rounded(GlassColors.GLASS_CHIP, GlassColors.GLASS_RIM, dp(10))
+        statusBackground = rounded(GlassColors.GLASS_CHIP, 0, dp(13), 0)
         val dot = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             setColor(GlassColors.TEXT_MUTED)
@@ -288,7 +326,7 @@ class ShellChrome(
             setTextColor(GlassColors.TEXT_MUTED)
             setTypeface(typeface, Typeface.BOLD)
             maxLines = 1
-            maxWidth = dp(280)
+            maxWidth = dp(if (wide) 280 else 148)
             ellipsize = android.text.TextUtils.TruncateAt.END
             includeFontPadding = false
             gravity = Gravity.CENTER_VERTICAL
@@ -309,16 +347,15 @@ class ShellChrome(
         row.addView(radioCluster(), LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply { marginEnd = dp(12) })
-        row.addView(clockCluster())
+        row.addView(clockCluster(showDate = wide))
         bar.addView(row, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f,
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
         ))
-        bar.addView(edgeView(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1))
         return bar
     }
 
     /** 日期和时钟靠在一起，中间一根短线，时钟是这一组里最醒目的字。 */
-    private fun clockCluster(): View {
+    private fun clockCluster(showDate: Boolean): View {
         val cluster = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -328,13 +365,15 @@ class ShellChrome(
             textSize = LayoutMetrics.statusDateSize(activity)
             maxLines = 1
             includeFontPadding = false
+            visibility = if (showDate) View.VISIBLE else View.GONE
         }
         cluster.addView(statusDate)
         cluster.addView(View(activity).apply {
             setBackgroundColor(GlassColors.DIM)
+            visibility = if (showDate) View.VISIBLE else View.GONE
         }, LinearLayout.LayoutParams(maxOf(1, dp(1)), dp(12)).apply {
-            marginStart = dp(10)
-            marginEnd = dp(10)
+            marginStart = if (showDate) dp(10) else 0
+            marginEnd = if (showDate) dp(10) else 0
             gravity = Gravity.CENTER_VERTICAL
         })
         statusClock = TextView(activity).apply {
@@ -357,7 +396,7 @@ class ShellChrome(
             val py = dp(4)
             minimumHeight = dp(26)
             setPadding(dp(8), py, dp(8), py)
-            background = rounded(GlassColors.GLASS_CHIP, GlassColors.GLASS_RIM, dp(10))
+            background = rounded(GlassColors.GLASS_CHIP, 0, dp(13), 0)
         }
         val size = dp(15)
         fun slot(glyph: ShellStatusIconDrawable, description: String, visible: Boolean): ImageView =
@@ -380,15 +419,20 @@ class ShellChrome(
         return cluster
     }
 
-    /** 左侧窄轨。顶上一格和顶栏同高，标志与页名齐平，底下是目的地和版本。 */
-    private fun buildLeftNav(): View {
+    /**
+     * 左侧窄轨。宽屏时标志已经放进整条顶栏，轨道从顶栏底边接上。
+     * 竖屏不走这里。
+     */
+    private fun buildLeftNav(withMark: Boolean): View {
         val nav = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundResource(GlassColors.dockBg())
         }
-        nav.addView(railMark(), LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, LayoutMetrics.statusBarH(activity),
-        ))
+        if (withMark) {
+            nav.addView(railMark(), LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, LayoutMetrics.statusBarH(activity),
+            ))
+        }
         val destinations = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             val pad = dp(4)
@@ -407,10 +451,7 @@ class ShellChrome(
             maxLines = 1
             setPadding(dp(4), 0, dp(4), LayoutMetrics.pagePad(activity))
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        val rail = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }
-        rail.addView(nav, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
-        rail.addView(edgeView(), LinearLayout.LayoutParams(1, ViewGroup.LayoutParams.MATCH_PARENT))
-        return rail
+        return nav
     }
 
     /** 和顶栏同高的标志格，底边和顶栏底边连成一条。 */
@@ -427,9 +468,8 @@ class ShellChrome(
             contentDescription = activity.getString(R.string.app_name) + " " + versionLabel()
         }, FrameLayout.LayoutParams(logo, logo, Gravity.CENTER))
         header.addView(stage, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f,
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
         ))
-        header.addView(edgeView(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1))
         return header
     }
 
@@ -439,7 +479,9 @@ class ShellChrome(
             orientation = LinearLayout.VERTICAL
             setBackgroundResource(GlassColors.dockBg())
         }
-        shell.addView(edgeView(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1))
+        shell.addView(SpindleDivider(activity), LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(10),
+        ))
         val nav = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -518,52 +560,30 @@ class ShellChrome(
         statusTitle?.text = pageTitle(selected)
         navEntries.forEach { (target, entry) ->
             val on = target == selected
-            val tint = if (on) GlassColors.NAV_SELECTED_TEXT else GlassColors.NAV_UNSELECTED
-            entry.label.setTextColor(tint)
+            entry.label.setTextColor(if (on) GlassColors.INK else GlassColors.NAV_UNSELECTED)
             entry.label.setTypeface(null, if (on) Typeface.BOLD else Typeface.NORMAL)
-            entry.icon.setColorFilter(tint)
+            entry.icon.setColorFilter(if (on) GlassColors.ACCENT else GlassColors.NAV_UNSELECTED)
             renderNavRow(target)
         }
     }
 
-    /** 焦点、按下或换页后重算背景：选中青胶囊，方向盘焦点加粗描边，按下是一块浅玻璃。 */
+    /** 焦点、按下或换页后重算背景：选中是蓝色玻璃胶囊，方向盘焦点和按下是一块浅玻璃。 */
     private fun renderNavRow(target: String) {
         val entry = navEntries[target] ?: return
         val on = target == shown
         val focused = entry.row.isFocused
         entry.row.background = when {
-            on && focused -> accentChip(0xCCFFFFFF.toInt(), 2)
-            on -> accentChip(0x66FFFFFF, 1)
-            focused -> navChip(GlassColors.ACCENT_SOFT_FILL, GlassColors.ACCENT, 2)
-            entry.row.isPressed -> navChip(GlassColors.GLASS_CHIP, GlassColors.GLASS_RIM, 1)
+            on -> HudNavDrawable(activity, active = true)
+            focused || entry.row.isPressed -> HudNavDrawable(activity, active = false)
             else -> null
         }
-    }
-
-    /** 选中导航：上亮下深的青胶囊，和主按钮同一套渐变。 */
-    private fun accentChip(stroke: Int, strokeDp: Int): InsetDrawable {
-        val inset = dp(3)
-        val bg = GradientDrawable(
-            GradientDrawable.Orientation.TOP_BOTTOM,
-            intArrayOf(GlassColors.ACCENT_LIFT, GlassColors.ACCENT_DEEP),
-        ).apply {
-            cornerRadius = dp(10).toFloat()
-            setStroke(maxOf(1, dp(strokeDp)), stroke)
-        }
-        return InsetDrawable(bg, inset, inset, inset, inset)
-    }
-
-    private fun navChip(fill: Int, stroke: Int, strokeDp: Int): InsetDrawable {
-        val inset = dp(3)
-        return InsetDrawable(rounded(fill, stroke, dp(10), strokeDp), inset, inset, inset, inset)
     }
 
     private fun rounded(fill: Int, stroke: Int, radiusPx: Int, strokeDp: Int = 1): GradientDrawable =
         GradientDrawable().apply {
             cornerRadius = radiusPx.toFloat()
             setColor(fill)
-            setStroke(maxOf(1, dp(strokeDp)), stroke)
+            if (strokeDp > 0) setStroke(maxOf(1, dp(strokeDp)), stroke)
         }
 
-    private fun edgeView(): View = View(activity).apply { setBackgroundColor(GlassColors.GLASS_EDGE) }
 }

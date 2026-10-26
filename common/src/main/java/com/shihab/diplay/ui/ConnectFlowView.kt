@@ -4,12 +4,14 @@ import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.RectF
 import android.view.View
-import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.LinearInterpolator
 import com.shihab.diplay.host.R
 
 /**
- * 连接按钮下方的五步。只在连接过程中显示：点亮当前步。未连接和已连接都不画。
+ * 连接过程。一条玻璃槽，液体按阶段往前流，五个圆点标出准备、网络、手机、握手、画面。
+ * 只在连接过程中显示。
  */
 class ConnectFlowView(context: Context) : View(context) {
     /** -1 未开始，0..4 当前步，[ConnectFlow.COUNT] 全部完成。 */
@@ -18,11 +20,8 @@ class ConnectFlowView(context: Context) : View(context) {
     private var pulse = 0f
     private var pulseAnimator: ValueAnimator? = null
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.ROUND
-    }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
+    private val track = RectF()
 
     fun showIdle() = setIndex(-1)
 
@@ -64,10 +63,9 @@ class ConnectFlowView(context: Context) : View(context) {
         }
         if (pulseAnimator != null) return
         pulseAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 900
-            repeatMode = ValueAnimator.REVERSE
+            duration = 1100
             repeatCount = ValueAnimator.INFINITE
-            interpolator = AccelerateDecelerateInterpolator()
+            interpolator = LinearInterpolator()
             addUpdateListener {
                 pulse = it.animatedValue as Float
                 invalidate()
@@ -88,67 +86,88 @@ class ConnectFlowView(context: Context) : View(context) {
         }
     }
 
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val width = View.MeasureSpec.getSize(widthMeasureSpec)
+        textPaint.textSize = sp(11f)
+        val nodeR = GlassColors.dp(context, 6).toFloat()
+        val textH = textPaint.descent() - textPaint.ascent()
+        val wanted = (nodeR + GlassColors.dp(context, 4) + nodeR * 1.25f +
+            GlassColors.dp(context, 8) + textH + GlassColors.dp(context, 4)).toInt()
+        setMeasuredDimension(width, wanted.coerceAtLeast(LayoutMetrics.connectFlowH(context)))
+    }
+
     override fun onDraw(canvas: Canvas) {
         val count = ConnectFlow.COUNT
-        val slot = width / count.toFloat()
-        if (slot <= 0f) return
-        val radius = GlassColors.dp(context, 5).toFloat().coerceAtMost(slot * 0.16f).coerceAtLeast(3f)
-        val cy = radius + GlassColors.dp(context, 6)
-        linePaint.strokeWidth = GlassColors.dp(context, 2).toFloat().coerceAtLeast(2f)
-        val current = activeIndex
-        for (i in 0 until count - 1) {
-            val done = current > i
-            linePaint.color = if (done) GlassColors.ACCENT else (GlassColors.DIM and 0x00FFFFFF) or 0x66000000
-            val y = cy
-            canvas.drawLine(slot * i + slot / 2f + radius, y, slot * (i + 1) + slot / 2f - radius, y, linePaint)
+        val inset = GlassColors.dp(context, 10).toFloat()
+        val span = width - inset * 2
+        if (span <= 0f) return
+        val seg = span / count
+        var size = sp(11f)
+        textPaint.textSize = size
+        while (textPaint.measureText(longestTitle()) > seg && size > sp(8f)) {
+            size -= 1f
+            textPaint.textSize = size
         }
-        textPaint.textSize = sp(11f)
-        for (i in 0 until count) {
-            val cx = slot * i + slot / 2f
-            val done = current > i
-            val now = current == i
-            val ring = if (done || now) GlassColors.ACCENT else GlassColors.DIM
-            fillPaint.color = ring
-            if (now) {
-                fillPaint.alpha = (0x55 + 0xAA * pulse).toInt()
-                canvas.drawCircle(cx, cy, radius + GlassColors.dp(context, 3) * pulse, fillPaint)
+        val nodeR = GlassColors.dp(context, 6).toFloat()
+        val cy = nodeR + GlassColors.dp(context, 4).toFloat()
+        val current = activeIndex
+        val fraction = when {
+            current < 0 -> 0f
+            current >= count -> 1f
+            else -> ((current + pulse) / count).coerceIn(0f, 1f)
+        }
+        val trackH = GlassColors.dp(context, 5).toFloat()
+        track.set(inset, cy - trackH / 2f, inset + span, cy + trackH / 2f)
+        fillPaint.color = GlassColors.plateBottom()
+        canvas.drawRoundRect(track, trackH / 2f, trackH / 2f, fillPaint)
+        if (fraction > 0f) {
+            val liquidRight = track.left + track.width() * fraction
+            fillPaint.color = GlassColors.ACCENT
+            canvas.drawRoundRect(track.left, track.top, liquidRight, track.bottom, trackH / 2f, trackH / 2f, fillPaint)
+            if (current in 0 until count) {
+                fillPaint.color = GlassColors.ACCENT_LIFT
+                canvas.drawCircle(liquidRight, cy, trackH * 0.85f, fillPaint)
             }
-            fillPaint.alpha = 255
+        }
+        for (i in 0 until count) {
+            val x = inset + seg * (i + 0.5f)
+            val done = current > i || current >= count
+            val now = current == i
+            val r = if (now) nodeR * 1.25f else nodeR
             if (done) {
                 fillPaint.color = GlassColors.ACCENT
-                canvas.drawCircle(cx, cy, radius, fillPaint)
-            } else if (now) {
-                fillPaint.style = Paint.Style.STROKE
-                fillPaint.strokeWidth = GlassColors.dp(context, 2).toFloat().coerceAtLeast(2f)
-                fillPaint.color = GlassColors.ACCENT
-                canvas.drawCircle(cx, cy, radius, fillPaint)
-                fillPaint.style = Paint.Style.FILL
-                fillPaint.color = GlassColors.ACCENT
-                canvas.drawCircle(cx, cy, radius * (0.45f + 0.25f * pulse), fillPaint)
+                canvas.drawCircle(x, cy, r, fillPaint)
             } else {
-                fillPaint.style = Paint.Style.STROKE
-                fillPaint.strokeWidth = GlassColors.dp(context, 1).toFloat().coerceAtLeast(1f)
-                fillPaint.color = GlassColors.DIM
-                canvas.drawCircle(cx, cy, radius, fillPaint)
-                fillPaint.style = Paint.Style.FILL
+                fillPaint.color = if (now) withAlpha(GlassColors.ACCENT, 0x55) else GlassColors.plateTop()
+                canvas.drawCircle(x, cy, r, fillPaint)
             }
             val title = context.getString(ConnectFlow.titleRes(i))
-            var size = sp(11f)
-            textPaint.textSize = size
-            val limit = slot - GlassColors.dp(context, 2)
-            while (textPaint.measureText(title) > limit && size > sp(8f)) {
-                size -= 1f
-                textPaint.textSize = size
-            }
             textPaint.color = when {
                 now -> GlassColors.ACCENT
                 done -> GlassColors.TEXT_BODY
                 else -> GlassColors.MUTED
             }
-            val baseline = cy + radius + GlassColors.dp(context, 4) - textPaint.ascent()
-            canvas.drawText(title, cx, baseline, textPaint)
+            val baseline = cy + r + GlassColors.dp(context, 4) - textPaint.ascent()
+            canvas.drawText(title, x, baseline, textPaint)
         }
     }
+
+    private fun longestTitle(): String {
+        var best = ""
+        var width = 0f
+        for (i in 0 until ConnectFlow.COUNT) {
+            val title = context.getString(ConnectFlow.titleRes(i))
+            val measured = textPaint.measureText(title)
+            if (measured > width) {
+                width = measured
+                best = title
+            }
+        }
+        return best
+    }
+
+    private fun withAlpha(argb: Int, alpha: Int): Int =
+        (argb and 0x00FFFFFF) or ((alpha.coerceIn(0, 255)) shl 24)
 
     private fun sp(value: Float): Float = value * resources.displayMetrics.scaledDensity
 }

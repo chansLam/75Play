@@ -279,7 +279,7 @@ object SettingsWidgets {
             ).apply { topMargin = theme.dp(context, 14) },
         )
 
-        val seekBar = SeekBar(context).apply {
+        val seekBar = com.shihab.diplay.ui.GlassSlider(context).apply {
             max = CarPlayDisplayScale.MAX_PERCENT - CarPlayDisplayScale.MIN_PERCENT
             progress = initial - CarPlayDisplayScale.MIN_PERCENT
             setOnSeekBarChangeListener(

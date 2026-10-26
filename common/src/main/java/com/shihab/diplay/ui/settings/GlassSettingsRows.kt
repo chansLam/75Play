@@ -15,6 +15,7 @@ import com.shihab.diplay.ui.FocusSupport
 import com.shihab.diplay.ui.GlassColors
 import com.shihab.diplay.ui.GlassSwitch
 import com.shihab.diplay.ui.LayoutMetrics
+import com.shihab.diplay.ui.SpindleDivider
 
 /**
  * Shared glass settings row/cap helpers for shell Fragments (Setting / About).
@@ -39,20 +40,14 @@ object GlassSettingsRows {
         card.addView(space(ctx, LayoutMetrics.cardTitleGap(ctx)))
     }
 
-    /** 栏目标题下的短青条：圆角渐变，不用直角色块。 */
+    /** 栏目标题下的发丝线，两头淡出。 */
     fun titleTick(ctx: Context): View {
         val density = ctx.resources.displayMetrics.density
-        return View(ctx).apply {
-            background = GradientDrawable(
-                GradientDrawable.Orientation.LEFT_RIGHT,
-                intArrayOf(GlassColors.ACCENT_LIFT, GlassColors.ACCENT_DEEP),
-            ).apply {
-                cornerRadius = density * 2f
-            }
+        return SpindleDivider(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(
-                (density * 36).toInt(),
-                (density * 3).toInt(),
-            ).apply { topMargin = dp(ctx, if (LayoutMetrics.isCockpit(ctx)) 4 else 8) }
+                (density * 160).toInt(),
+                maxOf(8, (density * 10).toInt()),
+            ).apply { topMargin = dp(ctx, if (LayoutMetrics.isCockpit(ctx)) 6 else 8) }
         }
     }
 
@@ -60,10 +55,12 @@ object GlassSettingsRows {
     fun space(ctx: Context, hPx: Int): View =
         View(ctx).apply { layoutParams = LinearLayout.LayoutParams(1, hPx) }
 
-    fun divider(ctx: Context): View = View(ctx).apply {
-        setBackgroundColor(GlassColors.DIVIDER)
+    fun divider(ctx: Context): View = SpindleDivider(ctx).apply {
         val g = LayoutMetrics.dividerGap(ctx)
-        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1).apply {
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(ctx, 8),
+        ).apply {
             topMargin = g
             bottomMargin = g
         }
@@ -136,11 +133,11 @@ object GlassSettingsRows {
             val ph = LayoutMetrics.capPadH(ctx)
             val pv = LayoutMetrics.capPadV(ctx)
             setPadding(ph, pv, ph, pv)
-            background = capFill(ctx, GlassColors.ACCENT_SOFT_STROKE, 1)
+            background = capFill(ctx, 0, 0)
         }
 
     /** Secondary `.ghostbtn` at head-unit scale. 圆角 10dp。 */
-    fun ghostButton(ctx: Context, text: String, cornerRadiusDp: Int = 10, click: () -> Unit): View =
+    fun ghostButton(ctx: Context, text: String, cornerRadiusDp: Int = 14, click: () -> Unit): View =
         TextView(ctx).apply {
             this.text = text
             textSize = LayoutMetrics.ghostTextSize(ctx)
@@ -256,16 +253,16 @@ object GlassSettingsRows {
             setPadding(0, pv, 0, pv)
         }
 
-    /** 胶囊底：上沿更亮，普通态 1dp 柔光描边；焦点态 2dp 青描边。 */
+    /** 胶囊底：半透系统蓝。方向盘焦点才加一圈蓝。 */
     private fun pillDrawable(ctx: Context, focused: Boolean): GradientDrawable =
-        capFill(ctx, if (focused) GlassColors.ACCENT else GlassColors.ACCENT_SOFT_STROKE, if (focused) 2 else 1)
+        capFill(ctx, if (focused) GlassColors.ACCENT else 0, if (focused) 2 else 0)
 
     private fun capFill(ctx: Context, stroke: Int, strokeDp: Int): GradientDrawable =
         GradientDrawable(
             GradientDrawable.Orientation.TOP_BOTTOM,
             intArrayOf(GlassColors.ACCENT_SOFT_FILL, GlassColors.ACCENT_CAP_FILL),
         ).apply {
-            setStroke(dp(ctx, strokeDp), stroke)
-            cornerRadius = dp(ctx, 10).toFloat()
+            if (strokeDp > 0) setStroke(dp(ctx, strokeDp), stroke)
+            cornerRadius = dp(ctx, 14).toFloat()
         }
 }

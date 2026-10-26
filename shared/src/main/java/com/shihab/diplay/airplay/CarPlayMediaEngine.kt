@@ -24,7 +24,7 @@ interface MediaSink {
     fun onVideoConfig(type: Int, codecData: ByteArray) {}
     fun onVideoFrame(type: Int, naluBytes: ByteArray) {}
     /** A frame with the iPhone's frame time and its arrival time (System.nanoTime); see [ScreenStream.Listener]. */
-    fun onVideoFrame(type: Int, naluBytes: ByteArray, senderNanos: Long, arrivalNanos: Long) =
+    fun onVideoFrame(type: Int, naluBytes: ByteArray, senderNanos: Long, arrivalNanos: Long, byteCount: Int = naluBytes.size) =
         onVideoFrame(type, naluBytes)
     fun setVideoRecoveryHandler(type: Int, handler: () -> Unit) {}
     fun setVideoDiagnosticHandler(type: Int, handler: (String) -> Unit) {}
@@ -52,8 +52,9 @@ internal fun currentScreenListener(type: Int, sink: MediaSink, isCurrent: () -> 
     override fun onCodec(codec: VideoCodec) { if (isCurrent()) sink.onVideoCodec(type, codec) }
     override fun onConfig(codecData: ByteArray) { if (isCurrent()) sink.onVideoConfig(type, codecData) }
     override fun onFrame(naluBytes: ByteArray) { if (isCurrent()) sink.onVideoFrame(type, naluBytes) }
-    override fun onFrame(naluBytes: ByteArray, senderNanos: Long, arrivalNanos: Long) {
-        if (isCurrent()) sink.onVideoFrame(type, naluBytes, senderNanos, arrivalNanos)
+    override fun onFrame(naluBytes: ByteArray, senderNanos: Long, arrivalNanos: Long, byteCount: Int) {
+        if (isCurrent()) sink.onVideoFrame(type, naluBytes, senderNanos, arrivalNanos, byteCount)
+        else VideoFrameBuffers.give(naluBytes)
     }
 }
 
@@ -254,6 +255,8 @@ class CarPlayMediaEngine(
                 ) {
                     capture?.record(wire, rtp, sample, error)
                 }
+
+                override fun retainWire(): Boolean = capture != null
             },
         )
         streams[streamKey] = audio

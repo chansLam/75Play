@@ -12,6 +12,7 @@ import com.shihab.diplay.CarPlayNightMode
 import com.shihab.diplay.CarPlayPicture
 import com.shihab.diplay.host.R
 import com.shihab.diplay.ui.DiPlayDialog
+import com.shihab.diplay.ui.GlassSlider
 
 internal class VideoSettingsColumn(page: Fragment) : SettingsColumnKit(page) {
     private fun buildVideoAdvancedCard(card: LinearLayout) {
@@ -82,10 +83,9 @@ internal class VideoSettingsColumn(page: Fragment) : SettingsColumnKit(page) {
                 caption.text = "${ctx.getString(labels[index])} $value"
             }
             show(CarPlayPicture.value(prefs, key))
-            val slider = SeekBar(ctx).apply {
+            val slider = GlassSlider(ctx).apply {
                 max = range.last - range.first
                 progress = CarPlayPicture.value(prefs, key) - range.first
-                minimumHeight = 0
                 setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                     override fun onProgressChanged(seek: SeekBar, progress: Int, fromUser: Boolean) {
                         val value = progress + range.first

@@ -29,8 +29,8 @@ internal object FloatingBall {
     private const val PREFS = "diplay_floating_ball"
     private const val KEY_X = "x"
     private const val KEY_Y = "y"
+    private const val KEY_RAIL_PARK = "rail_park_v1"
     private const val BALL_SIZE_DP = 56
-    private const val TOP_MARGIN_DP = 96
 
     private var root: View? = null
     private var onTapAction: (() -> Unit)? = null
@@ -68,10 +68,22 @@ internal object FloatingBall {
             // anywhere on screen (TOP|END previously confined it to the right half).
             gravity = Gravity.TOP or Gravity.START
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            val topY = (TOP_MARGIN_DP * metrics.density).toInt()
+            val margin = (8 * metrics.density).toInt()
+            val railX = margin.coerceIn(0, maxX)
+            val railY = (maxY - margin).coerceAtLeast(0)
             val savedX = prefs.getInt(KEY_X, -1)
-            x = (if (savedX < 0) maxX else savedX).coerceIn(0, maxX)
-            y = prefs.getInt(KEY_Y, topY).coerceIn(0, maxY)
+            val savedY = prefs.getInt(KEY_Y, -1)
+            val parked = prefs.getBoolean(KEY_RAIL_PARK, false)
+            val coveringColumn = !parked && savedX > maxX - size * 2 &&
+                savedY in 0 until (metrics.heightPixels * 0.5f).toInt()
+            if (savedX < 0 || coveringColumn) {
+                x = railX
+                y = railY
+                prefs.edit().putBoolean(KEY_RAIL_PARK, true).putInt(KEY_X, x).putInt(KEY_Y, y).apply()
+            } else {
+                x = savedX.coerceIn(0, maxX)
+                y = savedY.coerceIn(0, maxY)
+            }
             title = "DiPlay floating ball"
         }
         val slop = ViewConfiguration.get(context).scaledTouchSlop

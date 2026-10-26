@@ -7,7 +7,7 @@ import android.content.Context
  *
  * 短屏/超宽按驾驶舱：左侧窄导航 + 顶栏（页名 / 状态 / 时钟），竖屏改成底栏导航。
  * 1920×720 三列并排、可点行至少 48dp，放不下的设置列自己滚动。其它短屏仍用大触控行。
- * 面板与强调色由 [GlassColors] 负责：底图上的玻璃面板，青蓝只留给主操作和选中。
+ * 面板与强调色由 [GlassColors] 负责：底图上的玻璃，系统蓝只留给主操作和选中。
  *
  * Dimension getters return **px**（已乘 density）。Text-size getters return **sp**。
  */
@@ -107,16 +107,16 @@ object LayoutMetrics {
     fun heroMinH(context: Context): Int = px(context, tier(context, 32, 40, 36))
     /** 主页圆形连接按钮边长，含外围进度环。 */
     fun connectOrbSize(context: Context): Int = px(context, tier(context, 128, 168, 152))
-    /** 连接按钮下五步流程的高度，含圆点和短标签。 */
-    fun connectFlowH(context: Context): Int = px(context, tier(context, 40, 52, 46))
+    /** 连接按钮下五步玻璃槽的高度，含圆点和短标签。 */
+    fun connectFlowH(context: Context): Int = px(context, tier(context, 48, 64, 56))
     fun heroPad(context: Context): Int = px(context, tier(context, 8, 18, 18))
     fun heroGap(context: Context): Int = px(context, tier(context, 6, 12, 14))
     fun heroSubSize(context: Context): Float = tier(context, 12f, 14f, 13f)
-    fun heroRadiusDp(context: Context): Int = 10
+    fun heroRadiusDp(context: Context): Int = 22
 
     fun modeTabTextSize(context: Context): Float = tier(context, 14f, 17f, 14f)
     fun modeTabPadV(context: Context): Int = px(context, tier(context, 2, 6, 4))
-    fun modeTabRadiusDp(context: Context): Int = 10
+    fun modeTabRadiusDp(context: Context): Int = 20
     fun modeTabMinH(context: Context): Int = px(context, tier(context, 32, 40, 36))
 
     fun statusPillTextSize(context: Context): Float = tier(context, 12f, 14f, 13f)

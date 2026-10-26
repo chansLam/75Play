@@ -33,8 +33,9 @@ class CurrentScreenListenerTest {
         override fun onVideoCodec(type: Int, codec: VideoCodec) { events += Event.Codec(type, codec) }
         override fun onVideoConfig(type: Int, codecData: ByteArray) { events += Event.CodecData(type, codecData.toList()) }
         override fun onVideoFrame(type: Int, naluBytes: ByteArray) { events += Event.Frame(type, naluBytes.toList()) }
-        override fun onVideoFrame(type: Int, naluBytes: ByteArray, senderNanos: Long, arrivalNanos: Long) {
-            events += Event.TimedFrame(type, naluBytes.toList(), senderNanos, arrivalNanos)
+        override fun onVideoFrame(type: Int, naluBytes: ByteArray, senderNanos: Long, arrivalNanos: Long, byteCount: Int) {
+            val count = byteCount.coerceIn(0, naluBytes.size)
+            events += Event.TimedFrame(type, naluBytes.copyOf(count).toList(), senderNanos, arrivalNanos)
         }
         fun take(): List<Event> = synchronized(events) { events.toList().also { events.clear() } }
     }

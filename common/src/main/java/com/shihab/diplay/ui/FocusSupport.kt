@@ -26,10 +26,10 @@ import android.view.View
  */
 object FocusSupport {
 
-    /** 焦点描边色：青蓝主色。 */
+    /** 焦点描边色：系统蓝。 */
     fun strokeColor(): Int = GlassColors.ACCENT
 
-    /** 焦点填充色：青蓝柔光（与状态 pill 同档）。 */
+    /** 焦点填充色：系统蓝柔光（与状态 pill 同档）。 */
     fun fillColor(): Int = GlassColors.ACCENT_SOFT_FILL
 
     /** 无背景行的焦点高亮底：青柔光填充 + 2dp 青描边。 */

@@ -22,7 +22,7 @@ internal abstract class AboutColumnKit(page: Fragment) : SettingsColumnKit(page)
     protected fun capVal(ctx: android.content.Context, text: String, color: Int = GlassColors.CAP_TEXT) =
         GlassSettingsRows.capVal(ctx, text, color)
     protected fun ghostButton(ctx: android.content.Context, text: String, click: () -> Unit) =
-        GlassSettingsRows.ghostButton(ctx, text, cornerRadiusDp = 10, click)
+        GlassSettingsRows.ghostButton(ctx, text, cornerRadiusDp = 14, click)
     protected fun glassSwitchRow(
         ctx: android.content.Context,
         title: String,

@@ -6,6 +6,7 @@ import android.media.MediaFormat
 import android.os.Build
 import android.view.Surface
 import com.shihab.diplay.airplay.VideoCodec
+import com.shihab.diplay.airplay.VideoFrameBuffers
 import com.shihab.diplay.compat.inputBufferCompat
 import com.shihab.diplay.compat.realSdkInt
 import java.io.Closeable
@@ -71,10 +72,11 @@ internal class VideoDecoder(
         queue.offer(VideoJob.Config(codec, codecData))
     }
 
-    fun submit(nalus: ByteArray, senderNanos: Long = 0L, arrivalNanos: Long = 0L) {
-        stats.onReceived(nalus.size)
+    fun submit(nalus: ByteArray, byteCount: Int = nalus.size, senderNanos: Long = 0L, arrivalNanos: Long = 0L) {
+        val count = byteCount.coerceIn(0, nalus.size)
+        stats.onReceived(count)
         // Pacing runs on the worker, in queue order: callbacks of a replaced stream may still deliver here.
-        queue.offer(VideoJob.Frame(nalus, senderNanos = senderNanos, arrivalNanos = arrivalNanos))
+        queue.offer(VideoJob.Frame(nalus, senderNanos = senderNanos, arrivalNanos = arrivalNanos, length = count))
     }
 
     fun setSurface(surface: Surface?) {
@@ -129,10 +131,11 @@ internal class VideoDecoder(
                     when (job) {
                         is VideoJob.Config -> configureDecoder(job)
                         is VideoJob.Frame -> {
-                            if (System.nanoTime() - job.receivedNs > MAX_FRAME_AGE_NS) {
-                                queue.discardFrames()
-                                recoverBacklog("video backlog exceeded 500 ms")
-                            } else feed(job.nalus, localTimeOf(job))
+                            try {
+                                feed(job.nalus, job.length, localTimeOf(job))
+                            } finally {
+                                VideoFrameBuffers.give(job.nalus)
+                            }
                         }
                         is VideoJob.SurfaceChanged -> changeSurface(job.surface)
                         is VideoJob.DetachSurface -> detach(job.request)
@@ -167,7 +170,13 @@ internal class VideoDecoder(
             // The codec is gone, so nothing renders to any surface or to the parking consumer any more.
             parking?.close()
             parking = null
-            queue.drain().forEach { (it as? VideoJob.DetachSurface)?.request?.complete(DetachOutcome.RELEASED) }
+            queue.drain().forEach { job ->
+                when (job) {
+                    is VideoJob.DetachSurface -> job.request.complete(DetachOutcome.RELEASED)
+                    is VideoJob.Frame -> VideoFrameBuffers.give(job.nalus)
+                    else -> Unit
+                }
+            }
             runCatching { onExit(this) }
         }
     }
@@ -427,12 +436,14 @@ internal class VideoDecoder(
         }
     }
 
-    private fun feed(nalus: ByteArray, presentNs: Long = 0L) {
-        val annexB = MediaCodecSupport.toAnnexB(nalus)
+    private fun feed(nalus: ByteArray, length: Int, presentNs: Long = 0L) {
+        val count = length.coerceIn(0, nalus.size)
+        val annexB = MediaCodecSupport.toAnnexB(nalus, count)
+        val annexLength = if (annexB === nalus) count else annexB.size
         val config = lastConfig ?: return
         if (outputSurface == null) return
-        if (annexB.isEmpty()) { recover("invalid video access unit"); return }
-        if (!referenceChain.accepts(annexB, config.codec)) {
+        if (annexLength <= 0 || annexB.isEmpty()) { recover("invalid video access unit"); return }
+        if (!referenceChain.accepts(annexB, config.codec, annexLength)) {
             requestKeyFrameIfDue()
             return
         }
@@ -442,7 +453,7 @@ internal class VideoDecoder(
             submittedFrameLogged = true
             AppLog.i(
                 TAG,
-                "video decoder first input avcc=${nalus.size} annexB=${annexB.size}",
+                "video decoder first input avcc=$count annexB=$annexLength",
             )
         }
         val index = VideoInputPump.acquire(
@@ -454,16 +465,24 @@ internal class VideoDecoder(
         checkNotNull(input) { "Decoder input buffer unavailable" }
         input.clear()
         val spsPps = inBandSpsPps
-        val frameData = if (spsPps != null) {
+        val frameData: ByteArray
+        val frameLength: Int
+        if (spsPps != null) {
             inBandSpsPps = null
             AppLog.i(TAG, "video decoder prepending SPS/PPS in-band to first frame (${spsPps.size} bytes)")
-            spsPps + annexB
-        } else annexB
-        if (frameData.size <= input.remaining()) {
-            input.put(frameData)
+            frameData = ByteArray(spsPps.size + annexLength)
+            spsPps.copyInto(frameData)
+            annexB.copyInto(frameData, spsPps.size, 0, annexLength)
+            frameLength = frameData.size
+        } else {
+            frameData = annexB
+            frameLength = annexLength
+        }
+        if (frameLength <= input.remaining()) {
+            input.put(frameData, 0, frameLength)
             // A paced frame carries its local time; MediaCodec returns it with the decoded output.
             val presentationUs = if (presentNs > 0) presentNs / 1000 else System.nanoTime() / 1000
-            codec.queueInputBuffer(index, 0, frameData.size, presentationUs, 0)
+            codec.queueInputBuffer(index, 0, frameLength, presentationUs, 0)
             val queuedNow = System.nanoTime()
             if (lastQueuedNanos != 0L && queuedNow - lastQueuedNanos > STILL_GAP_NS) resumedAtNanos = queuedNow
             lastQueuedNanos = queuedNow
@@ -483,6 +502,7 @@ internal class VideoDecoder(
             queuedSlot = (queuedSlot + 1) % queuedPresentationUs.size
             referenceChain.onQueued()
         } else {
+            codec.queueInputBuffer(index, 0, 0, 0, 0)
             recover("video frame exceeded codec input capacity")
             return
         }
@@ -630,7 +650,6 @@ internal class VideoDecoder(
         val MAX_INPUT_SIZE: Int =
             if (realSdkInt() < 21) 3 * 1024 * 1024 else 8 * 1024 * 1024
         const val INPUT_TIMEOUT_US = 10_000L
-        const val MAX_FRAME_AGE_NS = 500_000_000L
         // A paced frame more than this ahead is treated as a bad mapping and shown at once.
         const val MAX_PACING_AHEAD_NS = 1_000_000_000L
         // Longer input gaps are a still screen, not decoding work.

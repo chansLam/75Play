@@ -224,8 +224,8 @@ class CarPlayController(
     @Volatile private var wirelessTunnelChannel: Iap2Session? = null
     @Volatile private var wirelessRuntimeIdentification: Iap2IdentificationConfig? = null
     @Volatile private var wirelessAirPlayEndpoint: Iap2WirelessCarPlayEndpoint? = null
-    @Volatile private var vpnService: CarPlayWirelessService? = null
-    @Volatile private var vpnBound = false
+    @Volatile private var wirelessListener: CarPlayWirelessService? = null
+    @Volatile private var wirelessListenerBound = false
     private val wirelessHandoffRequested = AtomicBoolean(false)
     private val wirelessTunnelReady = AtomicBoolean(false)
     private val wirelessActiveReported = AtomicBoolean(false)
@@ -234,18 +234,18 @@ class CarPlayController(
     private val wirelessGeneration = AtomicInteger(0)
     private val wirelessConnectionProof = WirelessConnectionProof<AirPlaySession>()
 
-    private var vpnLatch = CountDownLatch(1)
+    private var wirelessListenerLatch = CountDownLatch(1)
     private val teardownComplete = CountDownLatch(1)
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
-            vpnService = (binder as CarPlayWirelessService.LocalBinder).service
-            vpnLatch.countDown()
+            wirelessListener = (binder as CarPlayWirelessService.LocalBinder).service
+            wirelessListenerLatch.countDown()
         }
 
         override fun onServiceDisconnected(name: ComponentName) {
-            vpnService = null
-            fail(IOException("CarPlay VPN service disconnected"))
+            wirelessListener = null
+            fail(IOException("CarPlay wireless listener disconnected"))
         }
     }
 
@@ -395,7 +395,7 @@ class CarPlayController(
     }
 
     fun hasActiveAirPlayAttachment(): Boolean = synchronized(lifecycleLock) {
-        !closed && vpnService?.isAttached() == true
+        !closed && wirelessListener?.isAttached() == true
     }
 
     fun start() {
@@ -576,8 +576,8 @@ class CarPlayController(
         wirelessGeneration.incrementAndGet()
         touchExecutor.shutdownNow()
         tunnelExecutor.shutdownNow()
-        val service = vpnService
-        unbindVpn()
+        val service = wirelessListener
+        unbindWirelessListener()
         Thread(
             {
                 try {
@@ -671,7 +671,7 @@ class CarPlayController(
 
     // Each new cluster stream starts with the map drawn (its initialURL); send only real changes.
 
-    /** Waits for USB, iAP2, MFi and VPN teardown; intended for a non-main lifecycle thread. */
+    /** Waits for USB, iAP2, MFi and wireless-listener teardown; intended for a non-main lifecycle thread. */
     fun awaitClosed(timeoutMillis: Long): Boolean {
         require(timeoutMillis >= 0) { "timeoutMillis must not be negative" }
         return try {
@@ -1153,7 +1153,7 @@ class CarPlayController(
         startedHotspot: WirelessHotspotManager?,
         mfi: MfiAuthenticator,
     ): AttachedAirPlay {
-        val service = awaitVpnService()
+        val service = awaitWirelessListener()
             ?: throw IOException("Could not bind the CarPlay AirPlay service")
         synchronized(wirelessResourceLock) {
             if (isStaleWirelessRun(generation)) return AttachedAirPlay(-1, wirelessAirPlayConfig)
@@ -1692,7 +1692,7 @@ class CarPlayController(
         }
     }
 
-    private fun closeWirelessStack(service: CarPlayWirelessService? = vpnService, generation: Int? = null) =
+    private fun closeWirelessStack(service: CarPlayWirelessService? = wirelessListener, generation: Int? = null) =
         WirelessStackCloser.close(
             service = service,
             generation = generation,
@@ -1798,45 +1798,45 @@ class CarPlayController(
     }
 
 
-    private fun awaitVpnService(): CarPlayWirelessService? {
-        vpnService?.let { return it }
-        bindVpn()
+    private fun awaitWirelessListener(): CarPlayWirelessService? {
+        wirelessListener?.let { return it }
+        bindWirelessListener()
         return try {
-            if (vpnLatch.await(VPN_CONNECT_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) vpnService else null
+            if (wirelessListenerLatch.await(WIRELESS_LISTENER_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) wirelessListener else null
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
             null
         }
     }
 
-    private fun bindVpn() {
-        if (vpnBound) return
+    private fun bindWirelessListener() {
+        if (wirelessListenerBound) return
         // A failed earlier bind may have counted down the previous latch. Reset it
         // before each new bind or a reconnect can observe a stale completed latch.
-        vpnLatch = CountDownLatch(1)
-        vpnBound = true
+        wirelessListenerLatch = CountDownLatch(1)
+        wirelessListenerBound = true
         try {
             val intent = Intent(appContext, CarPlayWirelessService::class.java)
             if (!appContext.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)) {
-                vpnBound = false
-                vpnLatch.countDown()
+                wirelessListenerBound = false
+                wirelessListenerLatch.countDown()
             }
         } catch (_: Throwable) {
-            vpnBound = false
-            vpnLatch.countDown()
+            wirelessListenerBound = false
+            wirelessListenerLatch.countDown()
         }
     }
 
-    private fun unbindVpn() {
-        if (!vpnBound) return
-        vpnBound = false
+    private fun unbindWirelessListener() {
+        if (!wirelessListenerBound) return
+        wirelessListenerBound = false
         try {
             appContext.unbindService(serviceConnection)
         } catch (t: Exception) {
             // The service may have already been unbound.
-            AppLog.w(TAG, "VPN unbindService failed", t)
+            AppLog.w(TAG, "wireless listener unbindService failed", t)
         }
-        vpnService = null
+        wirelessListener = null
     }
 
     private fun closeReceivers() {
@@ -2013,7 +2013,7 @@ class CarPlayController(
         private const val IAP2_IPHONE_UUID = "00000000-deca-fade-deca-deafdecacafe"
         private const val WIRELESS_PREFS = "diplay_wireless"
         private const val HOTSPOT_FAMILY_PREFERENCE_KEY = "hotspot_address_family"
-        private const val VPN_CONNECT_TIMEOUT_MILLIS = 10_000L
+        private const val WIRELESS_LISTENER_TIMEOUT_MILLIS = 10_000L
         private const val DEVICE_AVAILABILITY_FAST_POLL_MILLIS = 400L
         private const val DEVICE_AVAILABILITY_MID_POLL_MILLIS = 800L
         private const val DEVICE_AVAILABILITY_POLL_INTERVAL_MILLIS = 2_000L

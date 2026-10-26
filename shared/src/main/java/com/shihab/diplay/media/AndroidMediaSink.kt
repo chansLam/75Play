@@ -8,6 +8,7 @@ import com.shihab.diplay.airplay.AudioStreamId
 import com.shihab.diplay.airplay.MediaSink
 import com.shihab.diplay.airplay.MicrophoneConfig
 import com.shihab.diplay.airplay.VideoCodec
+import com.shihab.diplay.airplay.VideoFrameBuffers
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -51,9 +52,12 @@ class AndroidMediaSink(
      * decoded. Only a SurfaceView honours the timestamps, so the host sets it with one.
      */
     private val videoPacingDelayMillis: Int = 0,
+    /** Navigation prompt started (legacy stream) or ended (null). Called from media threads. */
+    private val onNavigationAudible: (Int?) -> Unit = {},
 ) : MediaSink {
     // Each downlink publishes its own reference; a mic must match that stream and sample rate.
     private val callEchoReferences = ConcurrentHashMap<AudioStreamId, EchoReference>()
+    private val navigationAudioIds = mutableSetOf<AudioStreamId>()
     private val appContext = context?.applicationContext
     @Suppress("DEPRECATION")
     private val audioManager = appContext?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
@@ -294,18 +298,31 @@ class AndroidMediaSink(
     }
 
     override fun onVideoFrame(type: Int, naluBytes: ByteArray) {
-        synchronized(videoOwnershipLock) {
-            if (videoClosed) return
-            videoDecoder(type).submit(naluBytes)
-            mirrorDecoders(type).forEach { it.submit(naluBytes) }
-        }
+        onVideoFrame(type, naluBytes, 0L, 0L, naluBytes.size)
     }
 
-    override fun onVideoFrame(type: Int, naluBytes: ByteArray, senderNanos: Long, arrivalNanos: Long) {
+    fun onVideoFrame(type: Int, naluBytes: ByteArray, senderNanos: Long, arrivalNanos: Long) {
+        onVideoFrame(type, naluBytes, senderNanos, arrivalNanos, naluBytes.size)
+    }
+
+    override fun onVideoFrame(
+        type: Int,
+        naluBytes: ByteArray,
+        senderNanos: Long,
+        arrivalNanos: Long,
+        byteCount: Int,
+    ) {
+        val count = byteCount.coerceIn(0, naluBytes.size)
         synchronized(videoOwnershipLock) {
-            if (videoClosed) return
-            videoDecoder(type).submit(naluBytes, senderNanos, arrivalNanos)
-            mirrorDecoders(type).forEach { it.submit(naluBytes) }
+            if (videoClosed) {
+                VideoFrameBuffers.give(naluBytes)
+                return
+            }
+            videoDecoder(type).submit(naluBytes, count, senderNanos, arrivalNanos)
+            mirrorDecoders(type).forEach { mirror ->
+                val copy = naluBytes.copyOf(count)
+                mirror.submit(copy, copy.size, senderNanos, arrivalNanos)
+            }
         }
     }
 
@@ -338,6 +355,11 @@ class AndroidMediaSink(
         }
         audioRenderer(id, format).start()
         if (format.audioType == "media") updateMediaAudio(id, true)
+        if (isNavigationAudio(format)) {
+            synchronized(navigationAudioIds) { navigationAudioIds.add(id) }
+            val stream = if (navigationChannel != 0) navigationChannel else 10
+            runCatching { onNavigationAudible(stream) }
+        }
     }
 
     override fun onAudioRtp(id: AudioStreamId, format: AudioFormat, rtp: ByteArray, sample: Int) {
@@ -350,6 +372,24 @@ class AndroidMediaSink(
             callEchoReferences.remove(id)
         }
         updateMediaAudio(id, false)
+        val navigationEnded = synchronized(navigationAudioIds) {
+            navigationAudioIds.remove(id) && navigationAudioIds.isEmpty()
+        }
+        if (navigationEnded) runCatching { onNavigationAudible(null) }
+    }
+
+    private fun isNavigationAudio(format: AudioFormat): Boolean {
+        val mode = if (advancedAudioChannelMapping) {
+            AudioChannelMappingMode.AUTOMOTIVE_BUS
+        } else {
+            AudioChannelMappingMode.MOBILE_COMPATIBLE
+        }
+        return AudioChannelMapper.map(
+            audioType = format.audioType,
+            payloadType = format.payloadType,
+            mode = mode,
+            navigationStreamType = navigationStreamType,
+        ).channel == AudioChannel.NAVIGATION
     }
 
     private fun updateMediaAudio(id: AudioStreamId, active: Boolean) {

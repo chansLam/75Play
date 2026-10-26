@@ -27,31 +27,44 @@ object RootNavbar {
     /** True when a usable "su" responds with uid 0 (root). */
     fun available(): Boolean = RootShell.available()
 
-    /** Hides (or restores) the navigation bar at the system level. Runs on a background thread. */
-    fun applyHidden(hidden: Boolean): Boolean = runCatching {
+    /**
+     * Hides (or restores) the navigation bar at the system level. Runs on a background thread.
+     * Killing surfaceflinger restarts this launcher, so a boot-time call must not kill it.
+     * [restartDisplay] is only for the settings switch, and only when getprop is not already
+     * the target value.
+     */
+    fun applyHidden(hidden: Boolean, restartDisplay: Boolean = false): Boolean = runCatching {
         val su = RootShell.findSu()
         if (su == null) {
             AppLog.w(TAG, "applyHidden skipped: no usable su binary found")
             return@runCatching false
         }
         val prop = if (hidden) "1" else "0"
-        // setprop → restart display stack (KitKat) → print getprop for verification.
+        val current = RootShell.exec(su, "getprop qemu.hw.mainkeys", timeoutMs = 3_000L)
+            ?.lineSequence()?.map { it.trim() }?.lastOrNull { it.isNotEmpty() }.orEmpty()
+        if (current == prop) {
+            AppLog.i(TAG, "navbar hidden=$hidden already applied (getprop=$current)")
+            return@runCatching true
+        }
+        // setprop → optionally restart display stack (KitKat) → print getprop for verification.
         // Do not force-stop the OEM launcher; that only disrupts the home shell and does not
         // rebuild NavigationBar. policy_control is Lollipop+; ignore failures on KitKat.
         val script = buildString {
             append("setprop qemu.hw.mainkeys $prop; ")
             append("setprop persist.sys.mainkeys $prop; ")
-            // Classic Freescale / KitKat path: surfaceflinger respawn reloads SystemUI + nav.
-            append("killall surfaceflinger >/dev/null 2>&1 || ")
-            append("busybox killall surfaceflinger >/dev/null 2>&1 || true; ")
-            append("killall systemui >/dev/null 2>&1 || ")
-            append("busybox killall systemui >/dev/null 2>&1 || true; ")
-            append("killall S311WT_SystemUI >/dev/null 2>&1 || ")
-            append("busybox killall S311WT_SystemUI >/dev/null 2>&1 || true; ")
-            append("am force-stop com.android.systemui >/dev/null 2>&1 || true; ")
-            append("am force-stop com.changan.systemui >/dev/null 2>&1 || true; ")
-            append("sleep 2; ")
-            append("am startservice -n com.android.systemui/.SystemUIService >/dev/null 2>&1 || true; ")
+            if (restartDisplay) {
+                // Classic Freescale / KitKat path: surfaceflinger respawn reloads SystemUI + nav.
+                append("killall surfaceflinger >/dev/null 2>&1 || ")
+                append("busybox killall surfaceflinger >/dev/null 2>&1 || true; ")
+                append("killall systemui >/dev/null 2>&1 || ")
+                append("busybox killall systemui >/dev/null 2>&1 || true; ")
+                append("killall S311WT_SystemUI >/dev/null 2>&1 || ")
+                append("busybox killall S311WT_SystemUI >/dev/null 2>&1 || true; ")
+                append("am force-stop com.android.systemui >/dev/null 2>&1 || true; ")
+                append("am force-stop com.changan.systemui >/dev/null 2>&1 || true; ")
+                append("sleep 2; ")
+                append("am startservice -n com.android.systemui/.SystemUIService >/dev/null 2>&1 || true; ")
+            }
             if (hidden) {
                 append("settings put global policy_control immersive.navigation=* >/dev/null 2>&1 || true; ")
             } else {
@@ -80,6 +93,6 @@ object RootNavbar {
      */
     fun enable(): Boolean = runCatching {
         if (RootShell.findSu() == null) return@runCatching false
-        applyHidden(true)
+        applyHidden(true, restartDisplay = true)
     }.getOrDefault(false)
 }

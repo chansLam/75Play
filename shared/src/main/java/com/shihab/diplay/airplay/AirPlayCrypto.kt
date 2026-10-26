@@ -15,6 +15,7 @@ import org.bouncycastle.crypto.signers.Ed25519Signer
 import java.nio.ByteBuffer
 import java.security.GeneralSecurityException
 import java.security.SecureRandom
+import javax.crypto.BadPaddingException
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -46,10 +47,13 @@ object AirPlayCrypto {
         PLATFORM_CHACHA_NAMES.firstNotNullOfOrNull { runCatching { Cipher.getInstance(it) }.getOrNull() }
             ?.let(::PlatformChacha)
     }
+    private val nativeNote = ThreadLocal<String?>()
+    private val directInput = ThreadLocal<ByteBuffer?>()
+    private val directOutput = ThreadLocal<ByteBuffer?>()
 
     /** Implementation used by this thread's last successful operation, for diagnostics. */
     val chachaImplementation: String
-        get() = platformState.get()?.implementation ?: "BouncyCastle"
+        get() = nativeNote.get() ?: platformState.get()?.implementation ?: "BouncyCastle"
 
     data class X25519KeyPair(val privateKey: ByteArray, val publicKey: ByteArray)
     data class Ed25519KeyPair(val privateKey: ByteArray, val publicKey: ByteArray)
@@ -108,20 +112,127 @@ object AirPlayCrypto {
         nonce: ByteArray,
         plaintext: ByteArray,
         aad: ByteArray = ByteArray(0),
-    ): ByteArray = platformChacha(Cipher.ENCRYPT_MODE, key, nonce, plaintext, aad)
-        ?: chachaSealBouncyCastle(key, nonce, plaintext, aad).also {
-            platformState.get()?.implementation = "BouncyCastle"
+    ): ByteArray {
+        if (NativeChaCha.available) {
+            val sealed = NativeChaCha.nativeSeal(key, nonce, aad, plaintext)
+                ?: throw BadPaddingException("ChaCha20-Poly1305 seal failed")
+            nativeNote.set("native")
+            return sealed
         }
+        nativeNote.set(null)
+        return platformChacha(Cipher.ENCRYPT_MODE, key, nonce, plaintext, aad)
+            ?: chachaSealBouncyCastle(key, nonce, plaintext, aad).also {
+                platformState.get()?.implementation = "BouncyCastle"
+            }
+    }
 
     fun chachaOpen(
         key: ByteArray,
         nonce: ByteArray,
         ciphertextAndTag: ByteArray,
         aad: ByteArray = ByteArray(0),
-    ): ByteArray = platformChacha(Cipher.DECRYPT_MODE, key, nonce, ciphertextAndTag, aad)
-        ?: chachaOpenBouncyCastle(key, nonce, ciphertextAndTag, aad).also {
-            platformState.get()?.implementation = "BouncyCastle"
+    ): ByteArray {
+        if (NativeChaCha.available) return openNative(key, nonce, aad, ciphertextAndTag)
+        nativeNote.set(null)
+        return platformChacha(Cipher.DECRYPT_MODE, key, nonce, ciphertextAndTag, aad)
+            ?: chachaOpenBouncyCastle(key, nonce, ciphertextAndTag, aad).also {
+                platformState.get()?.implementation = "BouncyCastle"
+            }
+    }
+
+    /**
+     * Opens ciphertext that already sits inside a reused receive buffer. The returned plaintext is a
+     * new array the caller may retain; the receive buffer can be overwritten on the next packet.
+     */
+    fun chachaOpenRange(
+        key: ByteArray,
+        nonce: ByteArray,
+        aad: ByteArray,
+        aadOffset: Int,
+        aadLength: Int,
+        sealed: ByteArray,
+        sealedOffset: Int,
+        sealedLength: Int,
+    ): ByteArray {
+        if (NativeChaCha.available) {
+            val plain = NativeChaCha.nativeOpenRange(key, nonce, aad, aadOffset, aadLength, sealed, sealedOffset, sealedLength)
+                ?: throw BadPaddingException("ChaCha20-Poly1305 tag mismatch")
+            nativeNote.set("native")
+            return plain
         }
+        return chachaOpen(
+            key,
+            nonce,
+            sealed.copyOfRange(sealedOffset, sealedOffset + sealedLength),
+            aad.copyOfRange(aadOffset, aadOffset + aadLength),
+        )
+    }
+
+    /**
+     * Decrypts [length] bytes at the start of [ciphertext] through the native cipher's reused direct
+     * buffers. The returned array is the caller's to keep.
+     */
+    fun chachaOpenDirect(
+        key: ByteArray,
+        nonce: ByteArray,
+        aad: ByteArray,
+        ciphertext: ByteArray,
+        length: Int,
+    ): ByteArray {
+        val destination = ByteArray((length - 16).coerceAtLeast(0))
+        val written = chachaOpenDirectInto(key, nonce, aad, ciphertext, length, destination)
+        return if (written == destination.size) destination else destination.copyOf(written)
+    }
+
+    /**
+     * Same as [chachaOpenDirect], writing the plaintext into [destination]. Returns the plaintext
+     * length. [destination] may be larger; bytes past the returned length are left untouched.
+     */
+    fun chachaOpenDirectInto(
+        key: ByteArray,
+        nonce: ByteArray,
+        aad: ByteArray,
+        ciphertext: ByteArray,
+        length: Int,
+        destination: ByteArray,
+    ): Int {
+        if (!NativeChaCha.available || length < 16) {
+            val sealed = if (length == ciphertext.size) ciphertext else ciphertext.copyOf(length)
+            val plain = chachaOpen(key, nonce, sealed, aad)
+            if (plain.size > destination.size) throw BadPaddingException("ChaCha20-Poly1305 plaintext does not fit")
+            plain.copyInto(destination)
+            return plain.size
+        }
+        val input = retainedDirect(directInput, length)
+        input.put(ciphertext, 0, length)
+        val output = retainedDirect(directOutput, length - 16)
+        val plainLength = NativeChaCha.nativeOpenDirect(key, nonce, aad, input, length, output)
+        if (plainLength < 0) throw BadPaddingException("ChaCha20-Poly1305 tag mismatch")
+        if (plainLength > destination.size) throw BadPaddingException("ChaCha20-Poly1305 plaintext does not fit")
+        nativeNote.set("native")
+        output.position(0)
+        output.limit(plainLength)
+        output.get(destination, 0, plainLength)
+        return plainLength
+    }
+
+    private fun openNative(key: ByteArray, nonce: ByteArray, aad: ByteArray, sealed: ByteArray): ByteArray {
+        val plain = NativeChaCha.nativeOpen(key, nonce, aad, sealed)
+            ?: throw BadPaddingException("ChaCha20-Poly1305 tag mismatch")
+        nativeNote.set("native")
+        return plain
+    }
+
+    private fun retainedDirect(slot: ThreadLocal<ByteBuffer?>, size: Int): ByteBuffer {
+        var buffer = slot.get()
+        if (buffer == null || buffer.capacity() < size) {
+            buffer = ByteBuffer.allocateDirect(size)
+            if (size <= MAX_RETAINED_BUFFER) slot.set(buffer)
+        }
+        buffer.clear()
+        buffer.limit(size)
+        return buffer
+    }
 
     /**
      * Null when the platform has no ChaCha20-Poly1305 or refuses this use of it (a desktop JDK rejects

@@ -1,8 +1,6 @@
 package com.shihab.diplay.ui
 
 import android.content.Intent
-import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Handler
 import android.view.Gravity
@@ -21,7 +19,6 @@ import com.shihab.diplay.CarAppCatalog
 import com.shihab.diplay.DiPlayPreferences
 import com.shihab.diplay.OemSettingsIntents
 import com.shihab.diplay.compat.waitForMillis
-import com.shihab.diplay.host.ImmersiveBars
 import com.shihab.diplay.host.R
 import com.shihab.diplay.ui.settings.GlassSettingsRows
 
@@ -72,15 +69,13 @@ internal class HomeAppGrid(
     /** 拖动过程中格子保持原样，只记录手指下的落点，松手再插入。中途重绘会拆掉触摸目标，手势被取消。 */
     private var hoverIndex = -1
     private var dropHighlight: View? = null
+    private var longPressArmed = false
     private val longPressRunnable = object : Runnable {
         override fun run() {
             val v = dragView ?: return
-            dragging = true
-            hoverIndex = dragIndex
-            v.isPressed = false
+            longPressArmed = true
             v.parent?.requestDisallowInterceptTouchEvent(true)
             v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-            startDragFloat(v)
         }
     }
 
@@ -89,7 +84,7 @@ internal class HomeAppGrid(
     fun buildAppListCard(ctx: android.content.Context): LinearLayout {
         val card = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundResource(GlassColors.cardBg())
+            background = HudPanelDrawable(ctx)
             setPadding(
                 LayoutMetrics.cardPadH(ctx), LayoutMetrics.cardPadV(ctx),
                 LayoutMetrics.cardPadH(ctx), LayoutMetrics.cardPadV(ctx),
@@ -119,7 +114,7 @@ internal class HomeAppGrid(
             setPadding(LayoutMetrics.ghostPadH(ctx), LayoutMetrics.ghostPadV(ctx), LayoutMetrics.ghostPadH(ctx), LayoutMetrics.ghostPadV(ctx))
             setOnClickListener { showManageDialog(ctx) }
         }
-        FocusSupport.attachStrokeOverlay(manageBtn, cornerRadiusDp = 10)
+        FocusSupport.attachStrokeOverlay(manageBtn, cornerRadiusDp = 16)
         headRow.addView(manageBtn)
         card.addView(headRow)
         card.addView(GlassSettingsRows.titleTick(ctx))
@@ -207,9 +202,8 @@ internal class HomeAppGrid(
             isClickable = true
             isFocusable = true
             setOnTouchListener { v, e -> handleTileTapAndDrag(v, e, app, grid) }
-            // 触摸短按在 OnTouchListener 里走 showAppMenu；这里补 OnClickListener 让
-            // 方向盘确定键（DPAD_CENTER/ENTER → performClick）也能打开应用菜单。
-            setOnClickListener { showAppMenu(app, this) }
+            // 触摸在 OnTouchListener 里打开；这里补方向盘确定键（DPAD_CENTER/ENTER → performClick）。
+            setOnClickListener { launchApp(app) }
             contentDescription = app.label
         }
         val icon = ImageView(ctx).apply {
@@ -237,7 +231,7 @@ internal class HomeAppGrid(
         return tile
     }
 
-    /** 应用格交互：几乎没移动的短按才打开菜单；长按后图标浮起跟随手指，松手才插入落点。滑动交给外层 ScrollView。 */
+    /** 应用格：点按打开；按住不动松手确认卸载；按住后拖动排序。滑动交给外层 ScrollView。 */
     private fun handleTileTapAndDrag(v: View, e: MotionEvent, app: CarAppCatalog.App, grid: LinearLayout): Boolean {
         val idx = visibleApps.indexOf(app)
         if (idx < 0) return false
@@ -249,6 +243,7 @@ internal class HomeAppGrid(
                 lastRawX = e.rawX
                 lastRawY = e.rawY
                 dragging = false
+                longPressArmed = false
                 dragView = v
                 v.isPressed = true
                 handler.removeCallbacks(longPressRunnable)
@@ -261,12 +256,20 @@ internal class HomeAppGrid(
                 val slop = ViewConfiguration.get(v.context).scaledTouchSlop
                 val moved = Math.abs(e.rawX - downX) > slop || Math.abs(e.rawY - downY) > slop
                 if (!dragging) {
-                    // 未长按就移动：这是滑动。取消长按，且不要 disallow，让 ScrollView 能拦截。
-                    if (moved) {
+                    if (longPressArmed && moved) {
+                        dragging = true
+                        hoverIndex = dragIndex
                         v.isPressed = false
+                        startDragFloat(v)
+                    } else if (moved) {
+                        // 未长按就移动：这是滑动。取消长按，且不要 disallow，让 ScrollView 能拦截。
+                        v.isPressed = false
+                        longPressArmed = false
                         handler.removeCallbacks(longPressRunnable)
+                        return true
+                    } else {
+                        return true
                     }
-                    return true
                 }
                 moveDragFloat(e.rawX, e.rawY)
                 // 落点跟浮起的图标，不跟被图标挡住的指尖。格子先不动，避免拆掉当前触摸目标。
@@ -281,16 +284,21 @@ internal class HomeAppGrid(
                 v.isPressed = false
                 handler.removeCallbacks(longPressRunnable)
                 val wasDragging = dragging
+                val armed = longPressArmed
+                longPressArmed = false
                 val slop = ViewConfiguration.get(v.context).scaledTouchSlop
                 val moved = Math.abs(e.rawX - downX) > slop || Math.abs(e.rawY - downY) > slop
                 val changed = wasDragging && placeDraggedApp(app)
                 endDrag(grid, save = changed)
                 // ScrollView 抢走手势时走 CANCEL。这里只认几乎没移动的抬手。
-                if (!wasDragging && !moved) showAppMenu(app, v)
+                if (!wasDragging && !moved) {
+                    if (armed) confirmUninstall(app) else launchApp(app)
+                }
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
                 v.isPressed = false
+                longPressArmed = false
                 handler.removeCallbacks(longPressRunnable)
                 endDrag(grid, save = false)
                 return true
@@ -464,82 +472,6 @@ internal class HomeAppGrid(
 
     private fun saveOrder(pkgs: List<String>) {
         DiPlayPreferences.saveHomeAppOrder(fragment.requireContext(), pkgs)
-    }
-
-    /** 单击应用 → 应用菜单（启动 / 卸载）。不抢焦点，避免车机右侧系统导航栏常驻不消失。 */
-    private fun showAppMenu(app: CarAppCatalog.App, anchor: View? = null) {
-        val act = fragment.activity ?: return
-        val ctx = anchor?.context ?: act
-        val col = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundResource(GlassColors.dialogBg())
-            setPadding(dp(4), dp(4), dp(4), dp(4))
-        }
-        lateinit var popup: PopupWindow
-        fun menuItem(label: String, danger: Boolean, click: () -> Unit) {
-            col.addView(TextView(ctx).apply {
-                text = label
-                textSize = 14f
-                setTextColor(if (danger) GlassColors.WARNING else GlassColors.INK)
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(16), dp(12), dp(16), dp(12))
-                setOnClickListener { popup.dismiss(); click() }
-            })
-        }
-        menuItem(ctx.getString(R.string.home_launch), false) { launchApp(app) }
-        col.addView(View(ctx).apply {
-            setBackgroundColor(GlassColors.DIVIDER)
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1)
-        })
-        menuItem(ctx.getString(R.string.home_uninstall), true) { confirmUninstall(app) }
-
-        val popupW = dp(148)
-        col.measure(
-            View.MeasureSpec.makeMeasureSpec(popupW, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-        )
-        val popupH = col.measuredHeight.coerceAtLeast(dp(80))
-        // focusable=false：不抢 Activity 焦点，系统导航栏不会被唤出后常驻。
-        popup = PopupWindow(col, popupW, popupH, /* focusable = */ false)
-        HomeAppMenu.track(popup)
-        popup.isOutsideTouchable = true
-        popup.isTouchable = true
-        popup.inputMethodMode = PopupWindow.INPUT_METHOD_NOT_NEEDED
-        popup.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
-        col.systemUiVisibility = ImmersiveBars.visibilityFlags()
-
-        ImmersiveBars.applyToWindow(act.window, force = true)
-
-        val dm = ctx.resources.displayMetrics
-        val margin = dp(8)
-        // 本车机系统导航栏在右侧；预留宽度避免菜单被黑条裁切。
-        val navInset = run {
-            val id = android.content.res.Resources.getSystem()
-                .getIdentifier("navigation_bar_width", "dimen", "android")
-            val px = if (id > 0) android.content.res.Resources.getSystem().getDimensionPixelSize(id) else 0
-            if (px > 0) px else dm.widthPixels / 12
-        }
-        val maxX = dm.widthPixels - navInset - margin - popupW
-        if (anchor != null) {
-            val loc = IntArray(2)
-            anchor.getLocationOnScreen(loc)
-            // 贴近触发格：优先左对齐；右侧不够则右对齐；竖直优先正下方。
-            var x = loc[0]
-            if (x + popupW > maxX) x = loc[0] + anchor.width - popupW
-            var y = loc[1] + anchor.height + dp(2)
-            if (y + popupH > dm.heightPixels - margin) y = loc[1] - popupH - dp(2)
-            x = x.coerceIn(margin, maxX.coerceAtLeast(margin))
-            y = y.coerceIn(margin, (dm.heightPixels - margin - popupH).coerceAtLeast(margin))
-            popup.showAtLocation(anchor, Gravity.NO_GRAVITY, x, y)
-        } else {
-            popup.showAtLocation(act.window.decorView, Gravity.CENTER, 0, 0)
-        }
-        ImmersiveBars.keepHiddenWhile(act) { popup.isShowing }
-        popup.setOnDismissListener {
-            HomeAppMenu.clear(popup)
-            ImmersiveBars.applyToWindow(act.window, force = true)
-        }
     }
 
     /** 右上角"管理"→ 多选管理弹窗：勾选=显示、取消=隐藏，底部系统/非系统分类复选联动。 */

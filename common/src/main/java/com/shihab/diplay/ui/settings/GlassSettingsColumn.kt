@@ -5,7 +5,9 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import com.shihab.diplay.ui.GlassColors
+import com.shihab.diplay.ui.HudPanelDrawable
 import com.shihab.diplay.ui.LayoutMetrics
+import com.shihab.diplay.ui.SpindleDivider
 
 /**
  * Shared glass column card for Setting / About. Wide screens use one lead column and a right stack.
@@ -20,7 +22,7 @@ object GlassSettingsColumn {
             layoutParams = LinearLayout.LayoutParams(1, LayoutMetrics.cardPadV(ctx))
         })
         return ScrollView(ctx).apply {
-            setBackgroundResource(GlassColors.cardBg())
+            background = HudPanelDrawable(ctx)
             val padH = LayoutMetrics.cardPadH(ctx)
             val padV = LayoutMetrics.cardPadV(ctx)
             setPadding(padH, padV, padH, padV)
@@ -38,7 +40,7 @@ object GlassSettingsColumn {
     fun titledColumn(ctx: Context, title: String, build: (LinearLayout) -> Unit): LinearLayout {
         val outer = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundResource(GlassColors.cardBg())
+            background = HudPanelDrawable(ctx)
             val padH = LayoutMetrics.cardPadH(ctx)
             val padV = LayoutMetrics.cardPadV(ctx)
             setPadding(padH, padV, padH, 0)
@@ -83,7 +85,9 @@ object GlassSettingsColumn {
         val side = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         stack.forEachIndexed { index, (title, build) ->
             if (index > 0) {
-                side.addView(View(ctx), LinearLayout.LayoutParams(1, gapPx))
+                side.addView(SpindleDivider(ctx), LinearLayout.LayoutParams(
+                    android.view.ViewGroup.LayoutParams.MATCH_PARENT, gapPx,
+                ))
             }
             side.addView(
                 titledColumn(ctx, title, build),
@@ -94,7 +98,10 @@ object GlassSettingsColumn {
                 ),
             )
         }
-        root.addView(View(ctx), LinearLayout.LayoutParams(gapPx, 1))
+        root.addView(SpindleDivider(ctx).apply { vertical = true }, LinearLayout.LayoutParams(
+            gapPx,
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
         root.addView(
             side,
             LinearLayout.LayoutParams(0, android.view.ViewGroup.LayoutParams.MATCH_PARENT, 1f),
@@ -113,10 +120,10 @@ object GlassSettingsColumn {
         val gapPx = LayoutMetrics.colGap(ctx)
         sections.forEachIndexed { index, (title, build) ->
             if (index > 0) {
-                cols.addView(View(ctx), if (wide) {
-                    LinearLayout.LayoutParams(gapPx, 1)
+                cols.addView(SpindleDivider(ctx).apply { vertical = wide }, if (wide) {
+                    LinearLayout.LayoutParams(gapPx, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
                 } else {
-                    LinearLayout.LayoutParams(1, gapPx)
+                    LinearLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, gapPx)
                 })
             }
             val lp = if (wide) {

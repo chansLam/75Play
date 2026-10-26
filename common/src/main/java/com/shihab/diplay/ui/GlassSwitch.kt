@@ -11,7 +11,7 @@ import android.view.View
 import android.widget.LinearLayout
 
 /**
- * 圆角开关：开=青蓝轨道，关=灰轨道。
+ * 圆角开关：开=系统蓝轨道，关=透底玻璃轨道，圆钮是白的。
  * API 19 用 RectF 版 drawRoundRect；不依赖系统 Switch。
  * [compact] 保留兼容；车机短屏尺寸改由 [LayoutMetrics] 统一放大。
  */
@@ -75,16 +75,13 @@ class GlassSwitch @JvmOverloads constructor(
         track.style = Paint.Style.FILL
         track.shader = LinearGradient(
             0f, 0f, 0f, h.toFloat(),
-            blend(grayColor(), GlassColors.ACCENT_LIFT, progress),
-            blend(grayColor(), GlassColors.ACCENT_DEEP, progress),
+            blend(offTop(), GlassColors.ACCENT_LIFT, progress),
+            blend(offBottom(), GlassColors.ACCENT_DEEP, progress),
             Shader.TileMode.CLAMP,
         )
         canvas.drawRoundRect(rect, r, r, track)
         track.shader = null
-        track.style = Paint.Style.STROKE
-        track.strokeWidth = 1f
-        track.color = if (GlassColors.isDark) 0x33FFFFFF else 0x66FFFFFF
-        canvas.drawRoundRect(rect, r, r, track)
+        track.style = Paint.Style.FILL
         val cy = h / 2f
         val cx = knobD / 2f + (w - knobD) * progress
         val kr = knobD / 2f
@@ -107,7 +104,9 @@ class GlassSwitch @JvmOverloads constructor(
         return (channel(24) shl 24) or (channel(16) shl 16) or (channel(8) shl 8) or channel(0)
     }
 
-    private fun grayColor(): Int = if (GlassColors.isDark) 0xFF3A4654.toInt() else 0xFFB7C6D4.toInt()
+    private fun offTop(): Int = if (GlassColors.isDark) 0x47FFFFFF else 0x24000000
+
+    private fun offBottom(): Int = if (GlassColors.isDark) 0x28FFFFFF else 0x14000000
 
     private fun animateTo(target: Float) {
         animator?.cancel()

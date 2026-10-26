@@ -2,6 +2,7 @@ package com.shihab.diplay.media
 
 import android.view.Surface
 import com.shihab.diplay.airplay.VideoCodec
+import com.shihab.diplay.airplay.VideoFrameBuffers
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
@@ -13,6 +14,8 @@ internal sealed interface VideoJob {
         /** The iPhone's frame time and when the frame arrived (System.nanoTime), 0 when unknown. */
         val senderNanos: Long = 0L,
         val arrivalNanos: Long = 0L,
+        /** Valid prefix of [nalus]. Storage from the frame pool may be larger than the frame. */
+        val length: Int = nalus.size,
     ) : VideoJob
     data class SurfaceChanged(val surface: Surface?) : VideoJob
     /** Stop rendering to a surface that is going away; completes [request] once the codec has let go. */
@@ -27,8 +30,8 @@ internal class VideoReferenceChain {
     var needsKeyFrame = true
         private set
     fun reset() { needsKeyFrame = true }
-    fun accepts(bytes: ByteArray, codec: VideoCodec): Boolean =
-        !needsKeyFrame || MediaCodecSupport.isRandomAccess(bytes, codec)
+    fun accepts(bytes: ByteArray, codec: VideoCodec, length: Int = bytes.size): Boolean =
+        !needsKeyFrame || MediaCodecSupport.isRandomAccess(bytes, codec, length)
     fun onQueued() { needsKeyFrame = false }
 }
 
@@ -52,14 +55,18 @@ internal class VideoDecodeQueue(
 
     @Synchronized fun offer(job: VideoJob) {
         if (job is VideoJob.Frame) {
-            if (pendingFrames >= maxFrames || pendingBytes + job.nalus.size > maxBytes) {
+            val bytes = job.length.coerceIn(0, job.nalus.size)
+            if (pendingFrames >= maxFrames || pendingBytes + bytes > maxBytes) {
                 discardFrames()
                 jobs.offer(VideoJob.Resync)
             }
             // An oversized frame is an unusable reference chain, not retained in the queue.
-            if (job.nalus.size > maxBytes) return
+            if (bytes > maxBytes) {
+                VideoFrameBuffers.give(job.nalus)
+                return
+            }
             pendingFrames++
-            pendingBytes += job.nalus.size
+            pendingBytes += bytes
         }
         jobs.offer(job)
     }
@@ -68,7 +75,12 @@ internal class VideoDecodeQueue(
         val iterator = jobs.iterator()
         while (iterator.hasNext()) {
             val item = iterator.next()
-            if (item is VideoJob.Frame || item is VideoJob.Resync) iterator.remove()
+            if (item is VideoJob.Frame) {
+                VideoFrameBuffers.give(item.nalus)
+                iterator.remove()
+            } else if (item is VideoJob.Resync) {
+                iterator.remove()
+            }
         }
         pendingFrames = 0
         pendingBytes = 0L
@@ -81,7 +93,7 @@ internal class VideoDecodeQueue(
         return synchronized(this) {
             if (job is VideoJob.Frame) {
                 pendingFrames = maxOf(0, pendingFrames - 1)
-                pendingBytes = maxOf(0L, pendingBytes - job.nalus.size)
+                pendingBytes = maxOf(0L, pendingBytes - job.length.coerceIn(0, job.nalus.size))
             }
             job
         }

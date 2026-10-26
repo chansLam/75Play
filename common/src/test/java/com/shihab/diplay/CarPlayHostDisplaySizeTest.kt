@@ -320,7 +320,7 @@ class CarPlayHostDisplaySizeTest {
         allowStartup()
         startSession()
         applySize(990, 1920)
-        setField("vpnReady", false)
+        setField("wirelessReady", false)
 
         finishTeardown()
 
@@ -426,7 +426,7 @@ class CarPlayHostDisplaySizeTest {
     private fun allowStartup() {
         setField("airPlayIdentity", AirPlayIdentity.generate())
         setField("mfiTarget", MfiTarget.LOCAL)
-        setField("vpnReady", true)
+        setField("wirelessReady", true)
         setField("microphonePermissionResolved", true)
     }
 

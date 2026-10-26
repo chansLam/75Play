@@ -56,8 +56,9 @@ object MediaCodecSupport {
     }
 
     /** Converts CarPlay's length-prefixed NAL units into an Annex B byte stream. */
-    fun toAnnexB(lengthPrefixed: ByteArray): ByteArray {
-        if (lengthPrefixed.size >= 4 &&
+    fun toAnnexB(lengthPrefixed: ByteArray, length: Int = lengthPrefixed.size): ByteArray {
+        val limit = length.coerceIn(0, lengthPrefixed.size)
+        if (limit >= 4 &&
             lengthPrefixed[0] == 0.toByte() &&
             lengthPrefixed[1] == 0.toByte() &&
             lengthPrefixed[2] == 0.toByte() &&
@@ -68,46 +69,47 @@ object MediaCodecSupport {
 
         var inputOffset = 0
         var outputSize = 0
-        while (inputOffset + 4 <= lengthPrefixed.size) {
-            val length = readU32Be(lengthPrefixed, inputOffset)
+        while (inputOffset + 4 <= limit) {
+            val nalu = readU32Be(lengthPrefixed, inputOffset)
             inputOffset += 4
-            if (length <= 0 || length > lengthPrefixed.size - inputOffset) return ByteArray(0)
-            if (length > Int.MAX_VALUE - outputSize - START_CODE.size) return ByteArray(0)
-            outputSize += START_CODE.size + length
-            inputOffset += length
+            if (nalu <= 0 || nalu > limit - inputOffset) return ByteArray(0)
+            if (nalu > Int.MAX_VALUE - outputSize - START_CODE.size) return ByteArray(0)
+            outputSize += START_CODE.size + nalu
+            inputOffset += nalu
         }
-        if (outputSize == 0 || inputOffset != lengthPrefixed.size) return ByteArray(0)
+        if (outputSize == 0 || inputOffset != limit) return ByteArray(0)
 
         val output = ByteArray(outputSize)
         var offset = 0
         var outputOffset = 0
-        while (offset + 4 <= lengthPrefixed.size) {
-            val length = readU32Be(lengthPrefixed, offset)
+        while (offset + 4 <= limit) {
+            val nalu = readU32Be(lengthPrefixed, offset)
             offset += 4
-            if (length <= 0 || offset + length > lengthPrefixed.size) break
+            if (nalu <= 0 || offset + nalu > limit) break
             START_CODE.copyInto(output, outputOffset)
             outputOffset += START_CODE.size
-            lengthPrefixed.copyInto(output, outputOffset, offset, offset + length)
-            outputOffset += length
-            offset += length
+            lengthPrefixed.copyInto(output, outputOffset, offset, offset + nalu)
+            outputOffset += nalu
+            offset += nalu
         }
         return output
     }
 
     /** IDR (AVC) or IRAP (HEVC) starts an independently decodable reference chain. */
-    fun isRandomAccess(annexB: ByteArray, codec: VideoCodec): Boolean {
+    fun isRandomAccess(annexB: ByteArray, codec: VideoCodec, length: Int = annexB.size): Boolean {
+        val limit = length.coerceIn(0, annexB.size)
         var cursor = 0
-        while (cursor + 3 < annexB.size) {
+        while (cursor + 3 < limit) {
             val prefix = when {
                 annexB[cursor] != 0.toByte() || annexB[cursor + 1] != 0.toByte() -> 0
                 annexB[cursor + 2] == 1.toByte() -> 3
                 annexB[cursor + 2] == 0.toByte() && annexB[cursor + 3] == 1.toByte() -> 4
                 else -> 0
             }
-            if (prefix > 0 && cursor + prefix < annexB.size) {
+            if (prefix > 0 && cursor + prefix < limit) {
                 val header = annexB[cursor + prefix].toInt() and 255
                 if (codec == VideoCodec.H264 && header and 31 == 5) return true
-                if (codec == VideoCodec.H265 && cursor + prefix + 1 < annexB.size &&
+                if (codec == VideoCodec.H265 && cursor + prefix + 1 < limit &&
                     (header shr 1) and 63 in 16..21) return true
                 cursor += prefix
             } else cursor++
@@ -129,6 +131,19 @@ object MediaCodecSupport {
         header[5] = (((frameLength and 0x7) shl 5) or 0x1f).toByte()
         header[6] = 0xfc.toByte()
         return header + accessUnit
+    }
+
+    /** Writes a 7-byte ADTS header for an AAC-LC frame of [frameLength] bytes, header included. */
+    fun putAdtsHeader(output: java.nio.ByteBuffer, frameLength: Int, sampleRate: Int, channels: Int) {
+        val frequencyIndex = aacFrequencyIndex(sampleRate)
+        val channelConfig = channels.coerceIn(1, 7)
+        output.put(0xff.toByte())
+        output.put(0xf1.toByte())
+        output.put(((1 shl 6) or (frequencyIndex shl 2) or (channelConfig ushr 2)).toByte())
+        output.put((((channelConfig and 0x3) shl 6) or (frameLength ushr 11)).toByte())
+        output.put(((frameLength ushr 3) and 0xff).toByte())
+        output.put((((frameLength and 0x7) shl 5) or 0x1f).toByte())
+        output.put(0xfc.toByte())
     }
 
     /** Extracts one RFC 3640 AAC access unit from an RTP payload. */

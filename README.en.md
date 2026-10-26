@@ -6,7 +6,7 @@ An open-source wireless CarPlay receiver for the factory head unit (`OS_S311-WT`
 
 > Independent implementation, **not** Apple-certified, not affiliated with Apple or Changan. Set up while safely parked.
 >
-> Modified and optimized from [DiPlay-Legacy-Android](https://github.com/programmerguohuajing/DiPlay-Legacy-Android). Current release **v2.0.1** — see [CHANGELOG](CHANGELOG.md).
+> Modified and optimized from [DiPlay-Legacy-Android](https://github.com/programmerguohuajing/DiPlay-Legacy-Android). Current release **v2.0.2** — see [CHANGELOG](CHANGELOG.md).
 
 [Download APK](https://github.com/chansLam/75Play/releases) · [Project site](https://chansLam.github.io/75Play/en/) · [中文](README.md)
 

@@ -1,22 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 导航 / 顶栏（暗）：半透墨玻璃，夜景能透过来。 -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item>
-        <shape>
-            <gradient
-                android:angle="270"
-                android:startColor="#C00A1428"
-                android:endColor="#8C081420" />
-        </shape>
-    </item>
-    <item>
-        <shape>
-            <gradient
-                android:angle="270"
-                android:startColor="#1A7EB8FF"
-                android:centerColor="#00000000"
-                android:endColor="#00000000"
-                android:centerY="0.2" />
-        </shape>
-    </item>
-</layer-list>
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#CC1C1C1E" />
+</shape>

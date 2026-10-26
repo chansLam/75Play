@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // UI copy and visual language adapted from DiAuto. See docs/THIRD_PARTY_NOTICES.md.
 package com.shihab.diplay
+import com.shihab.diplay.airplay.CarPlayMediaButton
 import com.shihab.diplay.connect.ShellConnectCoordinator
 import com.shihab.diplay.connect.ShellDiagnostics
 import com.shihab.diplay.connect.ShellNetworkActions
@@ -307,7 +308,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         } else {
             Thread({
                 AsyncDiagnosticLog.append(ActiveSessionLog.current, "RootNavbar: restore requested")
-                val ok = RootNavbar.applyHidden(false)
+                val ok = RootNavbar.applyHidden(false, restartDisplay = true)
                 AsyncDiagnosticLog.append(ActiveSessionLog.current, "RootNavbar: restore result=$ok")
                 if (!ok) {
                     // Keep the preference as "hide requested" so boot will retry, and tell the driver.
@@ -737,6 +738,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
 
     override fun onResume() {
         super.onResume()
+        CarPlayVolumeTarget.attach(this)
         radioProbe.start()
         // 主题切换/环境光/定时变化时重建 shell（Fragment 重新渲染读新色板）。
         if (applyNightMode()) {
@@ -788,6 +790,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         }
     }
     override fun onPause() {
+        CarPlayVolumeTarget.detach(this)
         userNavigatedFromCarPlay = false
         cancelKeyLearning()
         pausedForAdbSwitchChange = adbSwitchChangePending
@@ -967,7 +970,15 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
             }
             WheelZoomKeys.Action.CONSUME
         }
-        return action != WheelZoomKeys.Action.PASS || super.dispatchKeyEvent(event)
+        if (action != WheelZoomKeys.Action.PASS) return true
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 &&
+            CarPlayBackgroundSession.hasSession()) {
+            CarPlayMediaButton.forKeyCode(event.keyCode)?.let { index ->
+                CarPlayMediaKeys.onHardwareMediaButton(index, KeyEvent.keyCodeToString(event.keyCode))
+                return true
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     private fun audioModeName(): String = when (
@@ -1277,20 +1288,20 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
             setupError != null -> {
                 label = getString(R.string.setup_needs_attention)
                 color = GlassColors.ALERT
-                fill = 0x33FBBF24
-                stroke = 0x66FBBF24
+                fill = 0x33FFD60A
+                stroke = 0x66FFD60A
             }
             active -> {
                 label = getString(R.string.carplay_connected)
                 color = GlassColors.SUCCESS
-                fill = 0x3322C55E
-                stroke = 0x6622C55E
+                fill = 0x3330D158
+                stroke = 0x6630D158
             }
             running -> {
                 label = getString(R.string.home_connecting)
                 color = GlassColors.WARNING
-                fill = 0x33FB923C
-                stroke = 0x66FB923C
+                fill = 0x33FF9F0A
+                stroke = 0x66FF9F0A
             }
             else -> {
                 label = getString(R.string.home_not_connected)

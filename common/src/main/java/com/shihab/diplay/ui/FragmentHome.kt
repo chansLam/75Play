@@ -77,10 +77,10 @@ class FragmentHome : Fragment() {
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
         }
         below.addView(buildModeCard(ctx), modeLp)
-        below.addView(View(ctx), if (LayoutMetrics.isWide(ctx)) {
-            LinearLayout.LayoutParams(gap, 1)
+        below.addView(SpindleDivider(ctx).apply { vertical = LayoutMetrics.isWide(ctx) }, if (LayoutMetrics.isWide(ctx)) {
+            LinearLayout.LayoutParams(gap, ViewGroup.LayoutParams.MATCH_PARENT)
         } else {
-            LinearLayout.LayoutParams(1, gap)
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, gap)
         })
         val appsLp = if (LayoutMetrics.isWide(ctx)) {
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, LayoutMetrics.homeAppsWeight(ctx))
@@ -177,7 +177,7 @@ class FragmentHome : Fragment() {
         })
         flowView = ConnectFlowView(ctx).apply { visibility = View.GONE }
         heroBlock.addView(flowView, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, LayoutMetrics.connectFlowH(ctx),
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply { topMargin = heroGap })
         heroMain = label(ctx, "", LayoutMetrics.heroSubSize(ctx), GlassColors.ACCENT).apply {
             gravity = Gravity.CENTER
@@ -199,15 +199,7 @@ class FragmentHome : Fragment() {
         content.addView(topHalf, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f,
         ))
-        topHalf.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
-            val reserve = heroMain.height + flowView.height + heroGap * 3 + dp(8)
-            val side = (minOf(v.width, v.height - reserve) - dp(4)).coerceAtLeast(dp(96))
-            val lp = heroBtn.layoutParams as? LinearLayout.LayoutParams ?: return@addOnLayoutChangeListener
-            if (lp.width == side && lp.height == side) return@addOnLayoutChangeListener
-            lp.width = side
-            lp.height = side
-            heroBtn.layoutParams = lp
-        }
+        topHalf.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ -> fitConnectOrb(v) }
         val bottomHalf = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         val btRow = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -220,7 +212,7 @@ class FragmentHome : Fragment() {
             ellipsize = android.text.TextUtils.TruncateAt.END
         }.also { bluetoothDeviceText = it }
         btRow.addView(btView, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        btRow.addView(GlassSettingsRows.ghostButton(ctx, ctx.getString(R.string.home_choose_device), cornerRadiusDp = 10) { host.choosePhone() })
+        btRow.addView(GlassSettingsRows.ghostButton(ctx, ctx.getString(R.string.home_choose_device), cornerRadiusDp = 14) { host.choosePhone() })
         bottomHalf.addView(btRow)
         val modeRadius = LayoutMetrics.modeTabRadiusDp(ctx)
         val modeRow = LinearLayout(ctx).apply {
@@ -231,7 +223,6 @@ class FragmentHome : Fragment() {
             minimumHeight = LayoutMetrics.modeTabMinH(ctx)
             background = android.graphics.drawable.GradientDrawable().apply {
                 setColor(GlassColors.CHIP_IDLE_FILL)
-                setStroke(dp(1), GlassColors.GLASS_EDGE)
                 cornerRadius = dp(modeRadius).toFloat()
             }
         }
@@ -241,19 +232,13 @@ class FragmentHome : Fragment() {
             ctx.getString(R.string.home_mode_car_hotspot),
             ctx.getString(R.string.home_mode_lan),
         )
+        val tabInset = dp(3)
         modeKeys.forEachIndexed { index, key ->
-            if (index > 0) {
-                modeRow.addView(View(ctx).apply {
-                    setBackgroundColor(GlassColors.DIVIDER)
-                }, LinearLayout.LayoutParams(dp(1), ViewGroup.LayoutParams.MATCH_PARENT).apply {
-                    topMargin = dp(10)
-                    bottomMargin = dp(10)
-                })
-            }
-            val pos = modeTabPos(index, modeKeys.size)
-            val tab = modeTab(ctx, modeLabels[index], pos) { switchTab(key) }
+            val tab = modeTab(ctx, modeLabels[index]) { switchTab(key) }
             tabButtons[key] = tab
-            modeRow.addView(tab, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+            modeRow.addView(tab, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
+                setMargins(tabInset, tabInset, tabInset, tabInset)
+            })
         }
         bottomHalf.addView(modeRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, LayoutMetrics.modeTabMinH(ctx)).apply {
             topMargin = heroGap
@@ -299,19 +284,10 @@ class FragmentHome : Fragment() {
         return content
     }
 
-    private enum class ModeTabPos { FIRST, MIDDLE, LAST }
-
-    private fun modeTabPos(index: Int, count: Int): ModeTabPos = when (index) {
-        0 -> ModeTabPos.FIRST
-        count - 1 -> ModeTabPos.LAST
-        else -> ModeTabPos.MIDDLE
-    }
-
     /**
-     * 连接方式分段项：选中为青渐变；未选中透明（露出整条轨道底）。
-     * tag 持有标题和分段位置，避免中间段出现圆角。
+     * 连接方式分段：轨道是玻璃槽，选中项是一颗系统蓝胶囊，字是白的。
      */
-    private fun modeTab(ctx: android.content.Context, text: String, pos: ModeTabPos, click: () -> Unit): View {
+    private fun modeTab(ctx: android.content.Context, text: String, click: () -> Unit): View {
         val label = TextView(ctx).apply {
             this.text = text
             textSize = LayoutMetrics.modeTabTextSize(ctx)
@@ -331,10 +307,9 @@ class FragmentHome : Fragment() {
             isClickable = true
             isFocusable = true
             setOnClickListener { click() }
-            // 焦点高亮：跟随当前选中态重画，失焦还原。rebuildTab 通过 tag 更新 visual.on。
-            val visual = ModeTabVisual(label, pos, on = false)
+            val visual = ModeTabVisual(label, on = false)
             fun render(target: View, focused: Boolean) {
-                target.background = if (focused) modeTabFocusedBg(ctx, visual.on, pos) else modeTabBg(ctx, visual.on, pos)
+                target.background = if (focused) modeTabFocusedBg(ctx, visual.on) else modeTabBg(ctx, visual.on)
             }
             render(this, false)
             setOnFocusChangeListener { v, focused -> render(v, focused) }
@@ -343,38 +318,30 @@ class FragmentHome : Fragment() {
         }
     }
 
-    /** 焦点态：同选中/未选中形状，描边加粗为 2dp 青。 */
+    /** 焦点态：同选中/未选中形状，描边加粗为 2dp 系统蓝。 */
     private fun modeTabFocusedBg(
         ctx: android.content.Context,
         on: Boolean,
-        pos: ModeTabPos,
-    ): android.graphics.drawable.GradientDrawable = modeTabBg(ctx, on, pos).apply {
+    ): android.graphics.drawable.GradientDrawable = modeTabBg(ctx, on).apply {
         setStroke(dp(2), GlassColors.ACCENT)
     }
 
     private fun modeTabBg(
         ctx: android.content.Context,
         on: Boolean,
-        pos: ModeTabPos,
     ): android.graphics.drawable.GradientDrawable {
         val r = dp(LayoutMetrics.modeTabRadiusDp(ctx)).toFloat()
-        val radii = when (pos) {
-            ModeTabPos.FIRST -> floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r)
-            ModeTabPos.LAST -> floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f)
-            ModeTabPos.MIDDLE -> FloatArray(8) { 0f }
-        }
         return if (on) {
             android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
                 intArrayOf(GlassColors.ACCENT_LIFT, GlassColors.ACCENT_DEEP),
             ).apply {
-                setStroke(dp(1), 0x66FFFFFF)
-                cornerRadii = radii
+                cornerRadius = r
             }
         } else {
             android.graphics.drawable.GradientDrawable().apply {
                 setColor(android.graphics.Color.TRANSPARENT)
-                cornerRadii = radii
+                cornerRadius = r
             }
         }
     }
@@ -421,7 +388,7 @@ class FragmentHome : Fragment() {
             visual.label.setTextColor(
                 if (active) GlassColors.NAV_SELECTED_TEXT else GlassColors.NAV_UNSELECTED,
             )
-            btn.background = if (btn.isFocused) modeTabFocusedBg(ctx, active, visual.pos) else modeTabBg(ctx, active, visual.pos)
+            btn.background = if (btn.isFocused) modeTabFocusedBg(ctx, active) else modeTabBg(ctx, active)
         }
         tabContent.removeAllViews()
         tabContent.addView(connectionTabs.build(ctx, tab))
@@ -483,6 +450,28 @@ class FragmentHome : Fragment() {
             },
         )
         if (::disconnectDivider.isInitialized) disconnectDivider.visibility = showDisconnect
+        (heroBtn.parent?.parent as? View)?.let { top -> top.post { fitConnectOrb(top) } }
+    }
+
+    /** 连接钮放大时给五步说明和当前阶段句留出高度，避免被卡片裁掉。 */
+    private fun fitConnectOrb(top: View) {
+        if (!isAdded || top.width <= 0 || top.height <= 0 || !::heroBtn.isInitialized) return
+        val ctx = top.context
+        fun px(v: Int) = GlassColors.dp(ctx, v)
+        val flowH = if (flowView.visibility == View.GONE) {
+            0
+        } else {
+            flowView.height.coerceAtLeast(LayoutMetrics.connectFlowH(ctx))
+        }
+        val heroH = heroMain.height.coerceAtLeast(heroMain.minimumHeight)
+        val gap = LayoutMetrics.heroGap(ctx)
+        val reserve = heroH + flowH + gap * 3 + px(8)
+        val side = (minOf(top.width, top.height - reserve) - px(4)).coerceAtLeast(px(72))
+        val lp = heroBtn.layoutParams as? LinearLayout.LayoutParams ?: return
+        if (lp.width == side && lp.height == side) return
+        lp.width = side
+        lp.height = side
+        heroBtn.layoutParams = lp
     }
 
     private fun refresh() {
@@ -496,7 +485,7 @@ class FragmentHome : Fragment() {
         orientation = LinearLayout.VERTICAL
         clipChildren = true
         clipToPadding = true
-        setBackgroundResource(GlassColors.cardBg())
+        background = HudPanelDrawable(ctx)
         setPadding(
             LayoutMetrics.cardPadH(ctx), LayoutMetrics.cardPadV(ctx),
             LayoutMetrics.cardPadH(ctx), LayoutMetrics.cardPadV(ctx),
@@ -514,11 +503,11 @@ class FragmentHome : Fragment() {
     private fun space(ctx: android.content.Context, h: Int): View =
         View(ctx).apply { layoutParams = LinearLayout.LayoutParams(1, dp(h)) }
 
-    private fun divider(ctx: android.content.Context): View = View(ctx).apply {
-        setBackgroundColor(GlassColors.DIVIDER)
+    private fun divider(ctx: android.content.Context): View = SpindleDivider(ctx).apply {
         val g = LayoutMetrics.dividerGap(ctx)
-        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1).apply {
-            topMargin = g; bottomMargin = g
+        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(8)).apply {
+            topMargin = g
+            bottomMargin = g
         }
     }
 
@@ -539,9 +528,9 @@ class FragmentHome : Fragment() {
             minimumHeight = h
             setPadding(LayoutMetrics.ghostPadH(ctx), LayoutMetrics.ghostPadV(ctx), LayoutMetrics.ghostPadH(ctx), LayoutMetrics.ghostPadV(ctx))
             setOnClickListener { click() }
-            FocusSupport.attachStrokeOverlay(this, cornerRadiusDp = 10)
+            FocusSupport.attachStrokeOverlay(this, cornerRadiusDp = 14)
         }
 
     /** 连接方式分段项的可视状态：label、形状、是否选中。tag 持有者。 */
-    private class ModeTabVisual(val label: TextView, val pos: ModeTabPos, var on: Boolean)
+    private class ModeTabVisual(val label: TextView, var on: Boolean)
 }

@@ -119,7 +119,7 @@ internal class HomeConnectionTabs(
         val textSize = LayoutMetrics.homeBodyTextSize(ctx)
         val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         if (!host.isCarHotspotEnabled()) {
-            col.addView(GlassSettingsRows.ghostButton(ctx, ctx.getString(R.string.home_open_car_hotspot), cornerRadiusDp = 10) {
+            col.addView(GlassSettingsRows.ghostButton(ctx, ctx.getString(R.string.home_open_car_hotspot), cornerRadiusDp = 14) {
                 Thread({
                     host.openCarHotspot()
                     home.view?.post { if (home.isAdded) refresh() }
@@ -169,7 +169,7 @@ internal class HomeConnectionTabs(
             wifiRow.addView(GlassSettingsRows.capVal(ctx, cur, if (connecting) GlassColors.CAP_TEXT else GlassColors.SUCCESS))
             col.addView(wifiRow)
             col.addView(
-                GlassSettingsRows.ghostButton(ctx, ctx.getString(R.string.home_choose_other_wifi), cornerRadiusDp = 10) {
+                GlassSettingsRows.ghostButton(ctx, ctx.getString(R.string.home_choose_other_wifi), cornerRadiusDp = 14) {
                     showWifiPickerDialog(excludeSsid = systemSsid.ifBlank { cur })
                 },
                 lpFull(ctx, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
