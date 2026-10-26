@@ -22,6 +22,8 @@ class ConnectFlowView(context: Context) : View(context) {
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
     private val track = RectF()
+    /** 液体已填充段，复用避免每帧分配。drawRoundRect(RectF,…) 是 API 1 重载；float 重载要到 API 21 才有。 */
+    private val liquid = RectF()
 
     fun showIdle() = setIndex(-1)
 
@@ -122,8 +124,9 @@ class ConnectFlowView(context: Context) : View(context) {
         canvas.drawRoundRect(track, trackH / 2f, trackH / 2f, fillPaint)
         if (fraction > 0f) {
             val liquidRight = track.left + track.width() * fraction
+            liquid.set(track.left, track.top, liquidRight, track.bottom)
             fillPaint.color = GlassColors.ACCENT
-            canvas.drawRoundRect(track.left, track.top, liquidRight, track.bottom, trackH / 2f, trackH / 2f, fillPaint)
+            canvas.drawRoundRect(liquid, trackH / 2f, trackH / 2f, fillPaint)
             if (current in 0 until count) {
                 fillPaint.color = GlassColors.ACCENT_LIFT
                 canvas.drawCircle(liquidRight, cy, trackH * 0.85f, fillPaint)
