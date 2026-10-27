@@ -150,7 +150,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Back on the home page finishes this activity while the session runs on, so the icon lands here.
-        if (savedInstanceState == null && isLauncherIntent(intent) && CarPlayBackgroundSession.hasSession()) {
+        if (savedInstanceState == null && isLauncherIntent(intent) && isCarPlayActive()) {
             startCarPlayHost(); finish(); return
         }
         if (intent.hasExtra("page")) {
@@ -267,12 +267,17 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
             return
         }
         CarPlayBackgroundSession.stop { runOnUiThread { refreshStatus(); refreshHomeFragment() } }
+        // stop() sets isStopping synchronously — refresh now so the play icon / disconnect
+        // row do not linger as "still connected" while teardown finishes.
+        refreshStatus()
+        refreshHomeFragment()
     }
     override fun hasCarPlaySession(): Boolean = CarPlayBackgroundSession.hasSession()
     override fun isCarPlayActive(): Boolean {
         // A parked session is still connected. The active flag is set when the phone accepts
         // the session; hasSession covers the return from CarPlay if that callback already happened.
-        if (isCarPlayConnecting()) return false
+        // While stop() is in flight, hasSession stays true for waiters — do not show play/disconnect.
+        if (isCarPlayConnecting() || CarPlayBackgroundSession.isStopping()) return false
         return CarPlayBackgroundSession.active || CarPlayBackgroundSession.hasSession()
     }
     override fun isCarPlayConnecting(): Boolean =
@@ -663,7 +668,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         super.onNewIntent(intent); setIntent(intent)
         // CarPlay runs in its own task, so the launcher icon resumes this one. Settings opened from
         // CarPlay carry a "page" extra, which isLauncherIntent rejects.
-        if (isLauncherIntent(intent) && CarPlayBackgroundSession.hasSession()) {
+        if (isLauncherIntent(intent) && isCarPlayActive()) {
             userNavigatedFromCarPlay = false
             page = "home"; showPage(page); openProjection(); return
         }
@@ -682,7 +687,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
             userNavigatedFromCarPlay = true
             page = explicitPage
             showPage(page)
-        } else if (CarPlayBackgroundSession.hasSession() && !userNavigatedFromCarPlay) {
+        } else if (isCarPlayActive() && !userNavigatedFromCarPlay) {
             page = "home"; showPage(page); openProjection(); return
         } else {
             page = "home"; showPage(page)
@@ -775,7 +780,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
             noteReturnFromCarPlay()
             intent?.removeExtra("returnFromCarPlay")
         }
-        if (!initialLaunch && CarPlayBackgroundSession.hasSession() && page == "home" &&
+        if (!initialLaunch && isCarPlayActive() && page == "home" &&
             !userNavigatedFromCarPlay && !justReturnedFromCarPlay) {
             openProjection()
             return
@@ -1182,6 +1187,9 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
     }
 
     override fun openProjection() {
+        // No live parked session (idle / connecting / stopping): stay on the shell.
+        // Opening Host anyway is what produced the black screen after a mode switch.
+        if (!isCarPlayActive()) return
         // The host owns the decoder surface and shows it immediately. Holding the surface
         // off-screen left CarPlay black until an 8s timeout.
         startCarPlayHost()
@@ -1279,7 +1287,9 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         shellChrome.updateClock()
         shellChrome.updateRadios(radioProbe.snapshot())
         val active = isCarPlayActive()
-        val running = !active && (isCarPlayConnecting() || CarPlayBackgroundSession.hasSession())
+        // Do not use hasSession here: stop() keeps hasSession true while tearing down,
+        // which used to flash「连接中」after Disconnect / mode switch.
+        val running = !active && isCarPlayConnecting()
         val label: String
         val color: Int
         val fill: Int

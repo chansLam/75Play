@@ -435,7 +435,7 @@
     <string name="home_open_car_hotspot">Включить точку доступа автомобиля</string>
     <string name="home_scanning">Поиск…</string>
     <string name="home_switch">Сменить</string>
-    <string name="home_switch_mode_message">Смена способа подключения может прервать текущую сессию CarPlay. Всё равно сменить?</string>
+    <string name="home_switch_mode_message">Смена способа подключения отключит CarPlay. Всё равно сменить?</string>
     <string name="home_switch_mode_title">Сменить способ подключения</string>
     <string name="home_tap_to_connect">Нажмите, чтобы подключиться</string>
     <string name="home_uninstall">Удалить</string>

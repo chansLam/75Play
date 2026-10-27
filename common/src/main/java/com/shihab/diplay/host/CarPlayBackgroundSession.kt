@@ -12,7 +12,10 @@ internal object CarPlayBackgroundSession {
     private var stopping = false
     private var owner: Any? = null
     @Synchronized fun isOwner(candidate: Any): Boolean = owner === candidate
+    /** True while a session exists or teardown is in flight (waiters / cancel coordination). */
     @Synchronized fun hasSession(): Boolean = stopAction != null || stopping
+    /** True only during [stop] teardown — UI must not treat this as still connected. */
+    @Synchronized fun isStopping(): Boolean = stopping
     private val stopWaiters = mutableListOf<() -> Unit>()
 
     fun stop(completion: () -> Unit = {}) {

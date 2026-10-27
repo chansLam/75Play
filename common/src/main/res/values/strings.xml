@@ -461,7 +461,7 @@
     <string name="home_open_car_hotspot">Open car hotspot</string>
     <string name="home_scanning">Scanningâ¦</string>
     <string name="home_switch">Switch</string>
-    <string name="home_switch_mode_message">Switching connection method may drop the current CarPlay session. Switch anyway?</string>
+    <string name="home_switch_mode_message">Switching connection method will disconnect CarPlay. Switch anyway?</string>
     <string name="home_switch_mode_title">Switch connection method</string>
     <string name="home_tap_to_connect">Tap to connect</string>
     <string name="home_uninstall">Uninstall</string>

@@ -259,9 +259,10 @@ class FragmentHome : Fragment() {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ))
         }
+        // Weight + height 0 so the scroll area shrinks and the disconnect row stays pinned
+        // at the bottom of the card (WRAP_CONTENT used to push it below the clip edge).
         bottomHalf.addView(tabScroll, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f,
         ))
 
         disconnectDivider = divider(ctx)
@@ -348,10 +349,15 @@ class FragmentHome : Fragment() {
 
     private fun switchTab(tab: String) {
         if (tab == currentTab) return
-        // If CarPlay is already connected, warn that switching may drop the session.
+        // Live session: switching radio without teardown leaves a zombie play icon → black Host.
         val ctx = requireContext()
-        val proceed = { doSwitchTab(tab) }
-        if (host.hasCarPlaySession()) {
+        val proceed = {
+            if (host.hasCarPlaySession() || host.isCarPlayActive()) {
+                host.disconnectSession()
+            }
+            doSwitchTab(tab)
+        }
+        if (host.hasCarPlaySession() || host.isCarPlayActive()) {
             DiPlayDialog.showConfirm(
                 ctx, ctx.getString(R.string.home_switch_mode_title),
                 ctx.getString(R.string.home_switch_mode_message),

@@ -455,7 +455,7 @@
     <string name="home_open_car_hotspot">開啟車載熱點</string>
     <string name="home_scanning">正在掃描…</string>
     <string name="home_switch">切換</string>
-    <string name="home_switch_mode_message">切換連線方式可能會中斷目前的 CarPlay 連線，確定要切換嗎？</string>
+    <string name="home_switch_mode_message">切換連線方式將中斷目前的 CarPlay 連線，確定要切換嗎？</string>
     <string name="home_switch_mode_title">切換連線方式</string>
     <string name="home_tap_to_connect">點擊連線</string>
     <string name="home_uninstall">解除安裝</string>

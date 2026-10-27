@@ -21,22 +21,15 @@
 - **多语言** — 简 / 繁中文、英文、阿拉伯语、西班牙语、俄语、乌克兰语
 - **安卓终端**（实验性）
 
-## 实机截图 · v2.0.0
+## 实机截图 · v2.0.2
 
 长安 CS75 Plus 2020 车机实机效果：
 
 <div align="center">
   <img src="site/assets/screenshots/carplay-home.png" width="280" alt="已连接 CarPlay 主页"/>
   <img src="site/assets/screenshots/home.png" width="280" alt="连接中心主页"/>
-  <img src="site/assets/screenshots/connecting.png" width="280" alt="连接中"/>
-</div>
-<div align="center">
   <img src="site/assets/screenshots/settings-display.png" width="280" alt="设置·显示/音频"/>
-  <img src="site/assets/screenshots/settings-vehicle.png" width="280" alt="设置·车辆/系统"/>
-  <img src="site/assets/screenshots/connected-manage.png" width="280" alt="已连接·管理应用"/>
-</div>
-<div align="center">
-  <img src="site/assets/screenshots/app-manage.png" width="280" alt="车机应用管理"/>
+  <img src="site/assets/screenshots/about.png" width="280" alt="关于"/>
 </div>
 
 ## 快速安装

@@ -208,15 +208,12 @@ for lang, d in data.items():
   <section class="band shots" id="shots">
     <div class="band-inner">
       <h2>{e(d.get('shotsTitle', 'Screenshots'))}</h2>
-      <p class="fine">{e(d.get('shotsSub', '75Play v2.0.0 real-device screenshots.'))}</p>
+      <p class="fine">{e(d.get('shotsSub', '75Play v2.0.2 real-device screenshots.'))}</p>
       <div class="shot-grid">
         <a href="{prefix}assets/screenshots/carplay-home.png"><img loading="lazy" src="{prefix}assets/screenshots/carplay-home.png" alt="{e(d.get('shotCarplay','CarPlay home'))}"></a>
         <a href="{prefix}assets/screenshots/home.png"><img loading="lazy" src="{prefix}assets/screenshots/home.png" alt="{e(d.get('shotHome','Home'))}"></a>
-        <a href="{prefix}assets/screenshots/connecting.png"><img loading="lazy" src="{prefix}assets/screenshots/connecting.png" alt="{e(d.get('shotConnecting','Connecting'))}"></a>
         <a href="{prefix}assets/screenshots/settings-display.png"><img loading="lazy" src="{prefix}assets/screenshots/settings-display.png" alt="{e(d.get('shotDisplay','Display / audio settings'))}"></a>
-        <a href="{prefix}assets/screenshots/settings-vehicle.png"><img loading="lazy" src="{prefix}assets/screenshots/settings-vehicle.png" alt="{e(d.get('shotVehicle','Vehicle / system settings'))}"></a>
-        <a href="{prefix}assets/screenshots/connected-manage.png"><img loading="lazy" src="{prefix}assets/screenshots/connected-manage.png" alt="{e(d.get('shotConnected','Connected & manage apps'))}"></a>
-        <a href="{prefix}assets/screenshots/app-manage.png"><img loading="lazy" src="{prefix}assets/screenshots/app-manage.png" alt="{e(d.get('shotApps','App management'))}"></a>
+        <a href="{prefix}assets/screenshots/about.png"><img loading="lazy" src="{prefix}assets/screenshots/about.png" alt="{e(d.get('shotAbout','About'))}"></a>
       </div>
     </div>
   </section>

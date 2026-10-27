@@ -435,7 +435,7 @@
     <string name="home_open_car_hotspot">افتح نقطة اتصال السيارة</string>
     <string name="home_scanning">جارٍ المسح…</string>
     <string name="home_switch">تبديل</string>
-    <string name="home_switch_mode_message">قد يؤدي تبديل طريقة الاتصال إلى قطع جلسة CarPlay الحالية. هل تريد التبديل على أي حال؟</string>
+    <string name="home_switch_mode_message">تبديل طريقة الاتصال سيقطع جلسة CarPlay. هل تريد التبديل على أي حال؟</string>
     <string name="home_switch_mode_title">تبديل طريقة الاتصال</string>
     <string name="home_tap_to_connect">انقر للاتصال</string>
     <string name="home_uninstall">إلغاء التثبيت</string>

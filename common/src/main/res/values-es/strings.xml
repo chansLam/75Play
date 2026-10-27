@@ -435,7 +435,7 @@
     <string name="home_open_car_hotspot">Abrir punto de acceso del coche</string>
     <string name="home_scanning">Escaneando…</string>
     <string name="home_switch">Cambiar</string>
-    <string name="home_switch_mode_message">Cambiar el método de conexión puede cortar la sesión actual de CarPlay. ¿Desea cambiar de todos modos?</string>
+    <string name="home_switch_mode_message">Cambiar el método de conexión desconectará CarPlay. ¿Desea cambiar de todos modos?</string>
     <string name="home_switch_mode_title">Cambiar método de conexión</string>
     <string name="home_tap_to_connect">Toca para conectar</string>
     <string name="home_uninstall">Desinstalar</string>

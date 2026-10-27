@@ -461,7 +461,7 @@
     <string name="home_open_car_hotspot">打开车载热点</string>
     <string name="home_scanning">正在扫描…</string>
     <string name="home_switch">切换</string>
-    <string name="home_switch_mode_message">切换连接方式可能会断开当前 CarPlay 连接，确定切换？</string>
+    <string name="home_switch_mode_message">切换连接方式将断开当前 CarPlay 连接，确定切换？</string>
     <string name="home_switch_mode_title">切换连接方式</string>
     <string name="home_tap_to_connect">点击连接</string>
     <string name="home_uninstall">卸载</string>
