@@ -28,6 +28,14 @@ object AirPlayPersistence {
     /** 0 uses usage-based routing; 1–20 select stream types supported by the head unit. */
     val AUDIO_CHANNELS = 0..20
     private const val PREFS = "xcertplay_airplay"
+
+    /**
+     * Opens the session prefs once so a burst of [load*] calls on Host create/resume does not
+     * each pay the first SharedPreferences XML parse on KitKat's main thread.
+     */
+    fun warm(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    }
     private const val KEY_IDENT_PRIVATE = "identity_private"
     private const val KEY_IDENT_PUBLIC = "identity_public"
     private const val KEY_PAIRING_ID = "pairing_id"

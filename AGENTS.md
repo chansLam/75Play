@@ -11,7 +11,9 @@
 - **Activity / 模块**
   - 三模块：`mobile → common → shared`；不要为壳/Host 再拆 Gradle 业务模块。
   - `DiPlayActivity`（壳层，默认 task）：连接、**全部可编辑设置**、诊断、关于。连接中 / 失败是壳上的弹窗。
-  - `CarPlayHostActivity`（独立 `taskAffinity`）：**只承载 CarPlay 影像与会话**（画面、触控、Siri/方控、沉浸式、回壳）。**不包括**连接中 / 失败层。**禁止**在 Host 内再加设置菜单或编辑偏好的 Overlay；Host 仅从 `AirPlayPersistence` **读取**会话所需配置。
+  - `CarPlayHostActivity`（独立 `taskAffinity`）：**只承载 CarPlay 影像与会话**（画面、触控、Siri/方控、沉浸式、回壳）。**不包括**连接中 / 失败层。**禁止**在 Host 内再加设置菜单或编辑偏好的 Overlay；Host 从 `AirPlayPersistence` **读取**会话所需配置。
+  - Host 辅助类放在 `common/.../host/`（如 `HostTouchGestures`、`HostImmersion`、`HostDisplayLayout`、`HostChrome`、`HostSessionLifecycle`）；无线 SoftAP→地址栈在 `orchestration/WirelessHotspot*.kt`，`CarPlayController` 只编排阶段。
+  - Host **允许的自动持久化**（非用户设置编辑，属会话自校准，可继续写 prefs）：画布不支持时回落 `uiScale` / `displayScale`；`saveMaximumDetectedDisplay`；分屏时 `SplitScreenSettings.saveWindow`。除此以外不要在 Host 写偏好。
   - 不要合并壳与 Host 为一个 Activity（KitKat 任务栈 / Launcher / 黑窗风险）；多指下滑回壳走 `FloatingBall.backToDiPlay`。
 - SoftAP 启用统一走 `CarHotspotEnable`（壳 / Boot / Controller 薄包装）；不要再复制一套 `setWifiApEnabled`。
 - 开发者终端（About 入口 / `TerminalOverlay`）为产品能力，Release 可开（须门禁）；实现可用 jackpal 或等价轻量 shell。
@@ -38,9 +40,9 @@ Release 用的六个 Actions Secrets 见 `docs/BUILD.md`。
 可编辑项只放在壳层（`DiPlayActivity`），不放进 `CarPlayHostActivity`。壳内页面怎么分、设置放哪一页，按当前界面重组，不按固定 Fragment 分组锁死。
 
 持久化走 `AirPlayPersistence`（会话偏好）与 `DiPlayPreferences`（壳层 BT/自动连接，以及主页应用网格的 `hidden_packages` / `app_order`，文件仍为 `home_app_list`）。  
-**不要**在 `CarPlayHostActivity` 加设置菜单或编辑偏好的 Overlay。
+**不要**在 `CarPlayHostActivity` 加设置菜单或编辑偏好的 Overlay（会话自校准写入见上文例外）。
 
-`SettingsArchitecture.kt` 若保留，只作对照与测试，**不是** UI 渲染入口；壳层改版后让它跟上，不要反过来规定界面。  
+`SettingsArchitecture.kt` 若保留，只作对照与测试，**不是** UI 渲染入口；壳层改版后让它跟上，不要反过来规定界面。当前对照：Home=连接+应用网格；Settings=显示/音频/高级/车辆（含语言与方控）；About=系统+硬件。  
 `ConnectionSettingsSection.createHotspotModeChoice` 等 `settings/*` 工厂供测试或 Host 只读复用。
 
 实验项标题后缀用各语言既有「（实验性）」等形式。  

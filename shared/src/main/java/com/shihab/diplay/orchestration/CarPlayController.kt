@@ -847,25 +847,46 @@ class CarPlayController(
 
             // Stage 3: bring up the SoftAP/P2P hotspot and resolve the host address.
             var startedBonjour: CarPlayBonjour? = null
-            val hotspot = bringUpWirelessHotspotStack(
+            val hotspotStack = WirelessHotspotStack.bringUp(
+                appContext = appContext,
+                config = config,
+                airPlayConfig = airPlayConfig,
                 generation = generation,
+                isStaleWirelessRun = ::isStaleWirelessRun,
+                debugLog = ::debugLog,
+                onStatus = { onStatus(it) },
+                wirelessResourceLock = wirelessResourceLock,
+                getHotspot = { hotspot },
+                setHotspot = { hotspot = it },
+                onNetworkChanged = { if (!isStaleWirelessRun(generation)) restartWireless() },
+                closeBestEffort = ::closeBestEffort,
+                mfiClient = mfiSession?.client,
+                wirelessPrefsName = WIRELESS_PREFS,
+                hotspotFamilyPreferenceKey = HOTSPOT_FAMILY_PREFERENCE_KEY,
+                beginConnectionProof = { gen, onConfirm ->
+                    wirelessConnectionProof.begin(gen, onConfirm)
+                },
+                setPublishedAddress = { wirelessPublishedAddress = it },
+                setAlternateAddress = { wirelessAlternateAddress = it },
+                setDiagnostics = { wirelessDiagnostics = it },
                 bonjourSnapshot = { startedBonjour?.diagnosticSnapshot() ?: "bonjour=not_started" },
+                pauseWifiScansLocked = ::pauseWifiScans,
             ) ?: return
             stage = "Bluetooth device selection"
 
             // Stage 4: pick the iPhone Bluetooth target and build the per-link AirPlay config.
-            val bt = selectWirelessBluetoothTarget(hotspot.deviceIdentifier)
+            val bt = selectWirelessBluetoothTarget(hotspotStack.deviceIdentifier)
 
             onStatus(CarPlayStatus.AttachingNetwork)
             stage = "AirPlay listener startup"
             // Stage 5: attach the AirPlay listener to the chosen bind address.
             val attached = attachWirelessAirPlayListener(
                 generation = generation,
-                hostAddress = hotspot.hostAddress,
+                hostAddress = hotspotStack.hostAddress,
                 wirelessAirPlayConfig = bt.wirelessAirPlayConfig,
                 watchdog = watchdog,
-                startedHotspot = hotspot.startedHotspot,
-                mfi = hotspot.mfi,
+                startedHotspot = hotspotStack.startedHotspot,
+                mfi = hotspotStack.mfi,
             )
             if (isStaleWirelessRun(generation)) {
                 return
@@ -873,9 +894,9 @@ class CarPlayController(
 
             // Stage 6: build the iAP2 wireless endpoint / identification handed to the iPhone.
             val endpoint = buildWirelessEndpoint(
-                hotspotInfo = hotspot.hotspotInfo,
-                hostAddress = hotspot.hostAddress,
-                hostAddressText = hotspot.hostAddressText,
+                hotspotInfo = hotspotStack.hotspotInfo,
+                hostAddress = hotspotStack.hostAddress,
+                hostAddressText = hotspotStack.hostAddressText,
                 listenerPort = attached.listenerPort,
                 hostBluetoothMac = bt.hostBluetoothMac,
             )
@@ -884,12 +905,12 @@ class CarPlayController(
             startBonjourDiscovery(
                 generation = generation,
                 advertisedAirPlayConfig = attached.advertisedAirPlayConfig,
-                hostAddress = hotspot.hostAddress,
-                startedHotspot = hotspot.startedHotspot,
-                diagnostics = hotspot.diagnostics,
+                hostAddress = hotspotStack.hostAddress,
+                startedHotspot = hotspotStack.startedHotspot,
+                diagnostics = hotspotStack.diagnostics,
             )
             startedBonjour = bonjour
-            debugLog("wireless Bonjour services started mode=interface iface=${hotspot.hotspotInfo.interfaceName ?: "unknown"}")
+            debugLog("wireless Bonjour services started mode=interface iface=${hotspotStack.hotspotInfo.interfaceName ?: "unknown"}")
             if (isStaleWirelessRun(generation)) {
                 return
             }
@@ -900,7 +921,7 @@ class CarPlayController(
                 stageSetter = { stage = it },
                 device = bt.device,
                 hybridAdapter = CarPlayBluetoothManager.get(appContext),
-                hotspot = hotspot,
+                hotspot = hotspotStack,
                 endpoint = endpoint.endpoint,
                 bootstrapIdentification = endpoint.bootstrapIdentification,
                 watchdog = watchdog,
@@ -991,100 +1012,6 @@ class CarPlayController(
         return watchdog
     }
 
-    /** Cross-stage state produced while bringing up the hotspot and resolving its address. */
-    private class HotspotBringUp(
-        val mfi: MfiAuthenticator,
-        val hotspotInfo: WirelessHotspotInfo,
-        val startedHotspot: WirelessHotspotManager?,
-        val hostAddress: InetAddress,
-        val hostAddressText: String,
-        val deviceIdentifier: String,
-        val diagnostics: WirelessStartupDiagnostics,
-    )
-
-    /** Stage 3 of [runWireless]: start the hotspot, pause scans, pick the host address and publish diagnostics. */
-    private fun bringUpWirelessHotspotStack(
-        generation: Int,
-        bonjourSnapshot: () -> String,
-    ): HotspotBringUp? {
-        val mfi = mfiSession?.client
-            ?: throw IOException("MFi coprocessor client is unavailable")
-        val hotspotInfo = startWirelessHotspot(generation)
-        if (isStaleWirelessRun(generation)) {
-            return null
-        }
-        pauseWifiScans(hotspotInfo.backend)
-        val startedHotspot = hotspot
-        wirelessConnectionProof.begin(generation) {
-            if (!isStaleWirelessRun(generation)) startedHotspot?.onCarPlayConfirmed()
-        }
-        val storedFamily = appContext.getSharedPreferences(WIRELESS_PREFS, Context.MODE_PRIVATE)
-            .getString(HOTSPOT_FAMILY_PREFERENCE_KEY, null)
-        val preferredFamily = if (storedFamily == "AUTO") null else HotspotAddressPolicy.parseFamily(storedFamily)
-        val candidates = hotspotCandidates(hotspotInfo)
-        val hostAddress = HotspotAddressPolicy.select(candidates, preferredFamily)
-            ?: hotspotInfo.hostAddress
-            ?: throw IOException(
-                "Wireless hotspot did not provide a usable host address",
-            )
-        wirelessPublishedAddress = hostAddress
-        wirelessAlternateAddress = HotspotAddressPolicy.alternateFamilyCandidate(candidates, hostAddress)
-        if (
-            hostAddress is Inet6Address &&
-            (!hostAddress.isLinkLocalAddress || hostAddress.scopeId == 0)
-        ) {
-            throw IOException(
-                "Wireless hotspot link-local IPv6 address is not scoped",
-            )
-        }
-        val hostAddressText = hostAddressText(hostAddress)
-        val deviceIdentifier = hotspotInfo.bssid
-            ?.takeUnless { it.equals(ADAPTER_ADDRESS_PLACEHOLDER, ignoreCase = true) }
-            ?: airPlayConfig.deviceId
-        debugLog(
-            "wireless hotspot backend=${hotspotInfo.backend.label} " +
-                "iface=${hotspotInfo.interfaceName ?: "unknown"} " +
-                "family=${if (hostAddress is Inet6Address) "IPv6" else "IPv4"} " +
-                "preference=${preferredFamily ?: "default(IPv4)"} " +
-                "alternate=${wirelessAlternateAddress != null} " +
-                "identitySource=${if (deviceIdentifier == hotspotInfo.bssid) "interface" else "saved"} " +
-                "host=$hostAddressText " +
-                "band=${hotspotInfo.bandLabel} channel=${hotspotInfo.channel} " +
-                "frequency=${hotspotInfo.frequencyMHz?.toString() ?: "unknown"}MHz",
-        )
-        val receiveDiagnostics = WirelessReceiveDiagnostics(hotspotInfo.interfaceName)
-        val diagnostics = WirelessStartupDiagnostics(
-            sample = {
-                "${WirelessInterfaceDiagnostics.snapshot(hotspotInfo.interfaceName)} " +
-                    "${startedHotspot?.connectionDiagnosticSnapshot() ?: "association=unknown"} " +
-                    bonjourSnapshot() + "\n" +
-                    receiveDiagnostics.snapshot()
-            },
-            log = { message -> if (!isStaleWirelessRun(generation)) debugLog(message) },
-        )
-        wirelessDiagnostics = diagnostics
-        onStatus(
-            CarPlayStatus.HotspotReady(
-                ssid = hotspotInfo.ssid,
-                band = hotspotInfo.bandLabel,
-                channel = hotspotInfo.channel,
-                bssid = deviceIdentifier,
-                address = hostAddressText,
-                backend = hotspotInfo.backend.label,
-            ),
-        )
-        onStatus(CarPlayStatus.WaitingForPairedIphone)
-        return HotspotBringUp(
-            mfi = mfi,
-            hotspotInfo = hotspotInfo,
-            startedHotspot = startedHotspot,
-            hostAddress = hostAddress,
-            hostAddressText = hostAddressText,
-            deviceIdentifier = deviceIdentifier,
-            diagnostics = diagnostics,
-        )
-    }
-
     /** Cross-stage state produced while selecting the Bluetooth target. */
     private class BluetoothTarget(
         val device: BluetoothDevice?,
@@ -1162,7 +1089,7 @@ class CarPlayController(
         val listenerPort = service.boundPort() ?: wirelessAirPlayConfig.port
         val advertisedAirPlayConfig = wirelessAirPlayConfig.copy(port = listenerPort)
         debugLog(
-            "wireless AirPlay listener attached bind=${hostAddressText(hostAddress)} " +
+            "wireless AirPlay listener attached bind=${WirelessHotspotStack.hostAddressText(hostAddress)} " +
                 "port=$listenerPort" +
                 (if (listenerPort != airPlayConfig.port) " (preferred ${airPlayConfig.port} in use)" else ""),
         )
@@ -1259,7 +1186,7 @@ class CarPlayController(
         stageSetter: (String) -> Unit,
         device: BluetoothDevice?,
         hybridAdapter: HybridBluetoothAdapter,
-        hotspot: HotspotBringUp,
+        hotspot: WirelessHotspotStack.BringUp,
         endpoint: Iap2WirelessCarPlayEndpoint,
         bootstrapIdentification: Iap2IdentificationConfig,
         watchdog: FirstTcpWatchdog,
@@ -1478,17 +1405,6 @@ class CarPlayController(
             },
         )
 
-    private fun hotspotCandidates(info: WirelessHotspotInfo): List<InetAddress> {
-        val name = info.interfaceName ?: return listOfNotNull(info.hostAddress)
-        val scanned = try {
-            NetworkInterface.getByName(name)?.let { Collections.list(it.inetAddresses) }.orEmpty()
-        } catch (error: Exception) {
-            debugLog("wireless interface scan failed iface=$name error=${error.javaClass.simpleName}")
-            emptyList()
-        }
-        return if (scanned.isEmpty()) listOfNotNull(info.hostAddress) else scanned
-    }
-
     private fun flipWirelessAddressFamily() {
         val stored = appContext.getSharedPreferences(WIRELESS_PREFS, Context.MODE_PRIVATE)
             .getString(HOTSPOT_FAMILY_PREFERENCE_KEY, null)
@@ -1558,20 +1474,6 @@ class CarPlayController(
     private fun isBluetoothHandoffCommand(type: String): Boolean =
         type.equals("disableBluetooth", ignoreCase = true) ||
             type.equals("disable-bluetooth", ignoreCase = true)
-
-    private fun startWirelessHotspot(generation: Int): WirelessHotspotInfo =
-        WirelessHotspotBringUp.start(
-            appContext = appContext,
-            config = config,
-            generation = generation,
-            isStaleWirelessRun = ::isStaleWirelessRun,
-            debugLog = ::debugLog,
-            wirelessResourceLock = wirelessResourceLock,
-            getHotspot = { hotspot },
-            setHotspot = { hotspot = it },
-            onNetworkChanged = { if (!isStaleWirelessRun(generation)) restartWireless() },
-            closeBestEffort = ::closeBestEffort,
-        )
 
     /**
      * Wait for an AirPlay session when Bluetooth bootstrap is unavailable.
@@ -1754,14 +1656,6 @@ class CarPlayController(
         }
         val address = managerAddress ?: BluetoothAddressResolver.resolve(appContext)
         return address ?: airPlayConfig.btMac
-    }
-
-    private fun hostAddressText(address: InetAddress): String {
-        val text = address.hostAddress?.substringBefore('%')
-        if (text.isNullOrBlank()) {
-            throw IOException("Wireless hotspot host address is unavailable")
-        }
-        return text
     }
 
     private fun closeBestEffort(name: String, close: () -> Unit) {

@@ -5,11 +5,17 @@ import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.TextureView
 import com.shihab.diplay.media.AndroidMediaSink
+import java.util.concurrent.Executors
 
 /**
  * TextureView and SurfaceView listeners for the CarPlay canvas.
  * Host keeps `textureListener` and `fallbackSurfaceCallback` pointing at these objects so
  * lifecycle tests can still reach the SurfaceView callback.
+ *
+ * Surface destroy callbacks must return quickly on KitKat: awaiting decoder detach on the UI
+ * thread can block for the sink's full timeout (~2.5s) and ANR. [beginSurfaceDetach] already
+ * removes the surface from the sink and queues workers; confirmation and [CarPlayVideoSurfaceOwner]
+ * cleanup run on a background thread.
  */
 internal class HostVideoSurfaces(
     private val owner: CarPlayVideoSurfaceOwner<Surface>,
@@ -76,17 +82,14 @@ internal class HostVideoSurfaces(
                 bridge.log("Texture surface destroyed")
                 return true
             }
-            // Same handshake as SurfaceView: wait until decoders leave this surface, then release it.
-            // Returning after the wait lets the framework free the SurfaceTexture.
-            val live = bridge.liveSink()
-            val detaches = (listOfNotNull(live) + bridge.retiringSinks()).distinct()
-                .map { sink ->
-                    sink.beginSurfaceDetach(surface, parkMain = bridge.smoothVideo() && sink === live)
-                }
-            val confirmed = detaches.map { it.await() }.all { it }
-            owner.clear(surface)
-            bridge.log("Texture surface destroyed detachConfirmed=$confirmed")
-            return true
+            // Return false so TextureView leaves the SurfaceTexture to us until codecs leave;
+            // releasing early while MediaCodec still outputs would crash KitKat.
+            beginDetachAsync(surface, parkMain = bridge.smoothVideo()) { confirmed ->
+                owner.clear(surface)
+                runCatching { texture.release() }
+                bridge.log("Texture surface destroyed detachConfirmed=$confirmed")
+            }
+            return false
         }
 
         override fun onSurfaceTextureUpdated(texture: SurfaceTexture) = bridge.framePresented()
@@ -112,16 +115,32 @@ internal class HostVideoSurfaces(
 
         override fun surfaceDestroyed(holder: SurfaceHolder) {
             val surface = holder.surface
-            // The SurfaceHolder contract: nothing may render to the surface once this returns. Every decoder
-            // is asked at once, then waited for against one deadline; each confirms once it has moved,
-            // parked or released its codec, and closing decoders count once their workers exit. With
-            // smooth video the live session's main decoder parks off screen and keeps its state.
-            val live = bridge.liveSink()
-            val detaches = (listOfNotNull(live) + bridge.retiringSinks()).distinct()
-                .map { sink -> sink.beginSurfaceDetach(surface, parkMain = bridge.smoothVideo() && sink === live) }
-            val confirmed = detaches.map { it.await() }.all { it }
-            owner.clear(surface)
-            bridge.log("SurfaceView video surface destroyed detachConfirmed=$confirmed")
+            // beginSurfaceDetach stops new codecs from targeting this surface immediately. Waiting for
+            // confirmation belongs off the UI thread so KitKat does not ANR during back-to-shell / app
+            // switches. The SurfaceHolder may invalidate the Surface after this returns; workers must
+            // already have left (or be leaving) via the queued detach.
+            beginDetachAsync(surface, parkMain = bridge.smoothVideo()) { confirmed ->
+                owner.clear(surface)
+                bridge.log("SurfaceView video surface destroyed detachConfirmed=$confirmed")
+            }
+        }
+    }
+
+    private fun beginDetachAsync(surface: Surface, parkMain: Boolean, onSettled: (Boolean) -> Unit) {
+        val live = bridge.liveSink()
+        val detaches = (listOfNotNull(live) + bridge.retiringSinks()).distinct()
+            .map { sink ->
+                sink.beginSurfaceDetach(surface, parkMain = parkMain && sink === live)
+            }
+        DETACH_WAIT.execute {
+            val confirmed = if (detaches.isEmpty()) true else detaches.map { it.await() }.all { it }
+            onSettled(confirmed)
+        }
+    }
+
+    private companion object {
+        private val DETACH_WAIT = Executors.newSingleThreadExecutor { task ->
+            Thread(task, "carplay-surface-detach").apply { isDaemon = true }
         }
     }
 }

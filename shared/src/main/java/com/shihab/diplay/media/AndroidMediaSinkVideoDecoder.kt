@@ -60,6 +60,9 @@ internal class VideoDecoder(
     private var inBandSpsPps: ByteArray? = null
     // Reused on the decoder thread. A fresh BufferInfo per drain is a Dalvik GC hitch at 30 fps.
     private val outputInfo = MediaCodec.BufferInfo()
+    // Reused Annex-B conversion + optional in-band SPS/PPS prepend (decoder thread only).
+    private var annexScratch = ByteArray(0)
+    private var feedScratch = ByteArray(0)
     private val referenceChain = VideoReferenceChain()
     private var lastKeyFrameRequestNs = 0L
     // The main screen keeps the historical log format; other screens are labelled.
@@ -438,11 +441,15 @@ internal class VideoDecoder(
 
     private fun feed(nalus: ByteArray, length: Int, presentNs: Long = 0L) {
         val count = length.coerceIn(0, nalus.size)
-        val annexB = MediaCodecSupport.toAnnexB(nalus, count)
-        val annexLength = if (annexB === nalus) count else annexB.size
+        val annex = MediaCodecSupport.toAnnexBFrame(nalus, count, annexScratch)
+        if (annex.bytes !== nalus && annex.bytes !== annexScratch && annex.length > 0) {
+            annexScratch = annex.bytes
+        }
+        val annexB = annex.bytes
+        val annexLength = annex.length
         val config = lastConfig ?: return
         if (outputSurface == null) return
-        if (annexLength <= 0 || annexB.isEmpty()) { recover("invalid video access unit"); return }
+        if (annex.isEmpty()) { recover("invalid video access unit"); return }
         if (!referenceChain.accepts(annexB, config.codec, annexLength)) {
             requestKeyFrameIfDue()
             return
@@ -470,10 +477,11 @@ internal class VideoDecoder(
         if (spsPps != null) {
             inBandSpsPps = null
             AppLog.i(TAG, "video decoder prepending SPS/PPS in-band to first frame (${spsPps.size} bytes)")
-            frameData = ByteArray(spsPps.size + annexLength)
+            frameLength = spsPps.size + annexLength
+            if (feedScratch.size < frameLength) feedScratch = ByteArray(frameLength)
+            frameData = feedScratch
             spsPps.copyInto(frameData)
             annexB.copyInto(frameData, spsPps.size, 0, annexLength)
-            frameLength = frameData.size
         } else {
             frameData = annexB
             frameLength = annexLength

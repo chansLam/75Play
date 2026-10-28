@@ -10,6 +10,7 @@ import com.shihab.diplay.CarPlayDock
 import com.shihab.diplay.InterfaceSize
 import com.shihab.diplay.airplay.CarPlaySize
 import com.shihab.diplay.airplay.SafeAreaRect
+import com.shihab.diplay.compat.realSdkInt
 import com.shihab.diplay.host.R
 import com.shihab.diplay.localizedLabel
 import com.shihab.diplay.ui.DiPlayDialog
@@ -28,18 +29,26 @@ internal class DisplaySettingsColumn(page: Fragment) : SettingsColumnKit(page) {
         card.addView(settingRow(ctx, ctx.getString(R.string.setting_display_size), capPick(ctx, curSize.localizedLabel(ctx)) { cap -> showCarPlaySizePicker(cap) }))
         val scalePercent = AirPlayPersistence.loadDisplayScalePercent(ctx)
         card.addView(settingRow(ctx, ctx.getString(R.string.setting_display_scale), capPick(ctx, "$scalePercent%") { cap -> showScalePicker(cap) }))
-        val fps = listOf(
-            ctx.getString(R.string.setting_fps_min_savings),
-            ctx.getString(R.string.setting_fps_more_savings),
-            ctx.getString(R.string.setting_fps_balanced),
-            ctx.getString(R.string.setting_fps_smooth),
-        )
+        val fpsValues = if (realSdkInt() <= 19) {
+            listOf(15, 30)
+        } else {
+            listOf(15, 30, 45, 60)
+        }
+        val fps = buildList {
+            add(ctx.getString(R.string.setting_fps_min_savings))
+            add(ctx.getString(R.string.setting_fps_more_savings))
+            if (fpsValues.size > 2) {
+                add(ctx.getString(R.string.setting_fps_balanced))
+                add(ctx.getString(R.string.setting_fps_smooth))
+            }
+        }
         val fpsCur = AirPlayPersistence.loadFps(ctx)
-        val fpsIdx = when (fpsCur) { 15 -> 0; 45 -> 2; 60 -> 3; else -> 1 }
+        val fpsIdx = fpsValues.indexOf(fpsCur).takeIf { it >= 0 }
+            ?: fpsValues.indexOf(30).coerceAtLeast(0)
         card.addView(settingRow(ctx, ctx.getString(R.string.frame_rate), capPick(ctx, fps[fpsIdx]) { cap ->
             showDropdown(cap, fps, fpsIdx, syncAnchorText = false) { idx ->
                 GlassSettingsRows.confirmReconnect(host, ctx) {
-                    AirPlayPersistence.saveFps(ctx, listOf(15, 30, 45, 60)[idx])
+                    AirPlayPersistence.saveFps(ctx, fpsValues[idx])
                     cap.text = fps[idx] + " ▾"
                     host.reconnectIfRunning()
                 }

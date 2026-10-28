@@ -55,8 +55,24 @@ object MediaCodecSupport {
         return output.toByteArray()
     }
 
-    /** Converts CarPlay's length-prefixed NAL units into an Annex B byte stream. */
-    fun toAnnexB(lengthPrefixed: ByteArray, length: Int = lengthPrefixed.size): ByteArray {
+    /**
+     * Annex-B access unit. [length] is the valid prefix of [bytes] (scratch may be larger).
+     */
+    class AnnexB(val bytes: ByteArray, val length: Int) {
+        fun isEmpty(): Boolean = length <= 0
+    }
+
+    /**
+     * Converts CarPlay's length-prefixed NAL units into an Annex B byte stream.
+     *
+     * When [scratch] is large enough it is reused instead of allocating every frame — important on
+     * Dalvik / API 19 at 30 fps. Already-Annex-B input is returned as-is (zero copy).
+     */
+    fun toAnnexBFrame(
+        lengthPrefixed: ByteArray,
+        length: Int = lengthPrefixed.size,
+        scratch: ByteArray? = null,
+    ): AnnexB {
         val limit = length.coerceIn(0, lengthPrefixed.size)
         if (limit >= 4 &&
             lengthPrefixed[0] == 0.toByte() &&
@@ -64,7 +80,7 @@ object MediaCodecSupport {
             lengthPrefixed[2] == 0.toByte() &&
             lengthPrefixed[3] == 1.toByte()
         ) {
-            return lengthPrefixed
+            return AnnexB(lengthPrefixed, limit)
         }
 
         var inputOffset = 0
@@ -72,14 +88,14 @@ object MediaCodecSupport {
         while (inputOffset + 4 <= limit) {
             val nalu = readU32Be(lengthPrefixed, inputOffset)
             inputOffset += 4
-            if (nalu <= 0 || nalu > limit - inputOffset) return ByteArray(0)
-            if (nalu > Int.MAX_VALUE - outputSize - START_CODE.size) return ByteArray(0)
+            if (nalu <= 0 || nalu > limit - inputOffset) return AnnexB(ByteArray(0), 0)
+            if (nalu > Int.MAX_VALUE - outputSize - START_CODE.size) return AnnexB(ByteArray(0), 0)
             outputSize += START_CODE.size + nalu
             inputOffset += nalu
         }
-        if (outputSize == 0 || inputOffset != limit) return ByteArray(0)
+        if (outputSize == 0 || inputOffset != limit) return AnnexB(ByteArray(0), 0)
 
-        val output = ByteArray(outputSize)
+        val output = if (scratch != null && scratch.size >= outputSize) scratch else ByteArray(outputSize)
         var offset = 0
         var outputOffset = 0
         while (offset + 4 <= limit) {
@@ -92,7 +108,18 @@ object MediaCodecSupport {
             outputOffset += nalu
             offset += nalu
         }
-        return output
+        return AnnexB(output, outputSize)
+    }
+
+    /** Converts to Annex B; returns a buffer whose [ByteArray.size] equals the valid length. */
+    fun toAnnexB(
+        lengthPrefixed: ByteArray,
+        length: Int = lengthPrefixed.size,
+        scratch: ByteArray? = null,
+    ): ByteArray {
+        val frame = toAnnexBFrame(lengthPrefixed, length, scratch)
+        if (frame.length <= 0) return ByteArray(0)
+        return if (frame.bytes.size == frame.length) frame.bytes else frame.bytes.copyOf(frame.length)
     }
 
     /** IDR (AVC) or IRAP (HEVC) starts an independently decodable reference chain. */

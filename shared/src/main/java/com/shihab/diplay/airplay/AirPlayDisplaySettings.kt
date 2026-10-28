@@ -1,5 +1,7 @@
 package com.shihab.diplay.airplay
 
+import com.shihab.diplay.compat.realSdkInt
+
 enum class AirPlayPhysicalSizeBasis {
     WIDTH,
     HEIGHT,
@@ -14,6 +16,8 @@ data class AirPlayPhysicalSizeMm(
 object AirPlayDisplaySettings {
     const val MIN_FPS = 15
     const val MAX_FPS = 60
+    /** KitKat / API 19 head units cannot sustain 45–60 fps without hitching. */
+    const val MAX_FPS_KITKAT = 30
     const val FPS_STEP = 15
     // CS75 Plus / OS_S311-WT (ARMv7 KitKat): default to 30 fps; users can lower to 15 in
     // settings if the hardware decoder lags.
@@ -27,8 +31,11 @@ object AirPlayDisplaySettings {
     const val MIN_REPORTED_PHYSICAL_MM = 1
     const val MAX_REPORTED_PHYSICAL_MM = 2_000
 
+    fun maxFpsForDevice(): Int =
+        if (realSdkInt() <= 19) MAX_FPS_KITKAT else MAX_FPS
+
     fun sanitizeFps(value: Int): Int =
-        snapToStep(value, MIN_FPS, MAX_FPS, FPS_STEP)
+        snapToStep(value, MIN_FPS, maxFpsForDevice(), FPS_STEP)
 
     fun sanitizeWidthPhysicalMm(value: Int): Int =
         snapToStep(

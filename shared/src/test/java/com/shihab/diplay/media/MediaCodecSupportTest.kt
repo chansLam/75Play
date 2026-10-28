@@ -37,6 +37,17 @@ class MediaCodecSupportTest {
     }
 
     @Test
+    fun annexBConversionReusesScratchWithoutChangingValidPrefix() {
+        val first = byteArrayOf(0x40, 0x01)
+        val lengthPrefixed = byteArrayOf(0, 0, 0, first.size.toByte()) + first
+        val scratch = ByteArray(64) { 0x7F }
+        val frame = MediaCodecSupport.toAnnexBFrame(lengthPrefixed, scratch = scratch)
+        assertTrue(frame.bytes === scratch)
+        assertEquals(4 + first.size, frame.length)
+        assertArrayEquals(byteArrayOf(0, 0, 0, 1) + first, frame.bytes.copyOf(frame.length))
+    }
+
+    @Test
     fun hevcCodecSpecificDataBuildsAnnexBParameterSets() {
         val vps = byteArrayOf(0x40, 0x01)
         val sps = byteArrayOf(0x42, 0x01, 0x02)

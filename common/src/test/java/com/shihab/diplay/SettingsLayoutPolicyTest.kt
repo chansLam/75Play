@@ -19,6 +19,9 @@ class SettingsLayoutPolicyTest {
     @Test fun glassPagesMatchProductShell() {
         assertTrue(SettingsInformationArchitecture.sectionsByPage[SettingsShellPage.HOME]!!.contains(SettingsSection.CONNECTION_TABS))
         assertTrue(SettingsInformationArchitecture.sectionsByPage[SettingsShellPage.SETTINGS]!!.contains(SettingsSection.DISPLAY_AND_PERFORMANCE))
+        assertTrue(SettingsInformationArchitecture.sectionsByPage[SettingsShellPage.SETTINGS]!!.contains(SettingsSection.VEHICLE_CONTROLS))
+        assertTrue(SettingsInformationArchitecture.sectionsByPage[SettingsShellPage.SETTINGS]!!.contains(SettingsSection.LANGUAGE))
         assertTrue(SettingsInformationArchitecture.sectionsByPage[SettingsShellPage.ABOUT]!!.contains(SettingsSection.DIAGNOSTICS))
+        assertTrue(SettingsInformationArchitecture.sectionsByPage[SettingsShellPage.ABOUT]!!.contains(SettingsSection.SYSTEM))
     }
 }

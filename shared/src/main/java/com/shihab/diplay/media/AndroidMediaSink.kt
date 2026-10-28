@@ -146,11 +146,13 @@ class AndroidMediaSink(
     }
 
     /**
-     * Starts moving every decoder of this sink off [surface], which a SurfaceHolder destroy callback must
-     * not return before. Each worker decides from the surface its codec actually renders to, after any
-     * surface change queued before this: one already elsewhere has nothing to do. With [parkMain] the
-     * main-screen decoder moves to an offscreen consumer it owns and keeps its state (smooth video, so the
-     * picture can return at once); other decoders are released. Decoders closed earlier whose workers have
+     * Starts moving every decoder of this sink off [surface]. Removes [surface] from ownership
+     * immediately so new workers cannot target it; Host destroy callbacks should call this on the UI
+     * thread then await [SurfaceDetach] off-thread (KitKat ANR risk if awaited on the main thread).
+     * Each worker decides from the surface its codec actually renders to, after any surface change
+     * queued before this: one already elsewhere has nothing to do. With [parkMain] the main-screen
+     * decoder moves to an offscreen consumer it owns and keeps its state (smooth video, so the picture
+     * can return at once); other decoders are released. Decoders closed earlier whose workers have
      * not exited yet are waited for too. [SurfaceDetach.await] returns the result.
      */
     fun beginSurfaceDetach(surface: Surface, parkMain: Boolean): SurfaceDetach {

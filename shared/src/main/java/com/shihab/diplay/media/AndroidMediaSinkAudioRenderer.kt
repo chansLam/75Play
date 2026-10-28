@@ -51,6 +51,8 @@ internal class AudioRenderer(
     private var codec: MediaCodec? = null
     private var track: AudioTrack? = null
     private var pcm = ByteArray(64 * 1024)
+    /** Reused RTP payload strip (after 12-byte header) for LPCM/Opus — avoids per-packet copyOfRange. */
+    private var rtpPayloadScratch = ByteArray(0)
     private var playbackStarted = false
     private var prebufferBytes = 0
     private var startThresholdBytes = 0
@@ -552,7 +554,10 @@ internal class AudioRenderer(
         }
         val timestampUs = sampleTimestampUs(packet.sample)
         when (format.codec) {
-            AudioCodecKind.LPCM -> writePcm(byteSwapS16(rtp.copyOfRange(12, rtp.size)))
+            AudioCodecKind.LPCM -> {
+                val payloadLen = copyRtpPayload(rtp)
+                if (payloadLen > 0) writePcm(byteSwapS16(rtpPayloadScratch, payloadLen), 0, payloadLen)
+            }
             AudioCodecKind.AAC_LC -> {
                 if (rtp.size > 12) {
                     if (!firstAacPayloadLogged) {
@@ -563,19 +568,19 @@ internal class AudioRenderer(
                 }
             }
             AudioCodecKind.OPUS -> {
-                val accessUnit = rtp.copyOfRange(12, rtp.size)
-                if (accessUnit.size < MIN_OPUS_PACKET_BYTES) {
+                val payloadLen = copyRtpPayload(rtp)
+                if (payloadLen < MIN_OPUS_PACKET_BYTES) {
                     shortOpusPackets++
                     if (!firstOpusShortPacketLogged) {
                         firstOpusShortPacketLogged = true
                         AppLog.i(
                             TAG,
-                            "audio Opus skipping short packet bytes=${accessUnit.size}",
+                            "audio Opus skipping short packet bytes=$payloadLen",
                         )
                     }
                     return
                 }
-                feedCodec(accessUnit, timestampUs)
+                feedCodec(rtpPayloadScratch, timestampUs, 0, payloadLen)
             }
         }
     }
@@ -583,7 +588,7 @@ internal class AudioRenderer(
     private fun sampleTimestampUs(sample: Int): Long =
         (sample.toLong() and 0xffff_ffffL) * 1_000_000L / format.sampleRate
 
-    private fun decodeOpusSoftware(payload: ByteArray) {
+    private fun decodeOpusSoftware(payload: ByteArray, offset: Int = 0, length: Int = payload.size - offset) {
         val decoder = softwareOpusDecoder ?: NativeOpusDecoder.create(format.sampleRate, format.channels).also {
             softwareOpusDecoder = it
             if (it != null) {
@@ -597,7 +602,7 @@ internal class AudioRenderer(
             }
             return
         }
-        val pcm = decoder.decode(payload) ?: run { decoderUnavailablePackets++; return }
+        val pcm = decoder.decode(payload, offset, length) ?: run { decoderUnavailablePackets++; return }
         if (pcm.isNotEmpty()) {
             outputBuffers++
             writePcm(pcm, 0, pcm.size)
@@ -644,12 +649,17 @@ internal class AudioRenderer(
         drainCodec(codec)
     }
 
-    private fun feedCodec(payload: ByteArray, presentationTimeUs: Long) {
+    private fun feedCodec(
+        payload: ByteArray,
+        presentationTimeUs: Long,
+        offset: Int = 0,
+        length: Int = payload.size - offset,
+    ) {
         val codec = codec ?: run {
             // KitKat has no MediaCodec Opus decoder, so telephony/navigation OPUS streams used to
             // be dropped (silent). Decode them in software with libopus instead.
             if (format.codec == AudioCodecKind.OPUS) {
-                decodeOpusSoftware(payload)
+                decodeOpusSoftware(payload, offset, length)
             } else {
                 decoderUnavailablePackets++
             }
@@ -676,15 +686,15 @@ internal class AudioRenderer(
         }
         val input = codec.inputBufferCompat(index) ?: return
         input.clear()
-        if (payload.size <= input.remaining()) {
-            input.put(payload)
-            codec.queueInputBuffer(index, 0, payload.size, presentationTimeUs, 0)
+        if (length <= input.remaining()) {
+            input.put(payload, offset, length)
+            codec.queueInputBuffer(index, 0, length, presentationTimeUs, 0)
             inputQueued++
             if (!firstInputQueuedLogged) {
                 firstInputQueuedLogged = true
                 AppLog.i(
                     TAG,
-                    "audio decoder first input codec=${format.codec} bytes=${payload.size}",
+                    "audio decoder first input codec=${format.codec} bytes=$length",
                 )
             }
         } else {
@@ -692,6 +702,15 @@ internal class AudioRenderer(
             inputDropped++
         }
         drainCodec(codec)
+    }
+
+    /** Copies RTP payload (after the 12-byte header) into [rtpPayloadScratch]; returns length. */
+    private fun copyRtpPayload(rtp: ByteArray): Int {
+        val payloadLen = rtp.size - 12
+        if (payloadLen <= 0) return 0
+        if (rtpPayloadScratch.size < payloadLen) rtpPayloadScratch = ByteArray(payloadLen)
+        System.arraycopy(rtp, 12, rtpPayloadScratch, 0, payloadLen)
+        return payloadLen
     }
 
     private fun drainCodec(codec: MediaCodec) {
@@ -934,8 +953,9 @@ internal class AudioRenderer(
         }
     }
 
-    private fun byteSwapS16(source: ByteArray): ByteArray {
-        for (index in 0 until source.size - 1 step 2) {
+    private fun byteSwapS16(source: ByteArray, length: Int = source.size): ByteArray {
+        val limit = length.coerceIn(0, source.size)
+        for (index in 0 until limit - 1 step 2) {
             val tmp = source[index]
             source[index] = source[index + 1]
             source[index + 1] = tmp

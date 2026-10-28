@@ -4,10 +4,10 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
- * A request that the decoder stop rendering to [surface] (a SurfaceHolder destroy callback must not
- * return before that). The decoder worker completes it once its codec no longer renders there: moved to
- * another surface, parked on its own offscreen consumer, or released. A worker that shuts down completes
- * its pending requests after releasing the codec.
+ * A request that the decoder stop rendering to [surface]. Host destroy callbacks begin the detach on
+ * the UI thread and wait for completion off-thread. The decoder worker completes it once its codec no
+ * longer renders there: moved to another surface, parked on its own offscreen consumer, or released.
+ * A worker that shuts down completes its pending requests after releasing the codec.
  */
 internal class SurfaceDetachRequest(val surface: Any, val park: Boolean) {
     private val done = CountDownLatch(1)

@@ -67,7 +67,8 @@ class WifiP2pGroupManager(
             .getOrNull()?.takeIf { it.isNotBlank() }
             ?: ownership.getString("fallback_id", null)
             ?: java.util.UUID.randomUUID().toString().also {
-                check(ownership.edit().putString("fallback_id", it).commit())
+                // apply(): not on the critical ownership path; avoids a sync disk flush on the P2P worker.
+                ownership.edit().putString("fallback_id", it).apply()
             }
         P2pOwnership.prefix(appContext.packageName, id)
     }

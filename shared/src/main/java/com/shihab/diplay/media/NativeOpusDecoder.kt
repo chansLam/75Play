@@ -15,9 +15,9 @@ internal class NativeOpusDecoder private constructor(
 ) : Closeable {
     val available: Boolean get() = handle != 0L
 
-    @Synchronized fun decode(packet: ByteArray): ByteArray? {
+    @Synchronized fun decode(packet: ByteArray, offset: Int = 0, length: Int = packet.size - offset): ByteArray? {
         if (!available) return null
-        return runCatching { nativeDecode(handle, packet) }
+        return runCatching { nativeDecode(handle, packet, offset, length) }
             .onFailure { AppLog.w(TAG, "Native Opus decode failed", it) }
             .getOrNull()
     }
@@ -47,7 +47,12 @@ internal class NativeOpusDecoder private constructor(
         }
 
         @JvmStatic private external fun nativeCreate(sampleRate: Int, channels: Int): Long
-        @JvmStatic private external fun nativeDecode(handle: Long, packet: ByteArray): ByteArray?
+        @JvmStatic private external fun nativeDecode(
+            handle: Long,
+            packet: ByteArray,
+            offset: Int,
+            length: Int,
+        ): ByteArray?
         @JvmStatic private external fun nativeDestroy(handle: Long)
     }
 }

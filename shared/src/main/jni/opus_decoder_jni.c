@@ -36,18 +36,21 @@ Java_com_shihab_diplay_media_NativeOpusDecoder_nativeCreate(
 
 JNIEXPORT jbyteArray JNICALL
 Java_com_shihab_diplay_media_NativeOpusDecoder_nativeDecode(
-        JNIEnv *env, jclass clazz, jlong handle, jbyteArray packet) {
+        JNIEnv *env, jclass clazz, jlong handle, jbyteArray packet,
+        jint offset, jint length) {
     (void)clazz;
     OpusDecoder *decoder = decoder_from_handle(handle);
     if (decoder == NULL || packet == NULL) return NULL;
 
-    jsize len = (*env)->GetArrayLength(env, packet);
-    if (len <= 0) return NULL;
+    jsize capacity = (*env)->GetArrayLength(env, packet);
+    if (offset < 0 || length <= 0 || offset > capacity || length > capacity - offset) {
+        return NULL;
+    }
     jbyte *data = (*env)->GetByteArrayElements(env, packet, NULL);
     if (data == NULL) return NULL;
 
     jshort pcm[MAX_FRAME_SAMPLES * MAX_CHANNELS];
-    int samples = opus_decode(decoder, (const unsigned char *)data, len,
+    int samples = opus_decode(decoder, (const unsigned char *)(data + offset), length,
                               pcm, MAX_FRAME_SAMPLES, 0);
     (*env)->ReleaseByteArrayElements(env, packet, data, JNI_ABORT);
     if (samples < 0) return NULL;

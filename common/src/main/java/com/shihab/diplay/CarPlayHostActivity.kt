@@ -12,10 +12,12 @@ import com.shihab.diplay.host.HostLogView
 import com.shihab.diplay.host.HomeScreenMonitor
 import com.shihab.diplay.host.SwcCarPlayKeys
 import android.graphics.PixelFormat
-import com.shihab.diplay.host.ImmersiveBars
 import com.shihab.diplay.host.WirelessStartupRecovery
 import com.shihab.diplay.host.HostChrome
+import com.shihab.diplay.host.HostDisplayLayout
+import com.shihab.diplay.host.HostImmersion
 import com.shihab.diplay.host.HostSessionLifecycle
+import com.shihab.diplay.host.HostTouchGestures
 import com.shihab.diplay.host.backgroundSessionMatchesView
 import com.shihab.diplay.host.carPlayVideoSurfaceMode
 import com.shihab.diplay.session.smoothVideoDelayMillis
@@ -29,7 +31,6 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.Matrix
 import android.graphics.drawable.GradientDrawable
 import android.media.MediaCodecList
 import android.media.MediaFormat
@@ -60,7 +61,6 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.view.WindowCompat
 import com.shihab.diplay.airplay.AirPlayConfig
 import com.shihab.diplay.airplay.AirPlayDisplaySettings
 import com.shihab.diplay.airplay.AirPlayPhysicalSizeBasis
@@ -77,7 +77,6 @@ import com.shihab.diplay.airplay.CarPlayMediaEngine
 import com.shihab.diplay.host.R
 import com.shihab.diplay.connect.ConnectBroadcasts
 import com.shihab.diplay.media.AndroidMediaSink
-import com.shihab.diplay.media.CarPlayTouchMapper
 import com.shihab.diplay.media.CarPlayVideoLayout
 import com.shihab.diplay.network.CarPlayWirelessService
 import com.shihab.diplay.orchestration.CarPlayController
@@ -117,6 +116,9 @@ class CarPlayHostActivity : ComponentActivity() {
     internal val wirelessStartup = WirelessStartupRecovery()
     private val sessionLifecycle = HostSessionLifecycle(this)
     private val hostChrome = HostChrome(this)
+    private val hostTouchGestures = HostTouchGestures(this)
+    private val hostImmersion = HostImmersion(this)
+    private val hostDisplayLayout = HostDisplayLayout(this)
     internal var startupFailureGeneration = -1
     internal val startupFailurePresented = java.util.concurrent.atomic.AtomicBoolean(false)
     internal lateinit var airPlayIdentity: AirPlayIdentity
@@ -235,7 +237,7 @@ class CarPlayHostActivity : ComponentActivity() {
     // The full-window viewport stays independent of the letterboxed SurfaceView dimensions.
     internal var videoView: View? = null
     internal var fallbackVideoView: SurfaceView? = null
-    private var fallbackVideoBounds: CarPlaySurfaceBounds? = null
+    internal var fallbackVideoBounds: CarPlaySurfaceBounds? = null
     // Smooth video (a setting): SurfaceView output with frames released at the iPhone's frame time.
     internal var smoothVideo = false
     // Direct SurfaceView output: hardware overlay without TextureView composition overhead.
@@ -302,7 +304,7 @@ class CarPlayHostActivity : ComponentActivity() {
     internal var activeDisplaySize: DisplaySize? = null
     internal var pendingDisplaySize: DisplaySize? = null
     internal var sessionDisplay: CarPlaySessionDisplay? = null
-    private var touchOutsideContent = false
+    internal var touchOutsideContent = false
     internal var displayScalePercent = 100
     private var displayScaleTenths = CarPlayDisplayScale.DEFAULT_TENTHS
     private var uiScalePercent = CarPlayUiScale.DEFAULT
@@ -334,8 +336,8 @@ class CarPlayHostActivity : ComponentActivity() {
     private var sessionDock: CarPlayDock? = null
     internal var hideTopBar = true
     internal var hideBottomBar = true
-    private var harmanFullscreenEnabled = false
-    private var harmanFullscreenApplied = false
+    internal var harmanFullscreenEnabled = false
+    internal var harmanFullscreenApplied = false
     private var safeAreaDrawOutside = true
     internal var locationReportingEnabled = false
     internal var locationPermissionAvailable = false
@@ -386,18 +388,14 @@ class CarPlayHostActivity : ComponentActivity() {
     private var startAfterHandshakeReset = false
     internal var reconnectScheduled = false
     internal var sessionLog: SessionLogFile? = null
-    private var gestureFingerCount = 3
-    private var temporarySystemBarsEnabled = false
-    private var temporarySystemBarsVisible = false
-    private val hideTemporarySystemBars = Runnable {
-        temporarySystemBarsVisible = false
-        applyFullscreenMode()
-    }
+    internal var gestureFingerCount = 3
+    internal var temporarySystemBarsEnabled = false
+    internal var temporarySystemBarsVisible = false
     private var settingsGestureHint: TextView? = null
-    private var gestureSequenceActive = false
-    private var gestureTracking = false
-    private var gestureStartX = 0f
-    private var gestureStartY = 0f
+    internal var gestureSequenceActive = false
+    internal var gestureTracking = false
+    internal var gestureStartX = 0f
+    internal var gestureStartY = 0f
     internal val shuttingDown = AtomicBoolean(false)
     /** Set only after [sessionShutdown] wins the shutdown race and will close the executors. */
     internal val sessionTeardownStarted = AtomicBoolean(false)
@@ -428,12 +426,6 @@ class CarPlayHostActivity : ComponentActivity() {
             mainHandler.postDelayed(this, CONFIGURATION_POLL_INTERVAL_MILLIS)
         }
     }
-    private val applyDisplaySize = Runnable {
-        val size = pendingDisplaySize ?: return@Runnable
-        pendingDisplaySize = null
-        applyDisplaySize(size)
-    }
-
     private val textureListener = hostVideoSurfaces.textureListener
     private val fallbackSurfaceCallback = hostVideoSurfaces.fallbackCallback
 
@@ -548,6 +540,9 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun loadPersistedSettings() {
+        AirPlayPersistence.warm(this)
+        smoothVideo = AirPlayPersistence.loadSmoothVideo(this)
+        directSurfaceView = AirPlayPersistence.loadDirectSurfaceView(this)
         carPlayDock = CarPlayDock.load(this)
         carPlayNightMode = AirPlayPersistence.loadCarPlayNightMode(this)
         ambientLightThreshold = AirPlayPersistence.loadAmbientLightThreshold(this)
@@ -875,7 +870,8 @@ class CarPlayHostActivity : ComponentActivity() {
         removeVideoSurfaceProbe()
         fallbackVideoView?.holder?.removeCallback(fallbackSurfaceCallback)
         homeMonitor?.stop()
-        mainHandler.removeCallbacks(applyDisplaySize)
+        hostImmersion.clearBarGuard()
+        mainHandler.removeCallbacks(hostDisplayLayout.applyDisplaySizeRunnable)
         mainHandler.removeCallbacks(hostLogView.expireOldLogLines)
         mainHandler.removeCallbacks(pollConfiguration)
         cancelReturnToShellFinish()
@@ -895,11 +891,6 @@ class CarPlayHostActivity : ComponentActivity() {
 
     private fun buildContentView(): View {
         val root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
-        val video = TextureView(this).apply {
-            isOpaque = false
-            surfaceTextureListener = textureListener
-        }
-        pictureBinding = CarPlayPicture.Binding(video)
         val gestureLayer = View(this).apply {
             isClickable = true
             setOnTouchListener { view, event -> onHostTouch(view, event) }
@@ -908,17 +899,33 @@ class CarPlayHostActivity : ComponentActivity() {
         stageStatusView = loading.status
         stageStatusView?.text = hostChrome.friendlyStage(latestStage)
         stageStatusView?.maxWidth = (resources.displayMetrics.widthPixels * 0.78f).toInt()
-        root.addView(video, FrameLayout.LayoutParams(-1, -1))
+        // KitKat CS75 defaults to direct SurfaceView; build it immediately so we do not create a
+        // TextureView, wait for pre-draw, then tear it down (extra surface detach on the hot path).
+        if (smoothVideo || directSurfaceView) {
+            installSurfaceViewOutput(root, index = 0)
+            appendLog(
+                if (smoothVideo) {
+                    "Using SurfaceView video output from start: smooth video; picture adjustments unavailable"
+                } else {
+                    "Using SurfaceView video output from start: direct hardware overlay; picture adjustments unavailable"
+                },
+            )
+        } else {
+            val video = TextureView(this).apply {
+                isOpaque = false
+                surfaceTextureListener = textureListener
+            }
+            pictureBinding = CarPlayPicture.Binding(video)
+            root.addView(video, FrameLayout.LayoutParams(-1, -1))
+            videoView = video
+            observeVideoWindow(video)
+        }
         root.addView(loading, FrameLayout.LayoutParams(-1, -1))
         loading.visibility = View.GONE
         root.addView(gestureLayer, FrameLayout.LayoutParams(-1, -1))
         // Above the gesture layer: OEM button opens a centered app popup (apps load on open).
         systemAppsMenu = buildSystemAppsMenu(emptyList()).apply { visibility = View.GONE }
         root.addView(systemAppsMenu, FrameLayout.LayoutParams(-1, -1))
-        videoView = video
-        smoothVideo = AirPlayPersistence.loadSmoothVideo(this)
-        directSurfaceView = AirPlayPersistence.loadDirectSurfaceView(this)
-        observeVideoWindow(video)
         gestureOverlay = gestureLayer
         loadingLayer = loading
         updateDebugOverlays()
@@ -962,7 +969,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     // The panel's strip of the stream, mapped through the video's layout in the window.
-    private fun placeSidePanel(viewWidth: Int, viewHeight: Int) {
+    internal fun placeSidePanel(viewWidth: Int, viewHeight: Int) {
         val panel = sidePanel ?: return
         val display = sessionDisplay ?: return
         val strip = display.viewAreas?.let { it.panelRect(it.current) } ?: return
@@ -983,7 +990,7 @@ class CarPlayHostActivity : ComponentActivity() {
         val areas = sessionDisplay?.viewAreas ?: return
         val view = videoView ?: return
         val split = isMultiWindowActive()
-        val portrait = if (split) screenPortrait() else view.height > view.width
+        val portrait = if (split) hostDisplayLayout.screenPortrait() else view.height > view.width
         val target = if (show) areas.sidePanel(portrait) else areas.indexFor(view.width, view.height, split, portrait)
         val sent = target != null && controller?.showViewArea(target) == true
         appendLog("Side panel ${if (show) "shown" else "hidden"}: view area $target sent=$sent")
@@ -1354,202 +1361,25 @@ class CarPlayHostActivity : ComponentActivity() {
 
     private fun scheduleDisplaySize(width: Int, height: Int) = sessionScheduleDisplaySize(width, height)
 
-    internal fun sessionScheduleDisplaySize(width: Int, height: Int) {
-        if (width <= 0 || height <= 0 || shuttingDown.get()) return
-        val size = DisplaySize(width, height)
-        if (size == pendingDisplaySize) return
-        mainHandler.removeCallbacks(applyDisplaySize)
-        if (size == activeDisplaySize && !displayLayoutChanged()) {
-            pendingDisplaySize = null
-            // A rotation back can cancel the last pending resize after teardown has finished.
-            maybeStartCarPlay()
-            return
-        }
-        pendingDisplaySize = size
-        // With a turning screen's square canvas nothing reconnects, so the turn need not wait for the size to settle.
-        mainHandler.postDelayed(applyDisplaySize,
-            if (sessionDisplay?.viewAreas?.turnsWithScreen == true) 0L else DISPLAY_CHANGE_DEBOUNCE_MILLIS)
-    }
+    internal fun sessionScheduleDisplaySize(width: Int, height: Int) =
+        hostDisplayLayout.scheduleDisplaySize(width, height)
 
     internal fun isMultiWindowActive(): Boolean {
         return false
     }
 
-
-    private fun applyDisplaySize(size: DisplaySize) {
-        val display = sessionDisplay
-        if (display != null && applyViewArea(size, display)) return
-        val layoutChanged = displayLayoutChanged(size)
-        if (shuttingDown.get()) return
-        if (size == activeDisplaySize && !layoutChanged) {
-            // Teardown may have removed the session that made this same-size rotation pending.
-            maybeStartCarPlay()
-            return
-        }
-        val previous = activeDisplaySize
-        activeDisplaySize = size
-        recordDetectedMaximum(size)
-        if (previous == null) {
-            appendLog("Display detected: ${size.width}x${size.height}")
-            maybeStartCarPlay()
-        } else if (handshakeResetInProgress) {
-            appendLog(
-                "Display updated while handshake is reset: " +
-                    "${previous.width}x${previous.height} -> ${size.width}x${size.height}",
-            )
-        } else if (controller == null && display == null) {
-            appendLog(
-                "Display updated before CarPlay startup: " +
-                    "${previous.width}x${previous.height} -> ${size.width}x${size.height}",
-            )
-            maybeStartCarPlay()
-        } else if (display != null && !layoutChanged &&
-            size.width <= display.windowWidth && size.height <= display.windowHeight) {
-            // Keep camera shrink/restore cycles within the original window connected. If the
-            // session started in a camera window, growth beyond it needs a full-size canvas.
-            val message = "Display changed ${previous.width}x${previous.height} -> ${size.width}x${size.height}; " +
-                "keeping CarPlay session canvas=${display.width}x${display.height}"
-            appendLog(message)
-            AppLog.i(TAG, message)
-            videoView?.let { updateVideoLayout(it.width, it.height) }
-        } else {
-            restartCarPlay(
-                "Display changed ${previous.width}x${previous.height} -> ${size.width}x${size.height}",
-            )
-        }
-    }
-
-    /**
-     * Entering or leaving the head unit's split screen, or turning the screen with a square canvas, moves
-     * CarPlay to the matching view area instead of reconnecting. The split window is remembered per screen
-     * orientation for the next session's area. False when the change is something else (a camera window,
-     * a turn without a square canvas), which the usual path handles.
-     */
-    private fun applyViewArea(size: DisplaySize, display: CarPlaySessionDisplay): Boolean {
-        val areas = display.viewAreas ?: return false
-        if (controller == null || handshakeResetInProgress || shuttingDown.get()) return false
-        val split = isMultiWindowActive()
-        // A full window's own shape tells the screen's orientation; during a turn the display metrics and
-        // rotation can lag behind the window. A split-screen window can have either shape, so it asks the
-        // display, which is settled then.
-        val portrait = if (split) screenPortrait() else size.height > size.width
-        val previous = activeDisplaySize
-        if (areas.turnsWithScreen && display.rotation != displayRotation() && size == previous) {
-            // The turn arrived before the window's new size: note it and wait for the size, which picks
-            // the area, instead of letting the old rotation look like a changed layout.
-            sessionDisplay = display.copy(rotation = displayRotation())
-            AppLog.i(TAG, "Screen turned before the window resized (${size.width}x${size.height}); waiting for its size")
-            return true
-        }
-        val turned = previous != null && !split && (previous.height > previous.width) != portrait
-        if (turned && !areas.turnsWithScreen) return false
-        if (split) {
-            // Against the whole screen, which the system bars (shown in BYD's split screen) do not change.
-            val screen = android.util.DisplayMetrics().also { windowManager.defaultDisplay.getRealMetrics(it) }
-            val screenLong = maxOf(screen.widthPixels, screen.heightPixels).toFloat()
-            val screenShort = minOf(screen.widthPixels, screen.heightPixels).toFloat()
-            if (screenLong > 0 && screenShort > 0) {
-                if (portrait) SplitScreenSettings.saveWindow(this, true, size.width / screenShort, size.height / screenLong)
-                else SplitScreenSettings.saveWindow(this, false, size.width / screenLong, size.height / screenShort)
-            }
-        }
-        val target = areas.indexFor(size.width, size.height, split, portrait) ?: return false
-        if (sidePanelShown) resetSidePanel() // a turn or the split screen ends the side panel
-        // The same whole-screen area without a turn (a camera window, say) keeps the usual handling.
-        if (!turned && target == areas.current && areas.kindOf(target) == CarPlayViewAreas.Kind.FULL_SCREEN) return false
-        activeDisplaySize = size
-        sessionDisplay = display.copy(rotation = displayRotation())
-        val sent = if (target == areas.current) true else controller?.showViewArea(target) == true
-        if (sent) areas.use(target)
-        videoView?.let { updateVideoLayout(it.width, it.height) }
-        val message = "Window ${previous?.width}x${previous?.height} -> ${size.width}x${size.height} " +
-            "split=$split portrait=$portrait turned=$turned: view area $target sent=$sent"
-        appendLog(message)
-        AppLog.i(TAG, message)
-        return true
-    }
-
-    /** Whether the screen itself is portrait now (DiPlay's own window may be a split-screen part of it). */
-    @Suppress("DEPRECATION")
-    private fun screenPortrait(): Boolean {
-        val metrics = android.util.DisplayMetrics()
-        windowManager.defaultDisplay.getRealMetrics(metrics)
-        return metrics.heightPixels > metrics.widthPixels
-    }
-
     @Suppress("DEPRECATION")
     internal fun displayRotation(): Int = videoView?.display?.rotation ?: windowManager.defaultDisplay.rotation
 
-    private fun displayLayoutChanged(newSize: DisplaySize? = activeDisplaySize): Boolean {
-        val display = sessionDisplay ?: return false
-        if (display.rotation != displayRotation()) return true
-        if (display.hideTopBar != hideTopBar || display.hideBottomBar != hideBottomBar) return true
-        if (newSize != null && newSize.width > 0 && newSize.height > 0) {
-            val baseAspect = display.width.toDouble() / display.height
-            val currentAspect = newSize.width.toDouble() / newSize.height
-            val aspectDiff = kotlin.math.abs(currentAspect / baseAspect - 1.0)
-            if (aspectDiff > 0.08 && AirPlayPersistence.loadAdaptPipResolution(this)) {
-                return true
-            }
-        }
-        return false
-    }
-
-
-
-    private fun contentRect(viewWidth: Int, viewHeight: Int): CarPlayVideoLayout {
-        val display = sessionDisplay ?: return CarPlayVideoLayout(0f, 0f, viewWidth.toFloat(), viewHeight.toFloat())
-        // In the head unit's split screen, or on a turning screen's square canvas, CarPlay draws in part of
-        // the canvas; that area fills the window and the rest falls outside it. Video and touches both
-        // follow this. An area of the whole canvas keeps the usual fit.
-        display.viewAreas?.let { areas ->
-            val area = areas.layoutArea(areas.current)
-            if (area.width != display.width || area.height != display.height) {
-                val scaleX = viewWidth.toFloat() / area.width
-                val scaleY = viewHeight.toFloat() / area.height
-                return CarPlayVideoLayout(-area.originX * scaleX, -area.originY * scaleY,
-                    display.width * scaleX, display.height * scaleY)
-            }
-        }
-        return CarPlayVideoLayout.fit(display.width, display.height, viewWidth, viewHeight)
-    }
+    internal fun contentRect(viewWidth: Int, viewHeight: Int) =
+        hostDisplayLayout.contentRect(viewWidth, viewHeight)
 
     private fun updateVideoLayout(viewWidth: Int, viewHeight: Int) = sessionUpdateVideoLayout(viewWidth, viewHeight)
 
-    internal fun sessionUpdateVideoLayout(viewWidth: Int, viewHeight: Int) {
-        val view = videoView ?: return
-        if (viewWidth <= 0 || viewHeight <= 0) return
-        val content = contentRect(viewWidth, viewHeight)
-        val fallback = fallbackVideoView
-        if (fallback != null) {
-            val bounds = CarPlaySurfaceBounds.from(content)
-            if (fallbackVideoBounds != bounds) {
-                fallbackVideoBounds = bounds
-                fallback.layoutParams = FrameLayout.LayoutParams(bounds.width, bounds.height,
-                    Gravity.TOP or Gravity.LEFT).apply {
-                    leftMargin = bounds.left
-                    topMargin = bounds.top
-                }
-            }
-        } else {
-            (view as? TextureView)?.setTransform(Matrix().apply {
-                setScale(content.width / viewWidth, content.height / viewHeight)
-                postTranslate(content.left, content.top)
-            })
-        }
-        if (sidePanelShown) placeSidePanel(viewWidth, viewHeight)
-    }
+    internal fun sessionUpdateVideoLayout(viewWidth: Int, viewHeight: Int) =
+        hostDisplayLayout.updateVideoLayout(viewWidth, viewHeight)
 
-    private fun recordDetectedMaximum(size: DisplaySize) {
-        val width = maxOf(maximumDetectedWidthPixels, size.width)
-        val height = maxOf(maximumDetectedHeightPixels, size.height)
-        if (width == maximumDetectedWidthPixels && height == maximumDetectedHeightPixels) return
-        maximumDetectedWidthPixels = width
-        maximumDetectedHeightPixels = height
-        AirPlayPersistence.saveMaximumDetectedDisplay(this, width, height)
-    }
-
-    private fun maybeStartCarPlay() = sessionLifecycle.maybeStart()
+    internal fun maybeStartCarPlay() = sessionLifecycle.maybeStart()
 
 
     private fun reconnectAfterLoss(reason: String, startupFailure: WirelessStartupFailure? = null) =
@@ -1557,7 +1387,7 @@ class CarPlayHostActivity : ComponentActivity() {
 
 
     /** Full-stack fallback when an AirPlay-only reconnect is unavailable. */
-    private fun restartCarPlay(reason: String) = sessionLifecycle.restart(reason)
+    internal fun restartCarPlay(reason: String) = sessionLifecycle.restart(reason)
 
 
     private fun showDiPlayHome(page: String = "home") {
@@ -1599,7 +1429,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun closePicturePanel() = hostChrome.closePicturePanel()
 
     /** Leave CarPlay and show the DiPlay shell. Settings are edited there, never in Host. */
-    private fun returnToDiPlay() {
+    internal fun returnToDiPlay() {
         sessionLifecycle.parkForShell()
         cancelTemporarySystemBars()
         closeSystemAppsMenu()
@@ -1655,7 +1485,7 @@ class CarPlayHostActivity : ComponentActivity() {
         resetSidePanel()
         wirelessStartup.disconnected()
         wirelessStartup.bumpGeneration()
-        mainHandler.removeCallbacks(applyDisplaySize)
+        mainHandler.removeCallbacks(hostDisplayLayout.applyDisplaySizeRunnable)
         val oldController = controller
         val oldSink = sink
         CarPlayMediaKeys.detach(oldController)
@@ -1709,8 +1539,6 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun useFallbackVideoSurface(texture: TextureView) {
         val root = texture.parent as? FrameLayout ?: return
         val index = root.indexOfChild(texture)
-        val viewport = FrameLayout(this).apply { clipChildren = true }
-        val surfaceView = SurfaceView(this)
         pictureBinding?.close()
         pictureBinding = null
         // Detach our wrapper before removing its TextureView; a late destruction callback
@@ -1718,7 +1546,29 @@ class CarPlayHostActivity : ComponentActivity() {
         videoSurfaceOwner.clear()
         hostVideoSurfaces.forgetTexture()
         texture.surfaceTextureListener = null
+        val layoutParams = texture.layoutParams
         root.removeView(texture)
+        installSurfaceViewOutput(root, index, layoutParams)
+        showVideoLoading()
+        appendLog(when {
+            smoothVideo ->
+                "Using SurfaceView video output: smooth video, frames shown at the iPhone's frame time + a delay " +
+                    "starting at ${smoothVideoDelayMillis(fps)} ms; picture adjustments unavailable"
+            directSurfaceView ->
+                "Using SurfaceView video output: direct hardware overlay (low CPU/GPU overhead); picture adjustments unavailable"
+            else ->
+                "Using SurfaceView video output: window has no hardware acceleration; picture adjustments unavailable"
+        })
+    }
+
+    /** Places a SurfaceView video viewport into [root] at [index] (KitKat default / smooth path). */
+    private fun installSurfaceViewOutput(
+        root: FrameLayout,
+        index: Int,
+        layoutParams: ViewGroup.LayoutParams = FrameLayout.LayoutParams(-1, -1),
+    ) {
+        val viewport = FrameLayout(this).apply { clipChildren = true }
+        val surfaceView = SurfaceView(this)
         videoView = viewport
         fallbackVideoView = surfaceView
         surfaceView.holder.addCallback(fallbackSurfaceCallback)
@@ -1731,17 +1581,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 scheduleDisplaySize(width, height)
             }
         }
-        root.addView(viewport, index, texture.layoutParams)
-        showVideoLoading()
-        appendLog(when {
-            smoothVideo ->
-                "Using SurfaceView video output: smooth video, frames shown at the iPhone's frame time + a delay " +
-                    "starting at ${smoothVideoDelayMillis(fps)} ms; picture adjustments unavailable"
-            directSurfaceView ->
-                "Using SurfaceView video output: direct hardware overlay (low CPU/GPU overhead); picture adjustments unavailable"
-            else ->
-                "Using SurfaceView video output: window has no hardware acceleration; picture adjustments unavailable"
-        })
+        root.addView(viewport, index, layoutParams)
     }
 
     /** A dimension of the platform's own resources in pixels, or 0 when this build has none by [name]. */
@@ -1756,124 +1596,12 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     /** Temporary reveal without persisting bar visibility or changing AirPlay's negotiated size. */
-    private fun showTemporarySystemBars(): Boolean {
-        if (!temporarySystemBarsEnabled || gestureFingerCount == 0 ||
-            harmanFullscreenEnabled || isMultiWindowActive() || (!hideTopBar && !hideBottomBar)) {
-            return false
-        }
-        mainHandler.removeCallbacks(hideTemporarySystemBars)
-        temporarySystemBarsVisible = true
-        applyFullscreenMode()
-        mainHandler.postDelayed(hideTemporarySystemBars, 5_000L)
-        return true
-    }
+    internal fun showTemporarySystemBars(): Boolean = hostImmersion.showTemporarySystemBars()
 
-    private fun cancelTemporarySystemBars() {
-        mainHandler.removeCallbacks(hideTemporarySystemBars)
-        if (temporarySystemBarsVisible) {
-            temporarySystemBarsVisible = false
-            applyFullscreenMode()
-        }
-    }
+    private fun cancelTemporarySystemBars() = hostImmersion.cancelTemporarySystemBars()
 
-    private fun onHostTouch(view: View, event: MotionEvent): Boolean {
-        if (systemAppsOpen) return true
-
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                gestureSequenceActive = false
-                gestureTracking = false
-                // Some head-unit panels report every finger on the first DOWN, with no POINTER_DOWN.
-                if (beginReturnSwipe(event)) return true
-            }
-            MotionEvent.ACTION_POINTER_DOWN -> {
-                if (beginReturnSwipe(event)) return true
-            }
-        }
-
-        if (gestureSequenceActive) {
-            if (event.actionMasked == MotionEvent.ACTION_POINTER_UP || event.pointerCount != gestureFingerCount) {
-                gestureTracking = false
-            }
-            if (!gestureTracking || event.pointerCount != gestureFingerCount) {
-                if (event.actionMasked == MotionEvent.ACTION_UP ||
-                    event.actionMasked == MotionEvent.ACTION_CANCEL
-                ) {
-                    gestureSequenceActive = false
-                    gestureTracking = false
-                } else if (event.actionMasked == MotionEvent.ACTION_POINTER_UP) {
-                    gestureTracking = false
-                }
-                return true
-            }
-            if (event.actionMasked == MotionEvent.ACTION_MOVE) {
-                val deltaX = Math.abs(pointerCentroid(event, horizontal = true) - gestureStartX)
-                val deltaY = pointerCentroid(event, horizontal = false) - gestureStartY
-                val swipeDistance = dp(SETTINGS_SWIPE_DISTANCE_DP)
-                if (deltaY >= swipeDistance && deltaY >= deltaX * SETTINGS_SWIPE_DIRECTION_RATIO) {
-                    // Swipe down with N fingers: return to the DiPlay shell (not Host settings).
-                    gestureSequenceActive = false
-                    gestureTracking = false
-                    returnToDiPlay()
-                    return true
-                }
-                if (deltaY <= -swipeDistance && -deltaY >= deltaX * SETTINGS_SWIPE_DIRECTION_RATIO) {
-                    // Swipe up with N fingers: briefly reveal hidden system bars, else back to DiPlay.
-                    gestureSequenceActive = false
-                    gestureTracking = false
-                    if (!showTemporarySystemBars()) FloatingBall.backToDiPlay(this)
-                    return true
-                }
-            }
-            return true
-        }
-
-        val content = contentRect(view.width, view.height)
-        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
-            touchOutsideContent = !content.contains(event.x, event.y)
-        }
-        if (touchOutsideContent) {
-            // Ignore the entire touch sequence when it starts in a letterbox bar.
-            if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
-                touchOutsideContent = false
-            }
-            return true
-        }
-        val contacts = CarPlayTouchMapper.contacts(event, content)
-        val queued = controller?.sendTouch(contacts) ?: false
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN,
-            MotionEvent.ACTION_POINTER_DOWN,
-            MotionEvent.ACTION_UP,
-            MotionEvent.ACTION_POINTER_UP,
-            MotionEvent.ACTION_CANCEL -> AppLog.i(
-                TAG,
-                "touch action=${MotionEvent.actionToString(event.actionMasked)} " +
-                    "pointers=${event.pointerCount} queued=$queued",
-            )
-        }
-        return true
-    }
-
-    /** Start a return swipe once [gestureFingerCount] fingers are down. Already tracking: no-op. */
-    private fun beginReturnSwipe(event: MotionEvent): Boolean {
-        if (gestureSequenceActive || event.pointerCount != gestureFingerCount) return false
-        gestureSequenceActive = true
-        gestureTracking = true
-        gestureStartX = pointerCentroid(event, horizontal = true)
-        gestureStartY = pointerCentroid(event, horizontal = false)
-        controller?.sendTouch(emptyList())
-        appendLog("DiPlay return swipe tracking started; fingers=$gestureFingerCount")
-        return true
-    }
-
-    private fun pointerCentroid(event: MotionEvent, horizontal: Boolean): Float {
-        var total = 0f
-        for (index in 0 until event.pointerCount) {
-            total += if (horizontal) event.getX(index) else event.getY(index)
-        }
-        return total / event.pointerCount
-    }
+    private fun onHostTouch(view: View, event: MotionEvent): Boolean =
+        hostTouchGestures.onHostTouch(view, event)
 
     internal fun onScreenStreamStateChanged(generation: Int, type: Int, active: Boolean) {
         runOnUiThread {
@@ -1981,77 +1709,9 @@ class CarPlayHostActivity : ComponentActivity() {
         }
     }
 
-    private var systemUiVisibilityListenerInstalled = false
-
-    // CarPlay 会话期间周期重隐系统栏：部分车机 ROM 在下拉状态栏后不自动恢复隐藏，
-    // 由心跳每 1.5s 强制压一次（用 FLAG_FULLSCREEN 级全屏，保证导航栏不露出）。
-    private val carPlayBarGuard = object : Runnable {
-        override fun run() {
-            if (isFinishing || isDestroyed) return
-            if (activeAirPlaySession == null || temporarySystemBarsVisible || isMultiWindowActive()) return
-            ImmersiveBars.applyToWindow(window, force = true)
-            mainHandler.postDelayed(this, 1500)
-        }
-    }
-
     internal fun syncFullscreenChrome() = applyFullscreenMode()
 
-    private fun applyFullscreenMode() {
-        val multiWindow = isMultiWindowActive()
-        if (harmanFullscreenEnabled) {
-            WindowCompat.setDecorFitsSystemWindows(window, false)
-            // Apply the OEM-specific bit last; the standard insets controller does not preserve it.
-            HarmanFullscreenCompat.apply(window)
-            harmanFullscreenApplied = true
-            return
-        }
-        if (harmanFullscreenApplied) {
-            HarmanFullscreenCompat.clear(window)
-            harmanFullscreenApplied = false
-        }
-        // While a CarPlay session is live, force fullscreen regardless of the toggles so the
-        // CarPlay picture always hides the status + navigation bars, like the system car UI.
-        val carPlayActive = activeAirPlaySession != null
-        // A three-finger upward swipe can briefly reveal hidden bars even during a live session.
-        val peekBars = temporarySystemBarsVisible
-        val hideTop = ((hideTopBar || carPlayActive) && !peekBars) && !multiWindow
-        val hideBottom = ((hideBottomBar || carPlayActive) && !peekBars) && !multiWindow
-        val immersive = hideTop || hideBottom
-        if (hideTop && hideBottom) {
-            // Full sticky immersive: share the same flags/window path as the shell.
-            ImmersiveBars.applyToWindow(window, force = true)
-        } else {
-            // KitKat / Changan OS_S311-WT: one bar hidden still needs sticky immersive layout.
-            ImmersiveBars.applyPartial(window, hideTop, hideBottom)
-        }
-
-        if (!systemUiVisibilityListenerInstalled) {
-            systemUiVisibilityListenerInstalled = true
-            @Suppress("DEPRECATION")
-            window.decorView.setOnSystemUiVisibilityChangeListener { visibility ->
-                if (isFinishing || isDestroyed) return@setOnSystemUiVisibilityChangeListener
-                if (isMultiWindowActive()) return@setOnSystemUiVisibilityChangeListener
-                // CarPlay 会话激活时强制全屏（见 applyFullscreenMode）：无论设置开关如何，
-                // 下拉状态栏/导航栏意外显示都必须立即重新隐藏，不能遮挡 CarPlay 画面。
-                val carPlayActiveNow = activeAirPlaySession != null
-                val wantHide = hideTopBar || hideBottomBar || carPlayActiveNow
-                // 三指上滑临时显示系统栏期间（5 秒）不强制隐藏，超时后由 hideTemporarySystemBars 恢复。
-                if (!wantHide || temporarySystemBarsVisible) return@setOnSystemUiVisibilityChangeListener
-                @Suppress("DEPRECATION")
-                val navShowing = visibility and View.SYSTEM_UI_FLAG_HIDE_NAVIGATION == 0
-                @Suppress("DEPRECATION")
-                val statusShowing = visibility and View.SYSTEM_UI_FLAG_FULLSCREEN == 0
-                if ((hideBottomBar || carPlayActiveNow) && navShowing) {
-                    window.decorView.postDelayed({ applyFullscreenMode() }, 200)
-                } else if ((hideTopBar || carPlayActiveNow) && statusShowing) {
-                    window.decorView.postDelayed({ applyFullscreenMode() }, 200)
-                }
-            }
-        }
-        // 心跳重隐：CarPlay 会话期间周期压导航栏，对抗下拉状态栏后 ROM 不自动恢复隐藏。
-        mainHandler.removeCallbacks(carPlayBarGuard)
-        if (carPlayActive && immersive) mainHandler.postDelayed(carPlayBarGuard, 1500)
-    }
+    private fun applyFullscreenMode() = hostImmersion.applyFullscreenMode()
 
     internal fun dp(value: Int): Int = com.shihab.diplay.ui.LayoutMetrics.dp(this, value)
 

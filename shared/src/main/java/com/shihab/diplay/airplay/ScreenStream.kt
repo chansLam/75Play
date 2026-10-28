@@ -64,6 +64,24 @@ class ScreenStream(
     private fun accept(bound: ServerSocket) {
         try {
             val accepted = bound.accept()
+            // Match audio/event sockets: disable Nagle and enlarge the kernel RX buffer so short
+            // Wi-Fi bursts do not drop while the decrypt/decode path catches up (KitKat SoftAP).
+            val originalRx = runCatching { accepted.receiveBufferSize }.getOrDefault(0)
+            val originalTx = runCatching { accepted.sendBufferSize }.getOrDefault(0)
+            runCatching { accepted.tcpNoDelay = true }
+            if (originalRx < VIDEO_SOCKET_BUFFER_BYTES) {
+                runCatching { accepted.receiveBufferSize = VIDEO_SOCKET_BUFFER_BYTES }
+            }
+            if (originalTx < VIDEO_SOCKET_BUFFER_BYTES) {
+                runCatching { accepted.sendBufferSize = VIDEO_SOCKET_BUFFER_BYTES }
+            }
+            onDiagnostic(
+                "Video TCP buffers originalRx=$originalRx originalTx=$originalTx " +
+                    "requested=$VIDEO_SOCKET_BUFFER_BYTES " +
+                    "actualRx=${runCatching { accepted.receiveBufferSize }.getOrDefault(0)} " +
+                    "actualTx=${runCatching { accepted.sendBufferSize }.getOrDefault(0)} " +
+                    "tcpNoDelay=${runCatching { accepted.tcpNoDelay }.getOrDefault(false)}",
+            )
             socket = accepted
             run(accepted)
         } catch (error: Exception) {
@@ -176,6 +194,8 @@ class ScreenStream(
         const val OP_VIDEO_FRAME = 0
         const val OP_VIDEO_CONFIG = 1
         const val MAX_BODY = 8 * 1024 * 1024
+        /** Same order of magnitude as audio UDP RX; platform may clamp. */
+        const val VIDEO_SOCKET_BUFFER_BYTES = 512 * 1024
         /**
          * Consecutive corrupt video frames tolerated before giving up: a transient
          * error skips one frame, a systematic nonce/key desync still ends the

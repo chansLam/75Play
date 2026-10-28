@@ -11,6 +11,7 @@ import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.widget.SeekBar
+import com.shihab.diplay.compat.realSdkInt
 
 /**
  * 画面调节用的玻璃滑条。轨道是细槽，已滑过的一段是系统蓝，圆钮是白底蓝环。
@@ -28,7 +29,8 @@ class GlassSlider(context: Context) : SeekBar(context) {
         // 系统滑条的细青线和默认圆点不再画。触摸仍走 SeekBar。
         thumb = ColorDrawable(Color.TRANSPARENT)
         progressDrawable = GradientDrawable().apply { setColor(Color.TRANSPARENT) }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        // Head units may spoof SDK_INT above KitKat while RELEASE stays 4.4.x — use realSdkInt.
+        if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) {
             splitTrack = false
             progressTintList = null
             progressBackgroundTintList = null

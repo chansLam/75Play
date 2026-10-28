@@ -322,8 +322,13 @@ class SmoothVideoHostLifecycleTest {
     private fun retiringSinks(): Set<AndroidMediaSink> = (getField("retiringSinks") as Set<AndroidMediaSink>).toSet()
 
     private fun restartCarPlay(reason: String) {
-        activity.javaClass.getDeclaredMethod("restartCarPlay", String::class.java)
-            .apply { isAccessible = true }.invoke(activity, reason)
+        // Kotlin may mangle internal methods (restartCarPlay$…).
+        val method = activity.javaClass.declaredMethods.first {
+            it.name.startsWith("restartCarPlay") &&
+                it.parameterTypes.contentEquals(arrayOf(String::class.java))
+        }
+        method.isAccessible = true
+        method.invoke(activity, reason)
     }
 
     private fun shutdown(reason: String) {
@@ -360,6 +365,11 @@ class SmoothVideoHostLifecycleTest {
 
     private fun invoke(name: String): Any? = invoke(activity, name)
 
-    private fun invoke(target: CarPlayHostActivity, name: String): Any? =
-        CarPlayHostActivity::class.java.getDeclaredMethod(name).apply { isAccessible = true }.invoke(target)
+    private fun invoke(target: CarPlayHostActivity, name: String): Any? {
+        val method = CarPlayHostActivity::class.java.declaredMethods.first {
+            it.name == name || it.name.startsWith("$name$")
+        }
+        method.isAccessible = true
+        return method.invoke(target)
+    }
 }
