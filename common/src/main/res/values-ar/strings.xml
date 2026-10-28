@@ -262,27 +262,6 @@
     <string name="diagnostic_report_saved_to_path">تم حفظ التقرير في:\n%1$s\n\nيمكنك أيضاً مشاركته أو عرضه هنا. لا يتم إرسال شيء تلقائياً.</string>
     <string name="view_diagnostic_report">عرض التقرير</string>
     <string name="diagnostic_report_copy_hint">المس نص التقرير مطولاً لتحديده ونسخه. يمكنك استخدام ذلك إذا لم يتوفر تطبيق للمشاركة.</string>
-    <string name="wheel_keys_service_off">خدمة أزرار المقود: متوقفة</string>
-    <string name="wheel_key_role_mode">الوضع</string>
-    <string name="wheel_key_role_zoom_in">تكبير</string>
-    <string name="wheel_key_role_zoom_out">تصغير</string>
-    <string name="wheel_key_assign">زر %1$s: %2$s · اضغط للتغيير</string>
-    <string name="wheel_key_press">اضغط الآن زر المقود الخاص بـ %1$s…</string>
-    <string name="wheel_zoom_mode_on">أزرار الصوت تكبّر الآن خريطة لوحة العدادات</string>
-    <string name="wheel_zoom_mode_off">أزرار الصوت تتحكم في الصوت مرة أخرى</string>
-    <string name="wheel_joystick_on">عصا التحكم مفعّلة</string>
-    <string name="wheel_joystick_off">عصا التحكم متوقفة</string>
-    <string name="wheel_joystick_hint">عجلة الصوت أو ⏮ ⏭ للتحريك · ⏯ للاختيار · الزر المخصّص للرجوع · زر الوسائط للإيقاف</string>
-    <string name="wheel_key_role_joystick">عصا التحكم</string>
-    <string name="wheel_key_role_previous">العنصر السابق</string>
-    <string name="wheel_key_role_next">العنصر التالي</string>
-    <string name="wheel_key_role_select">اختيار</string>
-    <string name="wheel_key_role_siri">Siri</string>
-    <string name="wheel_key_none">لا شيء</string>
-    <string name="wheel_key_in_use">هذا الزر مخصّص بالفعل لـ %1$s. اختر زرًا آخر.</string>
-    <string name="wheel_siri_key">زر Siri على المقود</string>
-    <string name="wheel_key_service_label">أزرار المقود في 75Play</string>
-    <string name="wheel_key_service_description">تتيح لـ 75Play استخدام أزرار المقود المختارة في إعداداته لتكبير خريطة CarPlay على لوحة العدادات وللتنقل في شاشة CarPlay. تستقبل ضغطات الأزرار فقط ولا تقرأ الشاشة.</string>
     <string name="carplay_dock">شريط تطبيقات CarPlay</string>
     <string name="carplay_dock_automatic">تلقائي</string>
     <string name="carplay_dock_driver_side">جهة السائق</string>
@@ -293,8 +272,12 @@
     <string name="settings_display">العرض</string>
     <string name="settings_vehicle">حول</string>
     <string name="settings_advanced">الصورة</string>
-    <string name="settings_wheel_keys">أزرار المقود</string>
     <string name="settings_floating_ball">الكرة العائمة</string>
+    <string name="floating_ball_assist_title">تفعيل الكرة العائمة</string>
+    <string name="floating_ball_assist_message">ينفّذ النقر على الكرة العائمة زر الرجوع عبر خدمة إمكانية الوصول في النظام. فعّل «خدمة الرجوع لـ 75Play» من إعدادات إمكانية الوصول أولاً، وستعمل الكرة فوراً بعد ذلك.</string>
+    <string name="floating_ball_assist_open">فتح الإعدادات</string>
+    <string name="floating_ball_assist_toast">فعّل «خدمة الرجوع لـ 75Play» من إعدادات إمكانية الوصول أولاً</string>
+    <string name="assist_back_service_label">خدمة الرجوع لـ 75Play</string>
     <string name="settings_interface_size">حجم الواجهة</string>
     <string name="settings_interface_size_auto">تلقائي</string>
     <string name="bluetooth_adapter_unavailable">لا تحتوي الوحدة الرئيسية على محول بلوتوث أصلي؛ لا يتوفر CarPlay اللاسلكي. يرجى استخدام كابل USB سلكي.</string>
@@ -328,7 +311,6 @@
     <string name="about_check_for_updates">التحقق من التحديثات</string>
     <string name="about_check_software">التحقق من تحديث البرنامج</string>
     <string name="about_credits_section">شكر المشاريع مفتوحة المصدر</string>
-    <string name="about_configure">تكوين</string>
     <string name="about_default">افتراضي</string>
     <string name="about_dev_tip">انقر على الإصدار 5 مرات لفتح طرفية المطور</string>
     <string name="about_dev_terminal_title">طرفية المطور</string>
@@ -357,18 +339,10 @@
     <string name="about_info_wifi_mac">Wi-Fi MAC</string>
     <string name="about_lang_simplified">الصينية المبسطة</string>
     <string name="about_lang_traditional">الصينية التقليدية</string>
-    <string name="about_learn_button">تعلّم</string>
-    <string name="about_learn_siri_hint">اضغط على زر الصوت في عجلة القيادة.\n\nسيتم التقاط الزر إذا ضغطت عليه خلال 30 ثانية. بعدها اضغط عليه أثناء جلسة CarPlay لاستدعاء Siri.</string>
-    <string name="about_learn_siri_key">تعلّم زر Siri في العجلة</string>
     <string name="about_license_text">يعتمد المستقبل على xcertplay (GPL-3.0). واجهة 75Play تتبع تصميم DiAuto (AGPL-3.0).\n\nيتضمن المشروع AndroidX وBouncy Castle وJmDNS وSLF4J. يتضمن هذا الإصدار الشيفرة المصدرية وبيانات الترخيص.</string>
-    <string name="about_need_learn_hint">اضغط على «تعلّم زر Siri في العجلة» واضغط على زر الصوت في عجلة القيادة قبل تفعيل هذا المفتاح.</string>
-    <string name="about_need_learn_title">يجب تعلّم زر الصوت أولاً</string>
     <string name="about_open_source_license">تراخيص مفتوحة المصدر والشكر</string>
     <string name="about_preview_title">معاينة عامة · %1$s</string>
     <string name="about_preview_body">مستقبل CarPlay مستقل لوحدات Android. تعمل التوصيلات السلكية واللاسلكية على الوحدة وتستخدم هوية محلية. يمكن لـ iPhone العادي الاتصال دون كسر حماية أو Mac أو محول أو تسجيل دخول.\n\nتستخدم هذه المعاينة هوية ملحق تجريبية وما زال يجري اختبار توافقها مع أجهزة iPhone ووحدات مختلفة. هذا المنتج غير معتمد من Apple.</string>
-    <string name="about_root_inject_enabled">تم تفعيل هذا الزر لاستدعاء Siri</string>
-    <string name="about_root_inject_result">%1$s\n\n%2$s</string>
-    <string name="about_root_inject_retry">لم يتم الالتقاط؛ يمكنك المحاولة مجددًا</string>
     <string name="about_system_version">إصدار النظام</string>
     <string name="about_title_hardware">النظام والأجهزة</string>
     <string name="about_title_vehicle">إعدادات أخرى</string>
@@ -379,9 +353,6 @@
     <string name="about_version">الإصدار</string>
     <string name="about_version_cap">الإصدار %1$s</string>
     <string name="about_view">عرض</string>
-    <string name="about_wheel_keys_config">أزرار عجلة القيادة</string>
-    <string name="about_wheel_root_inject">حقن الجذر في العجلة</string>
-    <string name="about_wheel_siri_switch">زر الصوت في عجلة القيادة</string>
     <string name="catalog_android_settings">إعدادات أندرويد</string>
     <string name="dialog_category_non_system">غير نظامية</string>
     <string name="dialog_category_system">النظام</string>
@@ -500,9 +471,6 @@
     <string name="terminal_start_failed">فشل بدء الطرفية[%1$s]: %2$s\nعند %3$s</string>
     <string name="terminal_title">الطرفية للمطور (root)</string>
     <string name="terminal_unknown">(غير معروف)</string>
-    <string name="wheel_learn_done">تم التعلّم: %1$s</string>
-    <string name="wheel_learn_failed">فشل root/getevent: %1$s</string>
-    <string name="wheel_learn_timeout">لم يتم التقاط أي مفتاح خلال 30 ثانية، يرجى المحاولة مرة أخرى</string>
     <string name="connecting_swipe_hint">اسحب لأسفل بـ %1$d أصابع للعودة إلى شاشة 75Play</string>
     <string name="reconnect_required_title">مطلوب إعادة الاتصال</string>
     <string name="reconnect_required_message">بعض الإعدادات تحتاج إعادة اتصال بـ CarPlay. حفظ وإعادة الاتصال الآن؟</string>
@@ -534,7 +502,7 @@
 %1$s</string>
     <string name="home_save_and_connect_carplay">حفظ والاتصال بـ CarPlay</string>
     <string name="home_save_and_connect_wifi">حفظ والاتصال بشبكة Wi-Fi</string>
-    <string name="cd_floating_ball">الكرة العائمة: انقر للعودة إلى CarPlay، واضغط مطولًا لعرض التطبيقات الأخيرة</string>
+    <string name="cd_floating_ball">الكرة العائمة: انقر للرجوع، واضغط مطولًا للعودة إلى الصفحة الرئيسية لـ DiPlay</string>
     <string name="session_notification_text">اتصال CarPlay قيد التشغيل</string>
     <string name="session_notification_disconnect">قطع الاتصال</string>
 </resources>

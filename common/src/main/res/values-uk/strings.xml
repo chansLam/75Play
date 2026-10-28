@@ -272,27 +272,6 @@
     <string name="diagnostic_report_saved_to_path">Звіт збережено в:\n%1$s\n\nВи також можете поділитися ним або переглянути його тут. Нічого не надсилається автоматично.</string>
     <string name="view_diagnostic_report">Переглянути звіт</string>
     <string name="diagnostic_report_copy_hint">Натисніть і утримуйте текст звіту, щоб виділити та скопіювати його. Це можна використати, якщо немає застосунку для надсилання.</string>
-    <string name="wheel_keys_service_off">Служба кнопок керма: вимкнена</string>
-    <string name="wheel_key_role_mode">режим</string>
-    <string name="wheel_key_role_zoom_in">наблизити</string>
-    <string name="wheel_key_role_zoom_out">віддалити</string>
-    <string name="wheel_key_assign">Кнопка «%1$s»: %2$s · натисніть, щоб змінити</string>
-    <string name="wheel_key_press">Натисніть зараз кнопку керма для «%1$s»…</string>
-    <string name="wheel_zoom_mode_on">Кнопки гучності тепер змінюють масштаб карти на приборці</string>
-    <string name="wheel_zoom_mode_off">Кнопки гучності знову керують звуком</string>
-    <string name="wheel_joystick_on">Джойстик увімкнено</string>
-    <string name="wheel_joystick_off">Джойстик вимкнено</string>
-    <string name="wheel_joystick_hint">Колесо гучності або ⏮ ⏭ — рух · ⏯ — вибрати · кастомна кнопка — назад · кнопка медіа — вимкнути</string>
-    <string name="wheel_key_role_joystick">джойстик</string>
-    <string name="wheel_key_role_previous">попередній пункт</string>
-    <string name="wheel_key_role_next">наступний пункт</string>
-    <string name="wheel_key_role_select">вибрати</string>
-    <string name="wheel_key_role_siri">Siri</string>
-    <string name="wheel_key_none">немає</string>
-    <string name="wheel_key_in_use">Ця кнопка вже призначена для «%1$s». Оберіть іншу кнопку.</string>
-    <string name="wheel_siri_key">Кнопка Siri на кермі</string>
-    <string name="wheel_key_service_label">Кнопки керма 75Play</string>
-    <string name="wheel_key_service_description">Дає 75Play використовувати вибрані в налаштуваннях кнопки керма для масштабу карти CarPlay на приборці та для руху екраном CarPlay. Лише отримує натискання кнопок і не читає екран.</string>
     <string name="carplay_dock">Панель програм CarPlay</string>
     <string name="carplay_dock_automatic">Автоматично</string>
     <string name="carplay_dock_driver_side">З боку водія</string>
@@ -303,8 +282,12 @@
     <string name="settings_display">Екран</string>
     <string name="settings_vehicle">Про застосунок</string>
     <string name="settings_advanced">Зображення</string>
-    <string name="settings_wheel_keys">Кнопки керма</string>
     <string name="settings_floating_ball">Плаваюча куля</string>
+    <string name="floating_ball_assist_title">Увімкнути плаваючу кулю</string>
+    <string name="floating_ball_assist_message">Торкання плаваючої кулі надсилає команду «Назад» через службу спеціальних можливостей системи. Спочатку увімкніть «75Play Assist Back» у налаштуваннях спеціальних можливостей — куля запрацює одразу після цього.</string>
+    <string name="floating_ball_assist_open">Відкрити налаштування</string>
+    <string name="floating_ball_assist_toast">Спочатку увімкніть «75Play Assist Back» у налаштуваннях спеціальних можливостей системи</string>
+    <string name="assist_back_service_label">75Play Assist Back</string>
     <string name="settings_interface_size">Розмір інтерфейсу</string>
     <string name="settings_interface_size_auto">Автоматично</string>
     <string name="bluetooth_adapter_unavailable">В автомагнітолі немає вбудованого адаптера Bluetooth; бездротовий CarPlay недоступний. Використовуйте дротове підключення через USB.</string>
@@ -338,7 +321,6 @@
     <string name="about_check_for_updates">Перевірити оновлення</string>
     <string name="about_check_software">Перевірити оновлення ПЗ</string>
     <string name="about_credits_section">Подяки відкритим проєктам</string>
-    <string name="about_configure">Налаштувати</string>
     <string name="about_default">Типово</string>
     <string name="about_dev_tip">Натисніть на версію 5 разів, щоб відкрити термінал розробника</string>
     <string name="about_dev_terminal_title">Термінал розробника</string>
@@ -367,18 +349,10 @@
     <string name="about_info_wifi_mac">Wi-Fi MAC</string>
     <string name="about_lang_simplified">Спрощена китайська</string>
     <string name="about_lang_traditional">Традиційна китайська</string>
-    <string name="about_learn_button">Вивчити</string>
-    <string name="about_learn_siri_hint">Натисніть кнопку голосового введення на кермі.\n\nКнопку буде захоплено, якщо натиснути її протягом 30 секунд. Потім натискайте її під час сеансу CarPlay, щоб викликати Siri.</string>
-    <string name="about_learn_siri_key">Вивчити кнопку Siri на кермі</string>
     <string name="about_license_text">Приймач базується на xcertplay (GPL-3.0). Інтерфейс 75Play наслідує дизайн DiAuto (AGPL-3.0).\n\nДо проєкту входять AndroidX, Bouncy Castle, JmDNS і SLF4J. У цій версії є вихідний код і тексти ліцензій.</string>
-    <string name="about_need_learn_hint">Натисніть «Вивчити кнопку Siri на кермі» та натисніть голосову кнопку керма, перш ніж вмикати цей перемикач.</string>
-    <string name="about_need_learn_title">Спершу вивчіть голосову кнопку</string>
     <string name="about_open_source_license">Ліцензії open source та подяки</string>
     <string name="about_preview_title">Відкритий попередній випуск · %1$s</string>
     <string name="about_preview_body">Незалежний приймач CarPlay для Android-магнітол. Дротове й бездротове підключення працюють на магнітолі та використовують локальну ідентифікацію. Звичайний iPhone підключається без джейлбрейка, Mac, перехідника й входу в обліковий запис.\n\nУ цій версії використовується експериментальна ідентифікація аксесуара; сумісність із різними iPhone і магнітолами ще перевіряється. Продукт не сертифіковано Apple.</string>
-    <string name="about_root_inject_enabled">Ця кнопка тепер викликає Siri</string>
-    <string name="about_root_inject_result">%1$s\n\n%2$s</string>
-    <string name="about_root_inject_retry">Не захоплено; можна повторити</string>
     <string name="about_system_version">Версія системи</string>
     <string name="about_title_hardware">Система і залізо</string>
     <string name="about_title_vehicle">Інші налаштування</string>
@@ -389,9 +363,6 @@
     <string name="about_version">Версія</string>
     <string name="about_version_cap">Версія %1$s</string>
     <string name="about_view">Переглянути</string>
-    <string name="about_wheel_keys_config">Кнопки керма</string>
-    <string name="about_wheel_root_inject">Root-ін\'єкція керма</string>
-    <string name="about_wheel_siri_switch">Голосова кнопка керма</string>
     <string name="catalog_android_settings">Налаштування Android</string>
     <string name="dialog_category_non_system">Несистемні</string>
     <string name="dialog_category_system">Системні</string>
@@ -510,9 +481,6 @@
     <string name="terminal_start_failed">Не вдалося запустити термінал[%1$s]: %2$s\n@ %3$s</string>
     <string name="terminal_title">Термінал розробника (root)</string>
     <string name="terminal_unknown">(невідомо)</string>
-    <string name="wheel_learn_done">Вивчено: %1$s</string>
-    <string name="wheel_learn_failed">Помилка root/getevent: %1$s</string>
-    <string name="wheel_learn_timeout">Протягом 30 секунд не натиснуто жодної клавіші, спробуйте ще раз</string>
     <string name="connecting_swipe_hint">Проведіть униз %1$d пальцями, щоб повернутися до 75Play</string>
     <string name="reconnect_required_title">Потрібне повторне підключення</string>
     <string name="reconnect_required_message">Деякі налаштування потребують повторного підключення CarPlay. Зберегти й перепідключитися?</string>
@@ -534,7 +502,7 @@
 %1$s</string>
     <string name="home_save_and_connect_carplay">Зберегти й підключити CarPlay</string>
     <string name="home_save_and_connect_wifi">Зберегти й підключити Wi-Fi</string>
-    <string name="cd_floating_ball">Плаваюча кнопка: торкніться, щоб повернутися до CarPlay, утримуйте для останніх програм</string>
+    <string name="cd_floating_ball">Плаваюча кнопка: торкніться для «Назад», утримуйте для повернення на головний екран DiPlay</string>
     <string name="session_notification_text">CarPlay: з\'єднання активне</string>
     <string name="session_notification_disconnect">Від\'єднати</string>
 </resources>

@@ -90,7 +90,7 @@ internal object CarPlayVideo : CarPlayVideoListener {
     }
 
     /**
-     * A steering-wheel media key (CarPlayMediaButton index) while the player is on screen: play and pause
+     * A media key (CarPlayMediaButton index) while the player is on screen: play and pause
      * toggle it, next and previous skip 10 s. The iPhone is not asked: a CarPlay play/pause makes it end
      * the video session. Returns false when no player is open. Main thread.
      */

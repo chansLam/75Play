@@ -10,6 +10,7 @@ import com.shihab.diplay.host.FloatingBall
 import com.shihab.diplay.host.HostVideoSurfaces
 import com.shihab.diplay.host.HostLogView
 import com.shihab.diplay.host.HomeScreenMonitor
+import com.shihab.diplay.host.SwcCarPlayKeys
 import android.graphics.PixelFormat
 import com.shihab.diplay.host.ImmersiveBars
 import com.shihab.diplay.host.WirelessStartupRecovery
@@ -60,7 +61,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.WindowCompat
-import com.shihab.diplay.airplay.CarPlayMediaButton
 import com.shihab.diplay.airplay.AirPlayConfig
 import com.shihab.diplay.airplay.AirPlayDisplaySettings
 import com.shihab.diplay.airplay.AirPlayPhysicalSizeBasis
@@ -114,9 +114,6 @@ import com.shihab.diplay.util.AppLog
  */
 class CarPlayHostActivity : ComponentActivity() {
     internal var reconnectAttempts = 0
-    private val siriKey = WheelSiriKey()
-    private val siriKeyPresses = WheelKeyPresses()
-    private val legacySiriPresses = mutableSetOf<Triple<Int, Int, Int>>()
     internal val wirelessStartup = WirelessStartupRecovery()
     private val sessionLifecycle = HostSessionLifecycle(this)
     private val hostChrome = HostChrome(this)
@@ -404,9 +401,6 @@ class CarPlayHostActivity : ComponentActivity() {
     internal val shuttingDown = AtomicBoolean(false)
     /** Set only after [sessionShutdown] wins the shutdown race and will close the executors. */
     internal val sessionTeardownStarted = AtomicBoolean(false)
-    // Steering-wheel codes we have not mapped; log each once so a diagnostic report shows what
-    // the CS75 wheel actually sends (it emits no AVRCP MEDIA_BUTTON broadcast on this ROM).
-    private val loggedUnknownKeys = mutableSetOf<Int>()
     internal val mainHandler = Handler(Looper.getMainLooper())
     private var returnToShellFinish: Runnable? = null
     internal var sidePanel: LinearLayout? = null
@@ -451,7 +445,6 @@ class CarPlayHostActivity : ComponentActivity() {
             startActivity(Intent(this, DiPlayActivity::class.java))
             finish(); return
         }
-        WheelKeyService.restoreIfNeeded(this)
         lastConfiguration = Configuration(resources.configuration)
         darkMode = savedInstanceState?.getBoolean("carplay_night_active")
             ?: nightModeOrNull(resources.configuration.uiMode) ?: false
@@ -705,6 +698,9 @@ class CarPlayHostActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         isActivityStarted = true
+        // Intercept the steering wheel (OEM key-test mode) while CarPlay is in front and map
+        // next/pre/tel/Handup/vr onto the session; volume and SRC keep their native behaviour.
+        SwcCarPlayKeys.start(this) { controller }
         logThemeState(ThemeModeDiagnostics.Source.START, resources.configuration)
         mainHandler.removeCallbacks(pollConfiguration)
         mainHandler.post(pollConfiguration)
@@ -781,26 +777,8 @@ class CarPlayHostActivity : ComponentActivity() {
     }
     // Whether the running session's cluster stream was sized for a physical cluster display.
 
-    // DiLink 3 creates its cluster display only after DiPlay first projects to the cluster, which can
-    // finish after the session has already asked for the virtual fallback stream.
     // Hardware navigation belongs to the iPhone-rendered CarPlay UI, not Android View focus.
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        val physicalKey = Triple(event.deviceId, event.keyCode, event.scanCode)
-        val downOrUp = event.action == KeyEvent.ACTION_DOWN || event.action == KeyEvent.ACTION_UP
-        if (downOrUp && physicalKey in legacySiriPresses) {
-            if (event.action == KeyEvent.ACTION_UP) {
-                legacySiriPresses.remove(physicalKey)
-                requestLegacySiri(event.keyCode)
-            }
-            return true
-        }
-        // A release/repeat belongs to its original press even if a call, session or setting changed.
-        if (downOrUp && siriKeyPresses.hasConsumedPress(physicalKey)) {
-            siriKeyPresses.filter(physicalKey, event.action == KeyEvent.ACTION_DOWN, event.repeatCount == 0) {
-                WheelZoomKeys.Action.PASS
-            }
-            return true
-        }
         if (AndroidTvInputMode.shouldUseKnobAsPrimaryInput(this) &&
             CarPlayRemoteKeys.dispatch(event, controller)) {
             if (event.repeatCount == 0) {
@@ -811,56 +789,7 @@ class CarPlayHostActivity : ComponentActivity() {
             }
             return true
         }
-
-        // During a CarPlay call the wheel's call key answers on the iPhone instead of opening BYD's phone app.
-
-        // The wheel key service, when it runs, takes an assigned Siri key before this window sees it.
-        val assignedKey = WheelZoomSettings.isSiriKey(this, WheelKey.of(event))
-        val assignedAction = if (downOrUp) siriKeyPresses.filter(
-            physicalKey, event.action == KeyEvent.ACTION_DOWN, event.repeatCount == 0,
-        ) {
-            if (activeAirPlaySession == null || !assignedKey || inCall(this)) {
-                return@filter WheelZoomKeys.Action.PASS
-            }
-            if (siriKey.opens(event.eventTime)) {
-                val message = "Siri: assigned key ${event.keyCode} sent=${controller?.requestSiri() == true}"
-                AppLog.i(WheelKeyService.TAG, message)
-                appendLog(message)
-            }
-            WheelZoomKeys.Action.CONSUME
-        } else WheelZoomKeys.Action.PASS
-        if (assignedAction != WheelZoomKeys.Action.PASS) return true
-        if (downOrUp && assignedKey) return super.dispatchKeyEvent(event)
-
-        // Steering-wheel media keys reach the focused window on KitKat ROMs that send no AVRCP
-        // MEDIA_BUTTON broadcast: forward them to the iPhone as CarPlay HID presses.
-        CarPlayMediaButton.forKeyCode(event.keyCode)?.let { index ->
-            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                appendLog("Wheel key ${KeyEvent.keyCodeToString(event.keyCode)} -> HID $index")
-                CarPlayMediaKeys.onHardwareMediaButton(index, KeyEvent.keyCodeToString(event.keyCode))
-            }
-            return true
-        }
-        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-            synchronized(loggedUnknownKeys) {
-                if (loggedUnknownKeys.add(event.keyCode)) {
-                    appendLog("Wheel key ${KeyEvent.keyCodeToString(event.keyCode)} not mapped")
-                }
-            }
-        }
-
-        // Keep DiPlay's existing steering-wheel/voice-key Siri handling intact.
-        if (!CarPlayMediaButton.opensSiri(event.keyCode)) return super.dispatchKeyEvent(event)
-        if (event.action == KeyEvent.ACTION_DOWN) legacySiriPresses.add(physicalKey)
-        if (event.action == KeyEvent.ACTION_UP) {
-            requestLegacySiri(event.keyCode)
-        }
-        return true
-    }
-
-    private fun requestLegacySiri(keyCode: Int) {
-        val sent = controller?.requestSiri() == true
-        appendLog("Siri: voice key $keyCode sent=$sent")
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -891,18 +820,19 @@ class CarPlayHostActivity : ComponentActivity() {
         closePicturePanel()
         // The controller, USB/iAP2 link, and wireless listener intentionally outlive the UI.
         isActivityStarted = false
+        SwcCarPlayKeys.stop(this)
         logThemeState(ThemeModeDiagnostics.Source.STOP, resources.configuration)
         mainHandler.removeCallbacks(pollConfiguration)
         super.onStop()
         // Leaving the CarPlay screen: show the floating ball (tap=Back, long-press=return to
-        // CarPlay), only while its switch is on.
+        // the DiPlay shell), only while its switch is on.
         if (!isFinishing && !isChangingConfigurations &&
             AirPlayPersistence.loadFloatingBallEnabled(this)
         ) {
             FloatingBall.show(
                 applicationContext,
                 { FloatingBall.back() },
-                { FloatingBall.backToCarPlay(applicationContext) },
+                { FloatingBall.backToDiPlay(applicationContext) },
             )
         }
     }

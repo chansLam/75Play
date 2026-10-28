@@ -29,7 +29,6 @@ interface DiPlayHost {
     fun updateCheckNow()
     fun exportDiagnosticsNow()
     fun setRootHideNavbar(enabled: Boolean)
-    fun openWheelKeysSettings()
     fun chooseReportDestination()
     fun autoUpdateEnabled(): Boolean
     fun setAutoUpdateEnabled(enabled: Boolean)

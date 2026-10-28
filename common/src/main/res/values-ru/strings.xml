@@ -262,27 +262,6 @@
     <string name="diagnostic_report_saved_to_path">Отчёт сохранён в:\n%1$s\n\nВы также можете поделиться им или просмотреть его здесь. Ничего не отправляется автоматически.</string>
     <string name="view_diagnostic_report">Просмотреть отчёт</string>
     <string name="diagnostic_report_copy_hint">Нажмите и удерживайте текст отчёта, чтобы выделить и скопировать его. Это можно использовать, если нет приложения для отправки.</string>
-    <string name="wheel_keys_service_off">Служба кнопок руля: выключена</string>
-    <string name="wheel_key_role_mode">режим</string>
-    <string name="wheel_key_role_zoom_in">приблизить</string>
-    <string name="wheel_key_role_zoom_out">отдалить</string>
-    <string name="wheel_key_assign">Кнопка «%1$s»: %2$s · нажмите, чтобы изменить</string>
-    <string name="wheel_key_press">Нажмите сейчас кнопку руля для «%1$s»…</string>
-    <string name="wheel_zoom_mode_on">Кнопки громкости теперь меняют масштаб карты на приборной панели</string>
-    <string name="wheel_zoom_mode_off">Кнопки громкости снова управляют звуком</string>
-    <string name="wheel_joystick_on">Джойстик включён</string>
-    <string name="wheel_joystick_off">Джойстик выключен</string>
-    <string name="wheel_joystick_hint">Колесо громкости или ⏮ ⏭ — перемещение · ⏯ — выбрать · кастомная кнопка — назад · кнопка медиа — выключить</string>
-    <string name="wheel_key_role_joystick">джойстик</string>
-    <string name="wheel_key_role_previous">предыдущий пункт</string>
-    <string name="wheel_key_role_next">следующий пункт</string>
-    <string name="wheel_key_role_select">выбрать</string>
-    <string name="wheel_key_role_siri">Siri</string>
-    <string name="wheel_key_none">нет</string>
-    <string name="wheel_key_in_use">Эта кнопка уже назначена для «%1$s». Выберите другую кнопку.</string>
-    <string name="wheel_siri_key">Кнопка Siri на руле</string>
-    <string name="wheel_key_service_label">Кнопки руля 75Play</string>
-    <string name="wheel_key_service_description">Позволяет 75Play использовать выбранные в настройках кнопки руля для масштаба карты CarPlay на приборной панели и для перемещения по экрану CarPlay. Только получает нажатия кнопок и не читает экран.</string>
     <string name="carplay_dock">Панель приложений CarPlay</string>
     <string name="carplay_dock_automatic">Автоматически</string>
     <string name="carplay_dock_driver_side">Со стороны водителя</string>
@@ -293,8 +272,12 @@
     <string name="settings_display">Экран</string>
     <string name="settings_vehicle">О приложении</string>
     <string name="settings_advanced">Изображение</string>
-    <string name="settings_wheel_keys">Кнопки руля</string>
     <string name="settings_floating_ball">Плавающий шар</string>
+    <string name="floating_ball_assist_title">Включить плавающий шар</string>
+    <string name="floating_ball_assist_message">Касание плавающего шара отправляет команду «Назад» через службу специальных возможностей системы. Сначала включите «75Play Assist Back» в настройках специальных возможностей — шар заработает сразу после этого.</string>
+    <string name="floating_ball_assist_open">Открыть настройки</string>
+    <string name="floating_ball_assist_toast">Сначала включите «75Play Assist Back» в настройках специальных возможностей системы</string>
+    <string name="assist_back_service_label">75Play Assist Back</string>
     <string name="settings_interface_size">Размер интерфейса</string>
     <string name="settings_interface_size_auto">Автоматически</string>
     <string name="bluetooth_adapter_unavailable">В магнитоле нет встроенного адаптера Bluetooth; беспроводной CarPlay недоступен. Используйте проводное подключение по USB.</string>
@@ -328,7 +311,6 @@
     <string name="about_check_for_updates">Проверить обновления</string>
     <string name="about_check_software">Проверить обновление ПО</string>
     <string name="about_credits_section">Благодарности открытым проектам</string>
-    <string name="about_configure">Настроить</string>
     <string name="about_default">По умолчанию</string>
     <string name="about_dev_tip">Нажмите на версию 5 раз, чтобы открыть терминал разработчика</string>
     <string name="about_dev_terminal_title">Терминал разработчика</string>
@@ -357,18 +339,10 @@
     <string name="about_info_wifi_mac">Wi-Fi MAC</string>
     <string name="about_lang_simplified">Упрощённый китайский</string>
     <string name="about_lang_traditional">Традиционный китайский</string>
-    <string name="about_learn_button">Изучить</string>
-    <string name="about_learn_siri_hint">Нажмите кнопку голосового ввода на руле.\n\nКнопка будет захвачена, если нажать её в течение 30 секунд. Затем нажимайте её во время сеанса CarPlay, чтобы вызвать Siri.</string>
-    <string name="about_learn_siri_key">Изучить кнопку Siri на руле</string>
     <string name="about_license_text">Приёмник основан на xcertplay (GPL-3.0). Интерфейс 75Play следует дизайну DiAuto (AGPL-3.0).\n\nВ проект входят AndroidX, Bouncy Castle, JmDNS и SLF4J. В этой версии есть исходный код и тексты лицензий.</string>
-    <string name="about_need_learn_hint">Нажмите «Изучить кнопку Siri на руле» и нажмите голосовую кнопку руля, прежде чем включать этот переключатель.</string>
-    <string name="about_need_learn_title">Сначала изучите голосовую кнопку</string>
     <string name="about_open_source_license">Лицензии open source и благодарности</string>
     <string name="about_preview_title">Открытый предварительный выпуск · %1$s</string>
     <string name="about_preview_body">Независимый приёмник CarPlay для Android-магнитол. Проводное и беспроводное подключение работают на магнитоле и используют локальную идентификацию. Обычный iPhone подключается без джейлбрейка, Mac, переходника и входа в аккаунт.\n\nВ этой версии используется экспериментальная идентификация аксессуара; совместимость с разными iPhone и магнитолами ещё проверяется. Продукт не сертифицирован Apple.</string>
-    <string name="about_root_inject_enabled">Эта кнопка теперь вызывает Siri</string>
-    <string name="about_root_inject_result">%1$s\n\n%2$s</string>
-    <string name="about_root_inject_retry">Не захвачено; можно повторить</string>
     <string name="about_system_version">Версия системы</string>
     <string name="about_title_hardware">Система и железо</string>
     <string name="about_title_vehicle">Прочие настройки</string>
@@ -379,9 +353,6 @@
     <string name="about_version">Версия</string>
     <string name="about_version_cap">Версия %1$s</string>
     <string name="about_view">Просмотр</string>
-    <string name="about_wheel_keys_config">Кнопки руля</string>
-    <string name="about_wheel_root_inject">Root-инъекция руля</string>
-    <string name="about_wheel_siri_switch">Голосовая кнопка руля</string>
     <string name="catalog_android_settings">Настройки Android</string>
     <string name="dialog_category_non_system">Несистемные</string>
     <string name="dialog_category_system">Системные</string>
@@ -500,9 +471,6 @@
     <string name="terminal_start_failed">Не удалось запустить терминал[%1$s]: %2$s\n@ %3$s</string>
     <string name="terminal_title">Терминал разработчика (root)</string>
     <string name="terminal_unknown">(неизвестно)</string>
-    <string name="wheel_learn_done">Выучено: %1$s</string>
-    <string name="wheel_learn_failed">Ошибка root/getevent: %1$s</string>
-    <string name="wheel_learn_timeout">За 30 секунд не нажата ни одна клавиша, попробуйте снова</string>
     <string name="connecting_swipe_hint">Проведите вниз %1$d пальцами, чтобы вернуться к 75Play</string>
     <string name="reconnect_required_title">Требуется переподключение</string>
     <string name="reconnect_required_message">Некоторые настройки требуют переподключения CarPlay. Сохранить и переподключиться?</string>
@@ -534,7 +502,7 @@
 %1$s</string>
     <string name="home_save_and_connect_carplay">Сохранить и подключить CarPlay</string>
     <string name="home_save_and_connect_wifi">Сохранить и подключить Wi-Fi</string>
-    <string name="cd_floating_ball">Плавающая кнопка: нажмите для возврата в CarPlay, удерживайте для недавних приложений</string>
+    <string name="cd_floating_ball">Плавающая кнопка: нажмите для «Назад», удерживайте для возврата на главный экран DiPlay</string>
     <string name="session_notification_text">CarPlay: соединение активно</string>
     <string name="session_notification_disconnect">Отключить</string>
 </resources>

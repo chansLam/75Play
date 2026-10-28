@@ -262,27 +262,6 @@
     <string name="diagnostic_report_saved_to_path">El informe se guardó en:\n%1$s\n\nTambién puedes compartirlo o verlo aquí. No se envía nada automáticamente.</string>
     <string name="view_diagnostic_report">Ver informe</string>
     <string name="diagnostic_report_copy_hint">Mantén pulsado el texto del informe para seleccionarlo y copiarlo. Puedes usar esta opción si no hay una aplicación para compartir.</string>
-    <string name="wheel_keys_service_off">Servicio de botones del volante: desactivado</string>
-    <string name="wheel_key_role_mode">modo</string>
-    <string name="wheel_key_role_zoom_in">acercar</string>
-    <string name="wheel_key_role_zoom_out">alejar</string>
-    <string name="wheel_key_assign">Botón para %1$s: %2$s · toca para cambiarlo</string>
-    <string name="wheel_key_press">Pulsa ahora el botón del volante para %1$s…</string>
-    <string name="wheel_zoom_mode_on">Los botones de volumen ahora hacen zoom en el mapa del panel</string>
-    <string name="wheel_zoom_mode_off">Los botones de volumen vuelven a controlar el volumen</string>
-    <string name="wheel_joystick_on">Joystick activado</string>
-    <string name="wheel_joystick_off">Joystick desactivado</string>
-    <string name="wheel_joystick_hint">Rueda de volumen o ⏮ ⏭: mover · ⏯: seleccionar · botón personalizable: atrás · botón multimedia: salir</string>
-    <string name="wheel_key_role_joystick">joystick</string>
-    <string name="wheel_key_role_previous">elemento anterior</string>
-    <string name="wheel_key_role_next">elemento siguiente</string>
-    <string name="wheel_key_role_select">seleccionar</string>
-    <string name="wheel_key_role_siri">Siri</string>
-    <string name="wheel_key_none">sin asignar</string>
-    <string name="wheel_key_in_use">Ese botón ya es el botón de %1$s. Elige otro botón.</string>
-    <string name="wheel_siri_key">Botón de Siri en el volante</string>
-    <string name="wheel_key_service_label">Botones del volante de 75Play</string>
-    <string name="wheel_key_service_description">Permite a 75Play usar los botones del volante elegidos en sus ajustes para hacer zoom en el mapa de CarPlay del panel de instrumentos y moverse por la pantalla de CarPlay. Solo recibe pulsaciones de botones y no lee la pantalla.</string>
     <string name="carplay_dock">Dock de CarPlay</string>
     <string name="carplay_dock_automatic">Automático</string>
     <string name="carplay_dock_driver_side">Lado del conductor</string>
@@ -293,8 +272,12 @@
     <string name="settings_display">Pantalla</string>
     <string name="settings_vehicle">Acerca de</string>
     <string name="settings_advanced">Imagen</string>
-    <string name="settings_wheel_keys">Teclas del volante</string>
     <string name="settings_floating_ball">Bola flotante</string>
+    <string name="floating_ball_assist_title">Activar la bola flotante</string>
+    <string name="floating_ball_assist_message">Al tocar la bola flotante se envía la acción Atrás mediante el servicio de accesibilidad del sistema. Active primero «75Play Asistencia trasera» en los ajustes de accesibilidad del sistema; la bola funcionará enseguida.</string>
+    <string name="floating_ball_assist_open">Abrir ajustes</string>
+    <string name="floating_ball_assist_toast">Active primero «75Play Asistencia trasera» en los ajustes de accesibilidad del sistema</string>
+    <string name="assist_back_service_label">75Play Asistencia trasera</string>
     <string name="settings_interface_size">Tamaño de la interfaz</string>
     <string name="settings_interface_size_auto">Automático</string>
     <string name="bluetooth_adapter_unavailable">La unidad principal no tiene adaptador Bluetooth nativo; CarPlay inalámbrico no disponible. Use un cable USB con cable.</string>
@@ -328,7 +311,6 @@
     <string name="about_check_for_updates">Buscar actualizaciones</string>
     <string name="about_check_software">Buscar actualizaciones de software</string>
     <string name="about_credits_section">Agradecimientos de código abierto</string>
-    <string name="about_configure">Configurar</string>
     <string name="about_default">Predeterminado</string>
     <string name="about_dev_tip">Toca la versión 5 veces para abrir la terminal de desarrollo</string>
     <string name="about_dev_terminal_title">Terminal de desarrollo</string>
@@ -357,18 +339,10 @@
     <string name="about_info_wifi_mac">MAC Wi-Fi</string>
     <string name="about_lang_simplified">Chino simplificado</string>
     <string name="about_lang_traditional">Chino tradicional</string>
-    <string name="about_learn_button">Aprender</string>
-    <string name="about_learn_siri_hint">Pulsa el botón de voz de tu volante.\n\nSe capturará si lo pulsas en 30 segundos. Después, presiónalo durante una sesión de CarPlay para invocar a Siri.</string>
-    <string name="about_learn_siri_key">Aprender botón de Siri del volante</string>
     <string name="about_license_text">El receptor se basa en xcertplay (GPL-3.0). La interfaz de 75Play sigue el diseño de DiAuto (AGPL-3.0).\n\nEl proyecto incluye AndroidX, Bouncy Castle, JmDNS y SLF4J. Esta versión incluye el código fuente y los avisos de licencia.</string>
-    <string name="about_need_learn_hint">Toca \"Aprender botón de Siri del volante\" y pulsa el botón de voz del volante antes de activar este interruptor.</string>
-    <string name="about_need_learn_title">Primero aprende el botón de voz</string>
     <string name="about_open_source_license">Licencias de código abierto y créditos</string>
     <string name="about_preview_title">Vista previa pública · %1$s</string>
     <string name="about_preview_body">Receptor CarPlay independiente para unidades Android. Las conexiones por cable e inalámbricas se ejecutan en la unidad y usan una identidad local. Un iPhone normal puede conectarse sin jailbreak, Mac, adaptador ni inicio de sesión.\n\nEsta vista previa usa una identidad de accesorio experimental y sigue probándose con distintos iPhone y unidades. Este producto no está certificado por Apple.</string>
-    <string name="about_root_inject_enabled">Este botón ahora activa Siri</string>
-    <string name="about_root_inject_result">%1$s\n\n%2$s</string>
-    <string name="about_root_inject_retry">No capturado; puedes reintentar</string>
     <string name="about_system_version">Versión del sistema</string>
     <string name="about_title_hardware">Sistema y hardware</string>
     <string name="about_title_vehicle">Otros ajustes</string>
@@ -379,9 +353,6 @@
     <string name="about_version">Versión</string>
     <string name="about_version_cap">Versión %1$s</string>
     <string name="about_view">Ver</string>
-    <string name="about_wheel_keys_config">Botones del volante</string>
-    <string name="about_wheel_root_inject">Inyección root del volante</string>
-    <string name="about_wheel_siri_switch">Botón de voz del volante</string>
     <string name="catalog_android_settings">Ajustes de Android</string>
     <string name="dialog_category_non_system">No sistema</string>
     <string name="dialog_category_system">Sistema</string>
@@ -500,9 +471,6 @@
     <string name="terminal_start_failed">No se pudo iniciar la terminal[%1$s]: %2$s\n@ %3$s</string>
     <string name="terminal_title">Terminal de desarrollador (root)</string>
     <string name="terminal_unknown">(desconocido)</string>
-    <string name="wheel_learn_done">Aprendido: %1$s</string>
-    <string name="wheel_learn_failed">root/getevent falló: %1$s</string>
-    <string name="wheel_learn_timeout">No se capturó ninguna tecla en 30 segundos, inténtelo de nuevo</string>
     <string name="connecting_swipe_hint">Desliza hacia abajo con %1$d dedos para volver a la pantalla de 75Play</string>
     <string name="reconnect_required_title">Reconexión necesaria</string>
     <string name="reconnect_required_message">Algunos ajustes requieren reconectar CarPlay. ¿Guardar y reconectar ahora?</string>
@@ -534,7 +502,7 @@
 %1$s</string>
     <string name="home_save_and_connect_carplay">Guardar y conectar CarPlay</string>
     <string name="home_save_and_connect_wifi">Guardar y conectar Wi-Fi</string>
-    <string name="cd_floating_ball">Botón flotante: tóquelo para volver a CarPlay, manténgalo pulsado para ver las recientes</string>
+    <string name="cd_floating_ball">Bola flotante: toque para Atrás, manténgala pulsada para volver al inicio de DiPlay</string>
     <string name="session_notification_text">CarPlay conexión activa</string>
     <string name="session_notification_disconnect">Desconectar</string>
 </resources>

@@ -6,7 +6,6 @@ import android.content.Context
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.ComponentName
-import android.content.pm.PackageManager
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -36,7 +35,7 @@ import kotlin.math.roundToInt
 import com.shihab.diplay.util.AppLog
 
 /**
- * Steering-wheel and other hardware media buttons for CarPlay.
+ * Media keys for CarPlay.
  *
  * Android delivers media keys to a media session; BYD picks the session of the audio-focus
  * owner. Once CarPlay plays music, DiPlay holds audio focus and an active session until the
@@ -97,7 +96,6 @@ internal object CarPlayMediaKeys {
             next.playbackListener = { playing -> onIphonePlaying(next, playing) }
             next.nowPlayingListener = { update -> onNowPlayingChanged(next, update) }
             next.artworkListener = { id, bytes -> onArtworkChanged(next, id, bytes) }
-            updateWheelKeyReceiver(context)
         }
     }
 
@@ -371,27 +369,14 @@ internal object CarPlayMediaKeys {
     }
 
     private fun send(index: Int, source: String) {
-        // While the car's video player is on screen the wheel drives it: a CarPlay play/pause would
-        // make the iPhone end the video session.
+        // While the car's video player is on screen the media keys drive it: a CarPlay play/pause
+        // would make the iPhone end the video session.
         if (CarPlayVideo.onMediaKey(index)) {
             AppLog.i(TAG, "media key $source -> car video player $index")
             return
         }
         val sent = synchronized(lock) { controller }?.sendMediaButton(index) ?: false
         AppLog.i(TAG, "media key $source -> CarPlay $index sent=$sent")
-    }
-
-    /**
-     * Entry point for focused-window steering-wheel media KeyEvents (KitKat ROMs such as the CS75
-     * wheel that send no AVRCP MEDIA_BUTTON broadcast). The caller holds no lock.
-     */
-    internal fun onHardwareMediaButton(index: Int, source: String) {
-        val target = synchronized(lock) { controller }
-        if (target == null) {
-            AppLog.w(TAG, "media key $source dropped: no CarPlay session")
-            return
-        }
-        send(index, source)
     }
 
     private val callback by lazy { if (realSdkInt() >= 21) CarPlayMediaCallback(
@@ -401,62 +386,12 @@ internal object CarPlayMediaKeys {
 
     fun onLegacyMediaButton(intent: Intent) {
         if (realSdkInt() >= 21) return
-        when (intent.action) {
-            Intent.ACTION_MEDIA_BUTTON -> {
-                val event = intent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT) ?: return
-                if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0) return
-                val index = CarPlayMediaButton.forKeyCode(event.keyCode) ?: return
-                send(index, KeyEvent.keyCodeToString(event.keyCode))
-            }
-            "com.android.music.musicservicecommand" -> {
-                val index = CarPlayMediaButton.forCommand(intent.getStringExtra("command")) ?: return
-                send(index, "musicservicecommand")
-            }
-            else -> return
-        }
-    }
-
-    /**
-     * legacy #151: entry point for [WheelMediaKeyReceiver] on GKUI/ECARX head units, where the
-     * wheel media keys only travel as an ordered ACTION_MEDIA_BUTTON broadcast and never reach
-     * the MediaSession. Returns true when CarPlay consumed the key (the caller aborts the
-     * broadcast so the car's mediacenter does not act on it too).
-     */
-    fun handleWheelMediaKey(keyCode: Int): Boolean {
-        synchronized(lock) {
-            if ((session == null && legacyClient == null) || controller == null) return false
-            val index = CarPlayMediaButton.forKeyCode(keyCode) ?: return false
-            send(index, KeyEvent.keyCodeToString(keyCode))
-            return true
-        }
-    }
-
-    /**
-     * legacy #151: enable the high-priority [WheelMediaKeyReceiver] only on ECARX/GKUI head units,
-     * where the car's mediacenter swallows the wheel media keys. Everywhere else it stays disabled
-     * (manifest default) and media-key routing is unchanged.
-     */
-    private fun updateWheelKeyReceiver(context: Context) {
-        val pm = context.packageManager
-        val component = ComponentName(context, WheelMediaKeyReceiver::class.java)
-        val wantEnabled = isEcarxGkui(pm)
-        val enabledState = pm.getComponentEnabledSetting(component)
-        if (wantEnabled && enabledState != PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
-            pm.setComponentEnabledSetting(
-                component,
-                PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-                PackageManager.DONT_KILL_APP,
-            )
-            AppLog.i(TAG, "wheel media-key receiver enabled for GKUI/ECARX")
-        }
-    }
-
-    private fun isEcarxGkui(pm: PackageManager): Boolean {
-        if (runCatching { pm.getPackageInfo("ecarx.xsf.mediacenter", 0) }.isSuccess) return true
-        val manufacturer = Build.MANUFACTURER.orEmpty()
-        val brand = Build.BRAND.orEmpty()
-        return manufacturer.contains("ecarx", ignoreCase = true) ||
-            brand.contains("ecarx", ignoreCase = true)
+        if (intent.action != Intent.ACTION_MEDIA_BUTTON) return
+        @Suppress("DEPRECATION")
+        val event = intent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT) ?: return
+        if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0) return
+        val index = CarPlayMediaButton.forKeyCode(event.keyCode) ?: return
+        send(index, KeyEvent.keyCodeToString(event.keyCode))
     }
 
     /** Whether [next] changes what the media session's metadata shows; position and play state do not. */
@@ -550,7 +485,6 @@ internal object CarPlayMediaKeys {
 class LegacyMediaKeyReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         CarPlayMediaKeys.onLegacyMediaButton(intent)
-        if (isOrderedBroadcast) abortBroadcast()
     }
 }
 

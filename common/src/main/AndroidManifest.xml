@@ -39,19 +39,9 @@
         </intent>
     </queries>
     <application>
-        <!-- High priority so Changan steering-wheel keys beat the stock music app on KitKat. -->
-        <receiver android:name="com.shihab.diplay.LegacyMediaKeyReceiver" android:exported="true">
-            <intent-filter android:priority="2147483647">
-                <action android:name="android.intent.action.MEDIA_BUTTON" />
-                <action android:name="com.android.music.musicservicecommand" />
-            </intent-filter>
-        </receiver>
-        <!-- legacy #151: GKUI/ECARX units swallow wheel media keys in their own mediacenter
-             receiver before DiPlay's MediaSession sees them. Enabled at runtime only on
-             ECARX/GKUI units (see CarPlayMediaKeys.updateWheelKeyReceiver); disabled elsewhere. -->
-        <receiver android:name="com.shihab.diplay.WheelMediaKeyReceiver" android:exported="true" android:enabled="false">
-            <intent-filter android:priority="1000"><action android:name="android.intent.action.MEDIA_BUTTON" /></intent-filter>
-        </receiver>
+        <!-- KitKat (API < 21) media-button target for CarPlayMediaKeys' RemoteControlClient
+             path: the system delivers registered media-button events to it explicitly. -->
+        <receiver android:name="com.shihab.diplay.LegacyMediaKeyReceiver" android:exported="false" />
         <provider
             android:name="com.shihab.diplay.DiagnosticReportProvider"
             android:authorities="${applicationId}.diagnostic-reports"
@@ -94,6 +84,21 @@
         <!-- Background wireless CarPlay handshake (replaces the connect-only host Activity). -->
         <service android:name="com.shihab.diplay.CarPlayConnectService" android:exported="false" />
 
+        <!-- Accessibility service used only to perform a global Back action for the floating
+             ball. The system binds it once the user enables it in accessibility settings. -->
+        <service
+            android:name="com.shihab.diplay.host.AssistBackService"
+            android:exported="true"
+            android:label="@string/assist_back_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/assist_back_service" />
+        </service>
+
         <activity
             android:name="com.shihab.diplay.CarPlayHostActivity"
             android:taskAffinity="${applicationId}.carplay"
@@ -124,20 +129,6 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/navigation_widget_info" />
         </receiver>
-
-        <!-- Optional: steering-wheel media / Siri key accessibility service. -->
-        <service
-            android:name="com.shihab.diplay.WheelKeyService"
-            android:exported="true"
-            android:label="@string/wheel_key_service_label"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/wheel_key_service" />
-        </service>
 
         <receiver
             android:name="com.shihab.diplay.BootReceiver"

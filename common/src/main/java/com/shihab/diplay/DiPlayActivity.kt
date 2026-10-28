@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // UI copy and visual language adapted from DiAuto. See docs/THIRD_PARTY_NOTICES.md.
 package com.shihab.diplay
-import com.shihab.diplay.airplay.CarPlayMediaButton
 import com.shihab.diplay.connect.ShellConnectCoordinator
 import com.shihab.diplay.connect.ShellDiagnostics
 import com.shihab.diplay.connect.ShellNetworkActions
@@ -40,7 +39,6 @@ import android.os.SystemClock
 import java.util.concurrent.atomic.AtomicInteger
 import android.provider.Settings
 import android.view.Gravity
-import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
@@ -75,9 +73,6 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
     private val updaterDelegate = lazy { DiPlayUpdater(this) }
     private val updater by updaterDelegate
     private fun lazyUpdaterInitialized() = updaterDelegate.isInitialized()
-    private var windowLearning: WindowKeyLearning? = null
-    private val windowLearningPresses = WheelKeyPresses()
-    private val endWindowLearning = Runnable { cancelKeyLearning() }
     private var page = ShellNavigator.HOME
     /** Shell page switcher; fragment swap stays in [applyShellPage]. */
     private val shellNavigator by lazy {
@@ -173,17 +168,8 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         showBrandSplash()
         handler.post {
             if (isFinishing || isDestroyed) return@post
-            // 主题与方控恢复延迟到首帧之后，避免阻塞品牌页第一帧。
+            // 主题恢复延迟到首帧之后，避免阻塞品牌页第一帧。
             initNightModeController()
-            WheelKeyService.restoreIfNeeded(this)
-            // start() may execute su (grant dialog); never block the first-paint handler thread.
-            Thread({
-                runCatching {
-                    if (WheelRootInjector.isEnabled(this) && WheelRootInjector.learned(this) != null) {
-                        WheelRootInjector.start(this)
-                    }
-                }
-            }, "wheel-root-boot").apply { isDaemon = true }.start()
             applyShell()
             ImmersiveBars.installAutoHide(this)
             showPage(page)
@@ -206,13 +192,13 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
                 }
             })
             // Show the floating ball as soon as DiPlay launches (when enabled), rather than waiting
-            // until a CarPlay session is in front. Tap stays on DiPlay; long-press hops back to
-            // CarPlay when a session is running.
+            // until a CarPlay session is in front. Tap performs a system Back via the assist-back
+            // accessibility service; long-press hops back to the DiPlay shell.
             if (AirPlayPersistence.loadFloatingBallEnabled(this) && FloatingBall.permitted(this)) {
                 FloatingBall.show(
                     applicationContext,
+                    { FloatingBall.back() },
                     { FloatingBall.backToDiPlay(applicationContext) },
-                    { if (hasCarPlaySession()) FloatingBall.backToCarPlay(applicationContext) else FloatingBall.backToDiPlay(applicationContext) },
                 )
             }
         }
@@ -329,46 +315,6 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         }
     }
 
-    override fun openWheelKeysSettings() {
-        val act = this
-        val role = WheelZoomSettings.Role.SIRI
-        val content = android.widget.LinearLayout(act).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            setPadding(act.dp(18), act.dp(12), act.dp(18), act.dp(12))
-        }
-        val siriRow = android.widget.LinearLayout(act).apply {
-            orientation = android.widget.LinearLayout.HORIZONTAL
-            gravity = android.view.Gravity.CENTER_VERTICAL
-        }
-        siriRow.addView(android.widget.TextView(act).apply {
-            text = act.getString(R.string.wheel_siri_key)
-            setTextColor(0xFFD0D2D9.toInt())
-            textSize = 15f
-            setPadding(0, 0, act.dp(12), 0)
-        })
-        val siriSwitch = com.shihab.diplay.ui.GlassSwitch(act).apply {
-            isChecked = WheelZoomSettings.siriKey(act)
-            onCheckedChangeListener = { _, checked -> WheelZoomSettings.setSiriKey(act, checked) }
-        }
-        siriRow.addView(siriSwitch)
-        content.addView(siriRow)
-        val assign = android.widget.Button(act)
-        fun refreshAssign() {
-            val key = WheelZoomSettings.key(act, role)
-            assign.text = act.getString(R.string.wheel_key_assign, act.getString(R.string.wheel_key_role_siri), key?.toString() ?: act.getString(R.string.wheel_key_none))
-        }
-        refreshAssign()
-        assign.setOnClickListener {
-            val started = learnInWindow(role,
-                cancelled = { act.runOnUiThread { refreshAssign() } },
-                refused = { taken -> act.runOnUiThread { refreshAssign(); toast(act.getString(R.string.wheel_key_in_use, act.getString(wheelKeyRoleName(taken)))) } },
-                done = { act.runOnUiThread { refreshAssign() } })
-            if (started) assign.text = act.getString(R.string.wheel_key_press, act.getString(R.string.wheel_key_role_siri))
-            else toast(act.getString(R.string.wheel_keys_service_off))
-        }
-        content.addView(assign)
-        DiPlayDialog.showCustom(act, act.getString(R.string.settings_wheel_keys), content, act.getString(android.R.string.ok))
-    }
     override fun autoUpdateEnabled(): Boolean = updater.autoEnabled()
     override fun setAutoUpdateEnabled(enabled: Boolean) { updater.setAutoEnabled(enabled) }
     override fun openDevTerminal() {
@@ -438,12 +384,21 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         if (enabled) {
             FloatingBall.show(
                 applicationContext,
+                { FloatingBall.back() },
                 { FloatingBall.backToDiPlay(applicationContext) },
-                {
-                    if (hasCarPlaySession()) FloatingBall.backToCarPlay(applicationContext)
-                    else FloatingBall.backToDiPlay(applicationContext)
-                },
             )
+            if (!com.shihab.diplay.host.AssistBackService.isReady) {
+                DiPlayDialog.showConfirm(
+                    this, getString(R.string.floating_ball_assist_title),
+                    getString(R.string.floating_ball_assist_message),
+                    getString(R.string.floating_ball_assist_open), getString(R.string.cancel),
+                    onConfirm = {
+                        runCatching {
+                            startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        }
+                    },
+                )
+            }
         } else {
             FloatingBall.hide()
         }
@@ -797,7 +752,6 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
     override fun onPause() {
         CarPlayVolumeTarget.detach(this)
         userNavigatedFromCarPlay = false
-        cancelKeyLearning()
         pausedForAdbSwitchChange = adbSwitchChangePending
         handler.removeCallbacks(tick)
         radioProbe.stop()
@@ -814,7 +768,6 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         if (lazyUpdaterInitialized()) updater.close()
         hotspotJoinControls?.close()
         cancelHeadUnitPermissionSetup()
-        cancelKeyLearning()
         shellConnect.release()
         radioProbe.stop()
         // P1 leak兜底：开发者终端是单例 object，持有 PTY 子进程/overlay View，Activity 销毁时
@@ -899,101 +852,6 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         val operation = usbPermissionOperation
         usbPermissionOperation = null
         operation?.cancel()
-    }
-
-    private fun wheelKeyRoleName(role: WheelZoomSettings.Role): Int = when (role) {
-        WheelZoomSettings.Role.MODE -> R.string.wheel_key_role_mode
-        WheelZoomSettings.Role.ZOOM_IN -> R.string.wheel_key_role_zoom_in
-        WheelZoomSettings.Role.ZOOM_OUT -> R.string.wheel_key_role_zoom_out
-        WheelZoomSettings.Role.JOYSTICK -> R.string.wheel_key_role_joystick
-        WheelZoomSettings.Role.PREVIOUS -> R.string.wheel_key_role_previous
-        WheelZoomSettings.Role.NEXT -> R.string.wheel_key_role_next
-        WheelZoomSettings.Role.SELECT -> R.string.wheel_key_role_select
-        WheelZoomSettings.Role.SIRI -> R.string.wheel_key_role_siri
-    }
-
-    private class WindowKeyLearning(
-        val role: WheelZoomSettings.Role,
-        val cancelled: () -> Unit,
-        val refused: (WheelZoomSettings.Role) -> Unit,
-        val done: (WheelKey) -> Unit,
-    )
-
-    private fun learnInWindow(role: WheelZoomSettings.Role, cancelled: () -> Unit,
-        refused: (WheelZoomSettings.Role) -> Unit, done: (WheelKey) -> Unit): Boolean {
-        cancelKeyLearning()
-        windowLearning = WindowKeyLearning(role, cancelled, refused, done)
-        AsyncDiagnosticLog.append(ActiveSessionLog.current, "WheelLearning: window open role=$role (learn via dispatchKeyEvent)")
-        handler.postDelayed(endWindowLearning, WheelKeyService.LEARNING_TIMEOUT_MILLIS)
-        return true
-    }
-
-    private fun cancelKeyLearning() {
-        WheelKeyService.cancelLearning()
-        handler.removeCallbacks(endWindowLearning)
-        windowLearning?.cancelled?.invoke()
-        windowLearning = null
-    }
-
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.action != KeyEvent.ACTION_DOWN && event.action != KeyEvent.ACTION_UP) return super.dispatchKeyEvent(event)
-        val learningNow = windowLearning
-        if (learningNow != null) {
-            AsyncDiagnosticLog.append(ActiveSessionLog.current,
-                "WheelLearning: KEYEVENT device=${event.deviceId} code=${event.keyCode} scan=${event.scanCode} action=${event.action} repeat=${event.repeatCount} role=${learningNow.role} audioMode=${audioModeName()}")
-        }
-        val action = windowLearningPresses.filter(
-            Triple(event.deviceId, event.keyCode, event.scanCode),
-            event.action == KeyEvent.ACTION_DOWN, event.repeatCount == 0,
-        ) {
-            val learning = windowLearning
-            if (learning == null || event.keyCode == KeyEvent.KEYCODE_BACK) return@filter WheelZoomKeys.Action.PASS
-            // task #53: 学习判定不再用 mode!=NORMAL 的过宽通话判定——CarPlay 媒体/通信会话会把
-            // AudioManager.mode 置为非 NORMAL，导致所有方向盘学习被误判为“通话中”而拒绝。
-            // 只拒绝明确的来电(MODE_RINGTONE)与通话(MODE_IN_CALL)模式。
-            val audioMode = (getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager)?.mode
-            val realCall = audioMode == android.media.AudioManager.MODE_IN_CALL || audioMode == android.media.AudioManager.MODE_RINGTONE
-            if (realCall || !WheelZoomSettings.siriKey(this)) {
-                val why = if (realCall) "callMode=$audioMode" else "siriKeySwitch=false"
-                AsyncDiagnosticLog.append(ActiveSessionLog.current, "WheelLearning: REJECTED role=${learning.role} ($why)")
-                cancelKeyLearning()
-                return@filter WheelZoomKeys.Action.PASS
-            }
-            handler.removeCallbacks(endWindowLearning)
-            windowLearning = null
-            val key = WheelKey.of(event)
-            val taken = WheelZoomSettings.conflict(this, learning.role, key)
-            if (taken != null) {
-                AppLog.i(WheelKeyService.TAG, "${learning.role} key $key refused: it is the $taken key (learnt without the service)")
-                AsyncDiagnosticLog.append(ActiveSessionLog.current, "WheelLearning: key=$key refused for ${learning.role}: taken by $taken")
-                learning.refused(taken)
-            } else {
-                WheelZoomSettings.assign(this, learning.role, key)
-                AppLog.i(WheelKeyService.TAG, "${learning.role} key is now $key (learnt without the service)")
-                AsyncDiagnosticLog.append(ActiveSessionLog.current, "WheelLearning: key=$key assigned to ${learning.role}")
-                learning.done(key)
-            }
-            WheelZoomKeys.Action.CONSUME
-        }
-        if (action != WheelZoomKeys.Action.PASS) return true
-        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 &&
-            CarPlayBackgroundSession.hasSession()) {
-            CarPlayMediaButton.forKeyCode(event.keyCode)?.let { index ->
-                CarPlayMediaKeys.onHardwareMediaButton(index, KeyEvent.keyCodeToString(event.keyCode))
-                return true
-            }
-        }
-        return super.dispatchKeyEvent(event)
-    }
-
-    private fun audioModeName(): String = when (
-        (getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager)?.mode
-    ) {
-        android.media.AudioManager.MODE_NORMAL -> "normal"
-        android.media.AudioManager.MODE_RINGTONE -> "ringtone"
-        android.media.AudioManager.MODE_IN_CALL -> "in_call"
-        android.media.AudioManager.MODE_IN_COMMUNICATION -> "in_communication"
-        else -> "other"
     }
 
     override fun reconnectIfRunning() {

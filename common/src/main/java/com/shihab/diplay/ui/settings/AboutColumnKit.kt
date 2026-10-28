@@ -10,7 +10,6 @@ import com.shihab.diplay.AirPlayPersistence
 import com.shihab.diplay.AppLocale
 import com.shihab.diplay.DiPlayBluetooth
 import com.shihab.diplay.DiPlayPreferences
-import com.shihab.diplay.WheelRootInjector
 import com.shihab.diplay.ui.DiPlayDialog
 import com.shihab.diplay.ui.DiPlayToast
 import com.shihab.diplay.ui.GlassColors

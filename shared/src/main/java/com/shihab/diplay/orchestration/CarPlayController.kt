@@ -386,7 +386,7 @@ class CarPlayController(
 
     fun isClosed(): Boolean = closed
 
-    /** Nonblocking identity for wheel controls: only an unclosed phone with an accepted primary stream. */
+    /** Nonblocking identity for an accepted, still-current primary screen session. */
     fun activeAirPlaySessionToken(): Any? {
         if (closed) return null
         val session = activeSession ?: return null
@@ -494,26 +494,6 @@ class CarPlayController(
 
     /** Immutable stream geometry retained when a new host adopts this background controller. */
     fun configuredClusterSize(): Pair<Int, Int>? = airPlayConfig.cluster?.let { it.widthPixels to it.heightPixels }
-
-    /** Dashboard map routing was BYD-cluster specific; SoftAP CS75 Plus has no cluster output. */
-    fun dashboardMapRoute(): Any? = null
-
-    /** Whether the wheel can currently control the visible dashboard map. */
-    fun dashboardMapStreaming(): Boolean = dashboardMapRoute() != null
-
-    /** One zoom step for the dashboard map, as the car's own zoom controls send it. */
-    fun zoomDashboardMap(zoomIn: Boolean): Boolean {
-        val route = dashboardMapRoute() ?: return false
-        val session = activeSession ?: return false
-        return try {
-            touchExecutor.execute {
-                if (activeSession === session && dashboardMapRoute() == route) session.changeMapZoomLevel(zoomIn)
-            }
-            true
-        } catch (_: Exception) {
-            false
-        }
-    }
 
     /** Opens Siri on the iPhone, as the car's voice button does in CarPlay. */
     fun requestSiri(): Boolean {
@@ -633,7 +613,7 @@ class CarPlayController(
                     val shown = clusterUiShown || clusterUiStream != session to stream
                     val delivered = session.setClusterUrl(url, send = shown)
                     val sent = delivered && !closed && activeSession === session && session.clusterStream == stream
-                    // The wheel zoom follows what the dashboard shows now, so zoom mode starts over.
+                    // The dashboard shows the new content now, so the cluster state starts over.
                     if (sent) {
                         requestedDashboardUrl = url
                         dashboardMapEpoch.incrementAndGet()

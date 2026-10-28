@@ -1,9 +1,7 @@
 package com.shihab.diplay.host
 
 import android.content.Context
-import com.shihab.diplay.CarPlayHostActivity
 import com.shihab.diplay.DiPlayActivity
-import com.shihab.diplay.WheelKeyService
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.SystemClock
@@ -19,9 +17,10 @@ import com.shihab.diplay.util.AppLog
 
 /**
  * A small white floating ball shown while the DiPlay app is in front AND while CarPlay is in
- * front (in CarPlay a tap returns to the DiPlay home). On the DiPlay home a tap simulates a
- * system Back press (via accessibility); a long-press returns to the CarPlay screen. Drag to
- * move it anywhere on screen. Needs install-time SYSTEM_ALERT_WINDOW; uses TYPE_PHONE (API 19).
+ * front. A tap performs a system Back action through the assist-back accessibility service
+ * (guides the user there when it is disabled); a long-press returns to the DiPlay shell.
+ * Drag to move it anywhere on screen. Needs install-time SYSTEM_ALERT_WINDOW; uses TYPE_PHONE
+ * (API 19).
  */
 internal object FloatingBall {
     const val TAG = "DiPlay-FloatingBall"
@@ -42,11 +41,12 @@ internal object FloatingBall {
     val shown: Boolean get() = root != null
 
     /**
-     * Adds the floating ball. [onTap] returns to CarPlay, [onLongPress] opens recents. Main thread.
+     * Adds the floating ball. [onTap] performs a Back action, [onLongPress] returns to the
+     * DiPlay shell. Main thread.
      */
     fun show(context: Context, onTap: () -> Unit, onLongPress: () -> Unit): Boolean {
-        // Actions can change when the front activity changes (e.g. tap returns to DiPlay while
-        // CarPlay is in front); update them even when the ball is already shown.
+        // Actions can change when the front activity changes (e.g. tap=Back while CarPlay is
+        // in front); update them even when the ball is already shown.
         onTapAction = onTap
         onLongPressAction = onLongPress
         if (root != null) return true
@@ -179,16 +179,6 @@ internal object FloatingBall {
         AppLog.i(TAG, "ball hidden")
     }
 
-    /** Returns to the CarPlay screen from anywhere (application context). */
-    fun backToCarPlay(context: Context) {
-        runCatching {
-            val intent = Intent(context, CarPlayHostActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            }
-            context.startActivity(intent)
-        }
-    }
-
     /** Returns to the DiPlay home screen from the CarPlay screen (application context).
      * Carries a "returnFromCarPlay" flag + timestamp so DiPlayActivity.onResume does not
      * immediately re-enter the active CarPlay session (which made the home screen flash back
@@ -208,6 +198,19 @@ internal object FloatingBall {
         }
     }
 
-    /** Simulate a system Back press (floating ball tap), via the accessibility service. */
-    fun back(): Boolean = WheelKeyService.pressBack()
+    /** Floating ball tap: performs a global Back action through the assist-back accessibility
+     * service. When the service is disabled, guides the user to system accessibility settings. */
+    fun back() {
+        if (AssistBackService.performBack()) return
+        val context = root?.context ?: return
+        runCatching {
+            com.shihab.diplay.ui.DiPlayDialog.toast(
+                context, context.getString(R.string.floating_ball_assist_toast), true)
+        }
+        runCatching {
+            context.startActivity(
+                Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }.onFailure { AppLog.w(TAG, "open accessibility settings failed", it) }
+    }
 }

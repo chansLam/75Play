@@ -2,22 +2,18 @@ package com.shihab.diplay.airplay
 
 import android.view.KeyEvent
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CarPlayMediaButtonTest {
     @Test
-    fun steeringWheelKeysMapToCarPlayMediaPresses() {
+    fun mediaKeysMapToCarPlayMediaPresses() {
         assertEquals(CarPlayMediaButton.NEXT, CarPlayMediaButton.forKeyCode(KeyEvent.KEYCODE_MEDIA_NEXT))
         assertEquals(CarPlayMediaButton.PREVIOUS, CarPlayMediaButton.forKeyCode(KeyEvent.KEYCODE_MEDIA_PREVIOUS))
         assertEquals(CarPlayMediaButton.NEXT, CarPlayMediaButton.forKeyCode(KeyEvent.KEYCODE_PAGE_DOWN))
         assertEquals(CarPlayMediaButton.PREVIOUS, CarPlayMediaButton.forKeyCode(KeyEvent.KEYCODE_PAGE_UP))
         assertEquals(CarPlayMediaButton.NEXT, CarPlayMediaButton.forKeyCode(KeyEvent.KEYCODE_CHANNEL_UP))
         assertEquals(CarPlayMediaButton.PREVIOUS, CarPlayMediaButton.forKeyCode(KeyEvent.KEYCODE_CHANNEL_DOWN))
-        assertEquals(CarPlayMediaButton.NEXT, CarPlayMediaButton.forCommand("next"))
-        assertEquals(CarPlayMediaButton.PREVIOUS, CarPlayMediaButton.forCommand("previous"))
         // BYD rewrites its play/pause key into PLAY or PAUSE from the session state; both toggle.
         assertEquals(CarPlayMediaButton.PLAY_PAUSE, CarPlayMediaButton.forKeyCode(KeyEvent.KEYCODE_MEDIA_PLAY))
         assertEquals(CarPlayMediaButton.PLAY_PAUSE, CarPlayMediaButton.forKeyCode(KeyEvent.KEYCODE_MEDIA_PAUSE))
@@ -31,27 +27,11 @@ class CarPlayMediaButtonTest {
     }
 
     @Test
-    fun dilink3CarPlayVoiceKeysOpenSiriOnlyThroughTheWheelKeyService() {
-        assertTrue(CarPlayMediaButton.opensSiriWhileCarPlay(327))
-        assertTrue(CarPlayMediaButton.opensSiriWhileCarPlay(328))
-        assertFalse(CarPlayMediaButton.opensSiriWhileCarPlay(304))
-        assertFalse(CarPlayMediaButton.opensSiri(327))
-    }
-
-    @Test
-    fun theVoiceKeyOpensSiri() {
-        // Recorded on DiLink 5.0: short press 304 (scan 290), long press 312 (scan 312).
-        assertTrue(CarPlayMediaButton.opensSiri(304))
-        assertTrue(CarPlayMediaButton.opensSiri(312))
-        assertTrue(CarPlayMediaButton.opensSiri(KeyEvent.KEYCODE_VOICE_ASSIST))
-        assertFalse(CarPlayMediaButton.opensSiri(KeyEvent.KEYCODE_MEDIA_NEXT))
-        assertNull(CarPlayMediaButton.forKeyCode(304))
-    }
-
-    @Test
     fun otherKeysAreLeftToTheSystem() {
         assertNull(CarPlayMediaButton.forKeyCode(KeyEvent.KEYCODE_VOLUME_UP))
         assertNull(CarPlayMediaButton.forKeyCode(KeyEvent.KEYCODE_MEDIA_STOP))
+        assertNull(CarPlayMediaButton.forKeyCode(304))
+        assertNull(CarPlayMediaButton.forKeyCode(327))
     }
 
     @Test

@@ -1,26 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.shihab.diplay.ui.settings
 
-import android.os.Build
-import android.os.StatFs
-import android.view.View
 import android.widget.LinearLayout
-import android.widget.TextView
 import androidx.fragment.app.Fragment
 import com.shihab.diplay.AirPlayPersistence
 import com.shihab.diplay.AppLocale
-import com.shihab.diplay.DiPlayBluetooth
 import com.shihab.diplay.DiPlayPreferences
-import com.shihab.diplay.WheelRootInjector
 import com.shihab.diplay.host.R
-import com.shihab.diplay.ui.DiPlayDialog
-import com.shihab.diplay.ui.DiPlayToast
-import com.shihab.diplay.ui.GlassColors
-import com.shihab.diplay.ui.GlassSwitch
-import com.shihab.diplay.ui.LayoutMetrics
 
 internal class VehicleColumn(page: Fragment) : AboutColumnKit(page) {
-    private var wheelRootEnableGeneration = 0
 
     private fun buildVehicleColumn(card: LinearLayout) {
         val ctx = card.context
@@ -43,54 +31,6 @@ internal class VehicleColumn(page: Fragment) : AboutColumnKit(page) {
                     cap.text = fingers[idx] + " ▾"
                 }
             }))
-        card.addView(settingRow(ctx, ctx.getString(R.string.about_wheel_keys_config), ghostButton(ctx, ctx.getString(R.string.about_configure)) { host.openWheelKeysSettings() }))
-        card.addView(settingRow(ctx, ctx.getString(R.string.about_learn_siri_key), ghostButton(ctx, ctx.getString(R.string.about_learn_button)) {
-            DiPlayDialog.showInfo(ctx, ctx.getString(R.string.about_learn_siri_key),
-                ctx.getString(R.string.about_learn_siri_hint))
-            WheelRootInjector.learn(ctx) { result ->
-                val act = activity ?: return@learn
-                act.runOnUiThread {
-                    if (!isAdded) return@runOnUiThread
-                    val learned = WheelRootInjector.learned(ctx)
-                    val injectSuffix = if (learned != null) ctx.getString(R.string.about_root_inject_enabled)
-                        else ctx.getString(R.string.about_root_inject_retry)
-                    DiPlayDialog.showInfo(ctx, ctx.getString(R.string.about_wheel_root_inject),
-                        ctx.getString(R.string.about_root_inject_result, result, injectSuffix))
-                }
-            }
-        }))
-        card.addView(glassSwitchRow(ctx, ctx.getString(R.string.about_wheel_siri_switch), WheelRootInjector.isEnabled(ctx)) { sw, on ->
-            if (on && WheelRootInjector.learned(ctx) == null) {
-                DiPlayDialog.showInfo(ctx, ctx.getString(R.string.about_need_learn_title),
-                    ctx.getString(R.string.about_need_learn_hint))
-                sw.setChecked(false, animate = true)
-                return@glassSwitchRow
-            }
-            if (on) {
-                val gen = ++wheelRootEnableGeneration
-                Thread({
-                    val ok = WheelRootInjector.setEnabled(ctx, true)
-                    val act = activity
-                    if (act == null) {
-                        if (!WheelRootInjector.isEnabled(ctx)) WheelRootInjector.stop()
-                        return@Thread
-                    }
-                    act.runOnUiThread {
-                        if (!isAdded || gen != wheelRootEnableGeneration) {
-                            if (!WheelRootInjector.isEnabled(ctx)) WheelRootInjector.stop()
-                            return@runOnUiThread
-                        }
-                        if (!ok || !WheelRootInjector.isEnabled(ctx)) {
-                            if (sw.isChecked) sw.setChecked(false, animate = true)
-                            if (!ok) DiPlayDialog.toast(ctx, ctx.getString(R.string.diplay_root_failed_fallback))
-                        }
-                    }
-                }, "wheel-root-enable").apply { isDaemon = true }.start()
-            } else {
-                wheelRootEnableGeneration++
-                WheelRootInjector.setEnabled(ctx, false)
-            }
-        })
         card.addView(glassSwitchRow(
             ctx,
             ctx.getString(R.string.settings_floating_ball),
@@ -105,7 +45,7 @@ internal class VehicleColumn(page: Fragment) : AboutColumnKit(page) {
         })
     }
 
-    /** 中列：语言 / 更新 / Root 方向盘。 */
+    /** 中列：语言 / 手势 / 悬浮球 / 开机自启与自动连接。 */
 
     private fun appLanguageLabel(ctx: android.content.Context, code: String): String = when (code) {
         AppLocale.SYSTEM -> ctx.getString(R.string.language_system_default)

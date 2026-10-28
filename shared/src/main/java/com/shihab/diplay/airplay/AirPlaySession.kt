@@ -187,7 +187,7 @@ class AirPlaySession(
     @Volatile private var clusterContent: ClusterContent? = null
     private var requestedClusterUrl = config.cluster?.initialUrl // guarded by clusterContentLock
 
-    /** Last delivered content for this stream. Pending selections never grant wheel zoom eligibility. */
+    /** Last delivered content for this stream. Pending selections are not reported as displayed. */
     fun clusterUrl(): String? = clusterContentRoute()?.second
 
     /** One immutable snapshot keeps content and generation checks consistent without locking keys. */
@@ -265,21 +265,6 @@ class AirPlaySession(
             if (content.shown && requested != content.displayed) showClusterUrl(content, requested)
         }
     }
-
-    /**
-     * Zooms CarPlay's dashboard map one step, as a car's own zoom controls do: the car command
-     * changeMapZoomLevel for the cluster screen's UUID. Seen with Apple Maps on a Tang: zoomDirection 0
-     * zooms in, 1 zooms out. Sent only while the cluster stream is up.
-     */
-    fun changeMapZoomLevel(zoomIn: Boolean): Boolean = clusterStream > 0 && sendCommand(
-        linkedMapOf(
-            "type" to "changeMapZoomLevel",
-            "params" to linkedMapOf(
-                "uuid" to AirPlayInfoPlist.ALT_UUID,
-                "zoomDirection" to if (zoomIn) ZOOM_DIRECTION_IN else ZOOM_DIRECTION_OUT,
-            ),
-        ),
-    )
 
     /** Moves CarPlay on the main screen to one of its declared view areas, without reconnecting. */
     fun showViewArea(index: Int): Boolean =
@@ -784,7 +769,7 @@ class AirPlaySession(
         )
         trace("airplay TEARDOWN raw${request.body.size}Hex=${request.body.toHex()}")
 
-        // Restore wheel input before releasing media resources, which may take time to close.
+        // Release stream state before media resources, which may take time to close.
         if (types == null || STREAM_TYPE_MAIN_SCREEN in types) mainScreenToken = null
         if (types == null || STREAM_TYPE_ALT_SCREEN in types) clearClusterContent()
         if (types == null) {
@@ -965,8 +950,6 @@ class AirPlaySession(
         private val BUFFERED_AUDIO_METHODS = setOf("SETRATE", "SETRATEANCHORTIME", "GETANCHOR", "FLUSHBUFFERED")
 
         const val READ_CHUNK_BYTES = 16 * 1024
-        const val ZOOM_DIRECTION_IN = 0
-        const val ZOOM_DIRECTION_OUT = 1
         const val EVENT_READY_POLL_MILLIS = 25L
         const val NANOS_PER_MILLISECOND = 1_000_000L
     }

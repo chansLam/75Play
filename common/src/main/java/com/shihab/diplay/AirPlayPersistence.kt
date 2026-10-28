@@ -110,10 +110,11 @@ object AirPlayPersistence {
             .putBoolean("root_hide_navbar", hidden).apply()
     }
 
-    /** Show the floating ball (tap=Back, long-press=return to CarPlay) when leaving CarPlay. */
+    /** Show the floating ball (tap=Back via the assist-back accessibility service,
+     * long-press=return to the shell) when leaving CarPlay. Disabled by default. */
     fun loadFloatingBallEnabled(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean("floating_ball_enabled", true)
+            .getBoolean("floating_ball_enabled", false)
 
     fun saveFloatingBallEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()

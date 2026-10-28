@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** Explicit settings action; connection startup never grants these permissions. */
 internal object HeadUnitPermissionSetup {
-    // Keep wheel-service rebinding and explicit setup from overwriting each other's service list.
+    // Keep explicit permission setup from racing its own shell commands.
     internal val accessibilityLock = Any()
     enum class Permission {
         USAGE, OVERLAY;
