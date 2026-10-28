@@ -297,6 +297,7 @@
     <string name="carplay_dock_hint">Where CarPlay shows its apps, clock and status. Between Driver\'s side and Bottom it moves at once; Automatic leaves it to the iPhone and applies after a reconnect.</string>
     <string name="side_panel_show">Side panel</string>
     <string name="side_panel_full_screen">â¤¢ Full screen</string>
+    <string name="settings_allow_enlarged_canvas">Enlarged canvas (experimental)</string>
     <string name="settings_interface_size">Interface size</string>
     <string name="settings_interface_size_auto">Automatic</string>
     <string name="bluetooth_adapter_unavailable">Head unit has no native Bluetooth adapter; wireless CarPlay unavailable. Please use a wired USB cable.</string>

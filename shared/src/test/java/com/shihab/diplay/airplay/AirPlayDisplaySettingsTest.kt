@@ -34,6 +34,15 @@ class AirPlayDisplaySettingsTest {
         assertEquals(181, size.heightMm)
     }
 
+    /** iOS 26 gates part of CarPlay's display settings on the reported frame rate: no device cap. */
+    @Test
+    fun frameRateCeilingIsNotDeviceGated() {
+        assertEquals(15, AirPlayDisplaySettings.sanitizeFps(1))
+        assertEquals(45, AirPlayDisplaySettings.sanitizeFps(45))
+        assertEquals(60, AirPlayDisplaySettings.sanitizeFps(60))
+        assertEquals(60, AirPlayDisplaySettings.sanitizeFps(90))
+    }
+
     @Test
     fun maximumResolutionKeepsConfiguredReferenceLength() {
         val size = AirPlayDisplaySettings.resolvePhysicalSizeMm(

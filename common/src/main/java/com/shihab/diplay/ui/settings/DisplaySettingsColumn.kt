@@ -29,19 +29,14 @@ internal class DisplaySettingsColumn(page: Fragment) : SettingsColumnKit(page) {
         card.addView(settingRow(ctx, ctx.getString(R.string.setting_display_size), capPick(ctx, curSize.localizedLabel(ctx)) { cap -> showCarPlaySizePicker(cap) }))
         val scalePercent = AirPlayPersistence.loadDisplayScalePercent(ctx)
         card.addView(settingRow(ctx, ctx.getString(R.string.setting_display_scale), capPick(ctx, "$scalePercent%") { cap -> showScalePicker(cap) }))
-        val fpsValues = if (realSdkInt() <= 19) {
-            listOf(15, 30)
-        } else {
-            listOf(15, 30, 45, 60)
-        }
-        val fps = buildList {
-            add(ctx.getString(R.string.setting_fps_min_savings))
-            add(ctx.getString(R.string.setting_fps_more_savings))
-            if (fpsValues.size > 2) {
-                add(ctx.getString(R.string.setting_fps_balanced))
-                add(ctx.getString(R.string.setting_fps_smooth))
-            }
-        }
+        // 45/60 fps 在慢车机上会卡顿，iOS 26 的部分 CarPlay 显示设置又依赖上报帧率，所以一律可选。
+        val fpsValues = listOf(15, 30, 45, 60)
+        val fps = listOf(
+            ctx.getString(R.string.setting_fps_min_savings),
+            ctx.getString(R.string.setting_fps_more_savings),
+            ctx.getString(R.string.setting_fps_balanced),
+            ctx.getString(R.string.setting_fps_smooth),
+        )
         val fpsCur = AirPlayPersistence.loadFps(ctx)
         val fpsIdx = fpsValues.indexOf(fpsCur).takeIf { it >= 0 }
             ?: fpsValues.indexOf(30).coerceAtLeast(0)
@@ -54,6 +49,13 @@ internal class DisplaySettingsColumn(page: Fragment) : SettingsColumnKit(page) {
                 }
             }
         }))
+        // Android 4.4 无法查询解码器能力，只有用户显式接受风险才上报放大画布。
+        if (realSdkInt() <= 19) {
+            card.addView(reconnectSwitchRow(ctx, ctx.getString(R.string.settings_allow_enlarged_canvas), AirPlayPersistence.loadAllowEnlargedCanvas(ctx)) { on ->
+                AirPlayPersistence.saveAllowEnlargedCanvas(ctx, on)
+                host.reconnectIfRunning()
+            })
+        }
         card.addView(settingRow(ctx, ctx.getString(R.string.settings_interface_size), capPick(ctx, InterfaceSize.displayName(ctx, InterfaceSize.preference(ctx))) { cap -> showInterfaceSizePicker(cap) }))
         card.addView(settingRow(ctx, ctx.getString(R.string.safe_area), capPick(ctx, safeAreaSummary(ctx)) { cap -> showSafeAreaEditor(cap) }))
         card.addView(reconnectSwitchRow(ctx, ctx.getString(R.string.draw_outside_safe_area), AirPlayPersistence.loadSafeAreaDrawOutside(ctx)) { on ->

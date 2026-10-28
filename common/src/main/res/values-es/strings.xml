@@ -278,6 +278,7 @@
     <string name="floating_ball_assist_open">Abrir ajustes</string>
     <string name="floating_ball_assist_toast">Active primero «75Play Asistencia trasera» en los ajustes de accesibilidad del sistema</string>
     <string name="assist_back_service_label">75Play Asistencia trasera</string>
+    <string name="settings_allow_enlarged_canvas">Lienzo ampliado (experimental)</string>
     <string name="settings_interface_size">Tamaño de la interfaz</string>
     <string name="settings_interface_size_auto">Automático</string>
     <string name="bluetooth_adapter_unavailable">La unidad principal no tiene adaptador Bluetooth nativo; CarPlay inalámbrico no disponible. Use un cable USB con cable.</string>

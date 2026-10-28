@@ -78,6 +78,7 @@ object AirPlayPersistence {
     private const val KEY_DIRECT_SURFACE_VIEW = "direct_surface_view"
     private const val KEY_SETTINGS_GESTURE_FINGERS = "settings_gesture_fingers"
     private const val KEY_WIDTH_PHYSICAL_MM = "display_width_physical_mm"
+    private const val KEY_ALLOW_ENLARGED_CANVAS = "allow_enlarged_canvas"
     private const val KEY_PHYSICAL_SIZE_BASIS = "display_physical_size_basis"
     private const val KEY_MAX_DETECTED_WIDTH = "display_max_detected_width"
     private const val KEY_MAX_DETECTED_HEIGHT = "display_max_detected_height"
@@ -642,6 +643,19 @@ object AirPlayPersistence {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putInt(KEY_FPS, AirPlayDisplaySettings.sanitizeFps(fps))
             .apply()
+    }
+
+    /**
+     * Experimental: on Android 4.4 the decoder capability query is impossible, so the host can only
+     * report an enlarged CarPlay canvas (smaller icons/text, resolution above 100%) when the user
+     * accepts the risk. Opt-in, applies at reconnect.
+     */
+    fun loadAllowEnlargedCanvas(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_ALLOW_ENLARGED_CANVAS, false)
+
+    fun saveAllowEnlargedCanvas(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_ALLOW_ENLARGED_CANVAS, enabled).apply()
     }
 
     fun loadWidthPhysicalMm(context: Context): Int =

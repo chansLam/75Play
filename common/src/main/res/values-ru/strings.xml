@@ -278,6 +278,7 @@
     <string name="floating_ball_assist_open">Открыть настройки</string>
     <string name="floating_ball_assist_toast">Сначала включите «75Play Assist Back» в настройках специальных возможностей системы</string>
     <string name="assist_back_service_label">75Play Assist Back</string>
+    <string name="settings_allow_enlarged_canvas">Увеличенное полотно (экспериментально)</string>
     <string name="settings_interface_size">Размер интерфейса</string>
     <string name="settings_interface_size_auto">Автоматически</string>
     <string name="bluetooth_adapter_unavailable">В магнитоле нет встроенного адаптера Bluetooth; беспроводной CarPlay недоступен. Используйте проводное подключение по USB.</string>

@@ -297,6 +297,7 @@
     <string name="floating_ball_assist_open">去开启</string>
     <string name="floating_ball_assist_toast">请先在系统无障碍设置中开启「75Play 辅助返回」</string>
     <string name="assist_back_service_label">75Play 辅助返回</string>
+    <string name="settings_allow_enlarged_canvas">放大画布（实验性）</string>
     <string name="settings_interface_size">界面大小</string>
     <string name="settings_interface_size_auto">自动</string>
     <string name="bluetooth_adapter_unavailable">车机未提供原生蓝牙适配器，无法进行无线连接引导。请在设置中切换为【有线连接】并使用 USB 数据线连接。</string>

@@ -1033,7 +1033,18 @@ class CarPlayHostActivity : ComponentActivity() {
 
     private fun decoderCanvasSupport(display: AirPlayDisplayConfig): CanvasSupport = try {
         if (realSdkInt() < 21) {
-            CanvasSupport(false, "legacy_decoder_capabilities", "Keep the native screen canvas on Android 4.4")
+            // API 19 has no codec capability query, so an enlarged canvas can only be advertised
+            // when the user opts in; the decoder may then fail on the bigger stream.
+            if (AirPlayPersistence.loadAllowEnlargedCanvas(this)) {
+                CanvasSupport(
+                    true,
+                    "kitkat_enlarged_canvas_allowed",
+                    "Enlarged canvas allowed on Android 4.4 by the experimental setting; " +
+                        "the decoder may fail on ${display.widthPixels}x${display.heightPixels}",
+                )
+            } else {
+                CanvasSupport(false, "legacy_decoder_capabilities", "Keep the native screen canvas on Android 4.4")
+            }
         } else {
         val mime = if (sessionHevc) MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
         // Match MediaCodec.createDecoderByType's first suitable decoder; do not silently force

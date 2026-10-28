@@ -17,7 +17,7 @@
 
 ## 安装
 
-1. 从 [Releases](https://github.com/chansLam/75Play/releases) 下载 APK（文件名见 [`site/config.json`](../site/config.json)，当前 `75Play-v2.0.2-release.apk`）。
+1. 从 [Releases](https://github.com/chansLam/75Play/releases) 下载 APK（文件名见 [`site/config.json`](../site/config.json)，当前 `75Play-v2.0.3-beta-release.apk`）。
 2. 若已安装**其他签名**的 75Play / 同类包，先彻底卸载。
 3. 用车机文件管理器安装，或 `adb install -r <apk>`。**不要**装到 iPhone。
 4. 打开 75Play。KitKat 上车机权限多为安装时授予。关掉其他投屏 / 手机互联应用。

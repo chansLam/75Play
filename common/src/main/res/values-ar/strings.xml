@@ -278,6 +278,7 @@
     <string name="floating_ball_assist_open">فتح الإعدادات</string>
     <string name="floating_ball_assist_toast">فعّل «خدمة الرجوع لـ 75Play» من إعدادات إمكانية الوصول أولاً</string>
     <string name="assist_back_service_label">خدمة الرجوع لـ 75Play</string>
+    <string name="settings_allow_enlarged_canvas">لوحة عرض موسّعة (تجريبي)</string>
     <string name="settings_interface_size">حجم الواجهة</string>
     <string name="settings_interface_size_auto">تلقائي</string>
     <string name="bluetooth_adapter_unavailable">لا تحتوي الوحدة الرئيسية على محول بلوتوث أصلي؛ لا يتوفر CarPlay اللاسلكي. يرجى استخدام كابل USB سلكي.</string>
