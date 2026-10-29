@@ -66,6 +66,8 @@ import com.shihab.diplay.airplay.AirPlayDisplaySettings
 import com.shihab.diplay.airplay.AirPlayPhysicalSizeBasis
 import com.shihab.diplay.airplay.AirPlayPhysicalSizeMm
 import com.shihab.diplay.airplay.CarPlayDisplayScale
+import com.shihab.diplay.airplay.CarPlayMediaButton
+import com.shihab.diplay.airplay.CarPlaySmartDisplayZoom
 import com.shihab.diplay.airplay.CarPlayUiScale
 import com.shihab.diplay.airplay.AirPlayDisplayConfig
 import com.shihab.diplay.airplay.AirPlayIdentity
@@ -380,6 +382,9 @@ class CarPlayHostActivity : ComponentActivity() {
             },
         )
     }
+    private val headlightThemeWatch = HeadlightThemeWatch(this) {
+        followSystemNight()?.let { nightModeController.systemChanged(it) }
+    }
     private val themeDiagnostics = ThemeModeDiagnostics()
     private var lastConfiguration: Configuration? = null
     internal var activeAirPlaySession: AirPlaySession? = null
@@ -439,7 +444,7 @@ class CarPlayHostActivity : ComponentActivity() {
         }
         lastConfiguration = Configuration(resources.configuration)
         darkMode = savedInstanceState?.getBoolean("carplay_night_active")
-            ?: nightModeOrNull(resources.configuration.uiMode) ?: false
+            ?: (followSystemNight() == true)
         advancedAudioChannelMappingSupported =
             resources.getBoolean(R.bool.config_advanced_audio_channel_mapping)
         airPlayIdentity = AirPlayPersistence.loadIdentity(this)
@@ -550,7 +555,7 @@ class CarPlayHostActivity : ComponentActivity() {
         nightSchedule = AirPlayPersistence.loadCarPlayNightSchedule(this)
         nightModeController.configure(
             carPlayNightMode,
-            nightModeOrNull(resources.configuration.uiMode) ?: false,
+            followSystemNight() ?: false,
             ambientLightThreshold,
             ambientDelaySeconds,
             nightSchedule,
@@ -693,8 +698,8 @@ class CarPlayHostActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         isActivityStarted = true
-        // Intercept the steering wheel (OEM key-test mode) while CarPlay is in front and map
-        // next/pre/tel/Handup/vr onto the session; volume and SRC keep their native behaviour.
+        // Key-test mode swallows wheel keys while CarPlay is in front. Mapped keys go to the
+        // session. The plain KEY_CHANGED broadcast cannot stop the head unit.
         SwcCarPlayKeys.start(this) { controller }
         logThemeState(ThemeModeDiagnostics.Source.START, resources.configuration)
         mainHandler.removeCallbacks(pollConfiguration)
@@ -706,13 +711,21 @@ class CarPlayHostActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         CarPlayVolumeTarget.attach(this)
-        // CarPlay is in front: hide the floating ball (return to DiPlay via three-finger swipe).
-        FloatingBall.hide()
+        // The ball stays on screen during CarPlay: tap is Back, long-press returns to the shell.
+        if (AirPlayPersistence.loadFloatingBallEnabled(this)) {
+            FloatingBall.show(
+                applicationContext,
+                { FloatingBall.back() },
+                { FloatingBall.backToDiPlay(applicationContext) },
+            )
+        } else {
+            FloatingBall.hide()
+        }
         val savedNightMode = AirPlayPersistence.loadCarPlayNightMode(this)
         val savedThreshold = AirPlayPersistence.loadAmbientLightThreshold(this)
         val savedDelay = AirPlayPersistence.loadAmbientDelaySeconds(this)
         val savedSchedule = AirPlayPersistence.loadCarPlayNightSchedule(this)
-        val systemNight = nightModeOrNull(resources.configuration.uiMode) ?: false
+        val systemNight = followSystemNight() ?: false
         if (savedNightMode != carPlayNightMode || savedThreshold != ambientLightThreshold ||
             savedDelay != ambientDelaySeconds || savedSchedule != nightSchedule) {
             carPlayNightMode = savedNightMode
@@ -723,6 +736,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 nightSchedule)
         }
         nightModeController.resume(systemNight)
+        headlightThemeWatch.start()
         darkMode = nightModeController.night
         if (activeAirPlaySession != null) {
             syncAirPlayDarkMode(ThemeModeDiagnostics.Source.RESUME)
@@ -784,6 +798,25 @@ class CarPlayHostActivity : ComponentActivity() {
             }
             return true
         }
+        // Only the keys mapped onto CarPlay are consumed here. Model and the other wheel
+        // keys fall through so the head unit keeps them.
+        val media = CarPlayMediaButton.forKeyCode(event.keyCode)
+        if (media == CarPlayMediaButton.NEXT || media == CarPlayMediaButton.PREVIOUS) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                controller?.sendMediaButton(media)
+            }
+            return true
+        }
+        when (event.keyCode) {
+            KeyEvent.KEYCODE_CALL -> {
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) controller?.answerCall()
+                return true
+            }
+            KeyEvent.KEYCODE_ENDCALL -> {
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) controller?.endCall()
+                return true
+            }
+        }
         return super.dispatchKeyEvent(event)
     }
 
@@ -805,6 +838,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onPause() {
+        headlightThemeWatch.stop()
         CarPlayVolumeTarget.detach(this)
         nightModeController.pause()
         super.onPause()
@@ -1092,12 +1126,13 @@ class CarPlayHostActivity : ComponentActivity() {
         val alignedSize = DisplaySize(safeWidth, safeHeight)
         val physical = resolvePhysicalSize(alignedSize)
         val knobPrimary = AndroidTvInputMode.shouldUseKnobAsPrimaryInput(this)
+        val advertisedFps = if (realSdkInt() <= 19) CarPlaySmartDisplayZoom.advertisedFps(fps) else fps
         val baseDisplay = AirPlayDisplayConfig(
             widthPixels = alignedSize.width,
             heightPixels = alignedSize.height,
             widthPhysicalMm = physical.widthMm,
             heightPhysicalMm = physical.heightMm,
-            fps = fps,
+            fps = advertisedFps,
             // Tell CarPlay to use its native knob/focus model on Android TV and other non-touch
             // hosts. Touch-capable head units remain touchscreen-primary.
             primaryInputDevice = if (knobPrimary) 3 else 1,
@@ -1153,6 +1188,25 @@ class CarPlayHostActivity : ComponentActivity() {
                 DiPlayDialog.toast(this,
                     getString(if (resolutionFallback) R.string.resolution_canvas_unsupported
                         else R.string.this_head_unit_cannot_use_the_smaller_size_at_this_resolut), true)
+            }
+        }
+        // iOS decides whether Settings shows 智能缩放显示. KitKat sessions always advertise a
+        // 2x, ~10-inch panel at 60 fps so that row is offered. A phone's own pixels already qualify.
+        if (realSdkInt() <= 19) {
+            val reported = CarPlaySmartDisplayZoom.force(scaledDisplay)
+            if (reported != scaledDisplay) {
+                appendLog(
+                    "Smart Display Zoom ${scaledDisplay.widthPixels}x${scaledDisplay.heightPixels} " +
+                        "${scaledDisplay.widthPhysicalMm}x${scaledDisplay.heightPhysicalMm}mm " +
+                        "-> ${reported.widthPixels}x${reported.heightPixels} " +
+                        "${reported.widthPhysicalMm}x${reported.heightPhysicalMm}mm fps=$advertisedFps",
+                )
+                scaledDisplay = reported
+                support = CanvasSupport(
+                    true,
+                    "smart_display_zoom",
+                    "Forced the reported screen into the configuration iOS 26 uses for Smart Display Zoom",
+                )
             }
         }
         appendLog("CarPlay size=${CarPlayUiScale.label(uiScalePercent)} canvas=${scaledDisplay.widthPixels}x${scaledDisplay.heightPixels}")
@@ -1228,11 +1282,11 @@ class CarPlayHostActivity : ComponentActivity() {
         val requestSummary = "Display request selected=${CarPlayUiScale.label(requestedPercent)} percent=$requestedPercent " +
             "surface=${size.width}x${size.height} resolution=${requestedResolutionPercent}% " +
             "base=${requestedResolutionDisplay.widthPixels}x${requestedResolutionDisplay.heightPixels} " +
-            "candidate=${candidate.widthPixels}x${candidate.heightPixels} fps=$fps " +
+            "candidate=${candidate.widthPixels}x${candidate.heightPixels} fps=$advertisedFps " +
             "codec=${if (sessionHevc) "HEVC" else "H.264"} softwareHevc=$hevcSoftwareDecoderEnabled"
         val effectiveSummary = "Display effective percent=$uiScalePercent resolution=${displayScalePercent}% " +
             "canvas=${display.widthPixels}x${display.heightPixels} decision=${support.reason} " +
-            "physical=${physical.widthMm}x${physical.heightMm}mm safeArea=${display.safeArea} " +
+            "physical=${display.widthPhysicalMm}x${display.heightPhysicalMm}mm safeArea=${display.safeArea} " +
             "drawOutside=${display.safeAreaDrawOutside}"
         displayDiagnosticAttempt = DisplayDiagnosticSnapshot.begin(this, requestSummary, support.details, effectiveSummary)
         appendLog(requestSummary)
@@ -1323,7 +1377,7 @@ class CarPlayHostActivity : ComponentActivity() {
         lastConfiguration = Configuration(newConfig)
         nightModeDiagnosticSource = source
         try {
-            nightModeOrNull(newConfig.uiMode)?.let { nightModeController.systemChanged(it) }
+            followSystemNight(newConfig.uiMode)?.let { nightModeController.systemChanged(it) }
         } finally {
             nightModeDiagnosticSource = ThemeModeDiagnostics.Source.CARPLAY_MODE
         }

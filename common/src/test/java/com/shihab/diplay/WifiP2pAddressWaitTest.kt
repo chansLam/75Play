@@ -33,8 +33,8 @@ class WifiP2pAddressWaitTest {
         assertEquals(ipv4, waitWith(listOf(listOf(ipv6), listOf(ipv6, ipv4))))
     }
 
-    @Test fun currentScopedLinkLocalRemainsTheFallbackAtTheDeadline() {
-        assertEquals(ipv6, waitWith(listOf(listOf(ipv6))))
+    @Test fun linkLocalIsNotPublishedWhenTheDeadlinePasses() {
+        assertNull(waitWith(listOf(listOf(ipv6))))
     }
 
     private fun waitWith(snapshots: List<List<InetAddress>>): InetAddress? {

@@ -9,6 +9,7 @@ import android.media.MediaFormat
 import android.os.Build
 import com.shihab.diplay.airplay.AudioCodecKind
 import com.shihab.diplay.airplay.AudioFormat
+import com.shihab.diplay.airplay.BufferedAudioStream
 import com.shihab.diplay.airplay.toHexString
 import com.shihab.diplay.compat.inputBufferCompat
 import com.shihab.diplay.compat.outputBufferCompat
@@ -71,6 +72,7 @@ internal class AudioRenderer(
     private var firstPcmWriteReported = false
     private val packetsReceived = AtomicInteger()
     private val packetsDropped = AtomicInteger()
+    private val packetsDroppedTotal = AtomicInteger()
     private val lastArrivalNs = AtomicLong()
     private val maxArrivalGapMs = AtomicLong()
     private val frameBytes = if (format.channels >= 2) 4 else 2
@@ -119,7 +121,10 @@ internal class AudioRenderer(
             }
         }
         if (!started || !queue.offer(AudioPacket(rtp, sample))) {
-            if (started) packetsDropped.incrementAndGet()
+            if (started) {
+                packetsDropped.incrementAndGet()
+                packetsDroppedTotal.incrementAndGet()
+            }
             if (started && !droppedPacketsLogged) {
                 droppedPacketsLogged = true
                 AppLog.w(TAG, "audio queue full; dropping newest packets to bound latency")
@@ -148,7 +153,15 @@ internal class AudioRenderer(
                 AudioCodecKind.LPCM -> Unit
             }
             createTrack()
-            clockTrim = if (mappedChannel == AudioChannel.MEDIA) MediaClockTrim(format.sampleRate, (startThresholdBytes / frameBytes).toLong()) else null
+            clockTrim = if (mappedChannel == AudioChannel.MEDIA) {
+                MediaClockTrim(
+                    format.sampleRate,
+                    (startThresholdBytes / frameBytes).toLong(),
+                    measuresTarget = format.payloadType == BufferedAudioStream.STREAM_TYPE,
+                )
+            } else {
+                null
+            }
             diagnosticStage = "focus"
             requestAudioFocus()
             while (running) {
@@ -546,6 +559,7 @@ internal class AudioRenderer(
         val removed = mediaLagGuard?.recover(queue, packet.sample, AudioPacket::sample, System.nanoTime()) ?: 0
         if (removed > 0) {
             packetsDropped.addAndGet(removed)
+            packetsDroppedTotal.addAndGet(removed)
             if (lagRecoveryReports < MAX_REBUFFER_REPORTS) {
                 lagRecoveryReports++
                 report("Audio: stale media packet backlog recovered audioType=${format.audioType} " +
@@ -834,10 +848,23 @@ internal class AudioRenderer(
         }
     }
 
+    private var headAtPlaybackStart = 0
+    private var droppedAtLastTrim = 0
+
     private fun trimClock(track: AudioTrack) {
         val trim = clockTrim ?: return
         val now = System.nanoTime()
-        trim.sample(bufferProgress.queuedBytes(track.playbackHeadPosition) / frameBytes, now)
+        val dropped = packetsDroppedTotal.get()
+        if (dropped != droppedAtLastTrim) {
+            droppedAtLastTrim = dropped
+            trim.measureAgain()
+        }
+        val head = track.playbackHeadPosition
+        trim.sample(
+            bufferProgress.queuedBytes(head) / frameBytes,
+            now,
+            headMoving = head != headAtPlaybackStart,
+        )
         val rate = trim.rateDue(now) ?: return
         val result = runCatching { track.setPlaybackRate(rate) }.getOrDefault(AudioTrack.ERROR)
         if (result != AudioTrack.SUCCESS) {
@@ -849,6 +876,8 @@ internal class AudioRenderer(
     private fun startPlayback(track: AudioTrack) {
         diagnosticStage = "track-play"
         underrunsAtPlaybackStart = track.compatUnderruns()
+        headAtPlaybackStart = track.playbackHeadPosition
+        clockTrim?.measureAgain()
         try {
             track.play()
             playbackStarted = true

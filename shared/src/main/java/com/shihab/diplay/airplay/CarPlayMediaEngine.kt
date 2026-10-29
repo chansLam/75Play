@@ -98,6 +98,8 @@ class CarPlayMediaEngine(
      * See issue #106.
      */
     private val pendingScreenReaps = ConcurrentHashMap<AirPlaySession, ScheduledFuture<*>>()
+    /** Sessions that already used their one extra grace after the screen stream died. */
+    private val videoRecoveryAttempted = Collections.synchronizedSet(mutableSetOf<AirPlaySession>())
     private val screenReapScheduler = Executors.newSingleThreadScheduledExecutor { runnable ->
         Thread(runnable, "xcertplay-screen-reap").apply { isDaemon = true }
     }
@@ -133,9 +135,10 @@ class CarPlayMediaEngine(
 
     override fun onScreen(session: AirPlaySession, type: Int, stream: Map<String, Any?>): Int? {
         val key = outputKey(session, stream) ?: return null
+        val peer = session.remoteAddress ?: return null
         val streamKey = StreamKey(session, type)
         AppLog.i(TAG, "airplay screen key connectionID=${unsignedPlistDecimal(stream["streamConnectionID"])}")
-        val screen = ScreenStream(key, session::logDebug, session.localAddress)
+        val screen = ScreenStream(key, peer, session::logDebug, session.localAddress)
         sink.setVideoDiagnosticHandler(type) {
             if (it == "first frame rendered") session.videoFrameRendered()
             session.logDebug("Video: $it")
@@ -183,22 +186,33 @@ class CarPlayMediaEngine(
     }
 
     private fun scheduleScreenReap(session: AirPlaySession) {
-        cancelScreenReap(session)
+        // Future-only cancel: rescheduling the second grace must keep videoRecoveryAttempted.
+        pendingScreenReaps.remove(session)?.cancel(false)
         val graceMillis = screenReapGraceMillis
         pendingScreenReaps[session] = screenReapScheduler.schedule({
             pendingScreenReaps.remove(session)
             if (!session.isClosed) {
-                session.logDebug(
-                    "screen stream did not recover within ${graceMillis}ms; " +
-                        "closing the control session",
-                )
-                session.close()
+                if (videoRecoveryAttempted.add(session)) {
+                    session.logDebug(
+                        "screen stream did not recover within ${graceMillis}ms; " +
+                            "waiting once more before closing the control session",
+                    )
+                    scheduleScreenReap(session)
+                } else {
+                    videoRecoveryAttempted.remove(session)
+                    session.logDebug(
+                        "screen stream did not recover within ${graceMillis}ms after the extra grace; " +
+                            "closing the control session",
+                    )
+                    session.close()
+                }
             }
         }, graceMillis, TimeUnit.MILLISECONDS)
     }
 
     private fun cancelScreenReap(session: AirPlaySession) {
         pendingScreenReaps.remove(session)?.cancel(false)
+        videoRecoveryAttempted.remove(session)
     }
 
     override fun onAudio(session: AirPlaySession, type: Int, stream: Map<String, Any?>): Map<String, Any?>? {
@@ -375,6 +389,7 @@ class CarPlayMediaEngine(
         if (uuid != IAP_DATASTREAM_UUID) return null
         val shared = session.sharedSecret ?: return null
         val seed = unsignedPlistDecimal(stream["seed"]) ?: return null
+        val peer = session.remoteAddress ?: return null
         session.logDebug(
             "AirPlay iAP SETUP uuid=$uuid seed=$seed " +
                 "streamConnectionID=${unsignedPlistDecimal(stream["streamConnectionID"]) ?: "none"}",
@@ -387,6 +402,7 @@ class CarPlayMediaEngine(
         )
         val tunnel = IapTunnel(
             readKey = key,
+            expectedPeer = peer,
             bindAddress = session.localAddress
                 ?: when (session.remoteAddress) {
                     is Inet6Address -> InetAddress.getByName("::")
@@ -446,10 +462,11 @@ class CarPlayMediaEngine(
         if (uuid != VideoInCar.SETTINGS_CHANNEL_UUID) return null
         val shared = session.sharedSecret ?: return null
         val seed = unsignedPlistDecimal(stream["seed"]) ?: return null
+        val peer = session.remoteAddress ?: return null
         fun key(label: String) = AirPlayCrypto.hkdfSha512(
             shared, "DataStream-Salt$seed".toByteArray(Charsets.US_ASCII), label.toByteArray(Charsets.US_ASCII), 32,
         )
-        val channel = VideoSettingsChannel(key(DATASTREAM_OUTPUT_KEY), key(DATASTREAM_INPUT_KEY)) { session.logDebug(it) }
+        val channel = VideoSettingsChannel(key(DATASTREAM_OUTPUT_KEY), key(DATASTREAM_INPUT_KEY), peer) { session.logDebug(it) }
         val port = channel.listen(session.localAddress ?: InetAddress.getByName("::"))
         videoSettingsChannels.put(session, channel)?.close()
         session.logTrace("video settings stream listening port=$port")

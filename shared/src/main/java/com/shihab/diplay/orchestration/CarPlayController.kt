@@ -122,7 +122,7 @@ internal fun isWirelessHandoffInProgress(
  * iAP2 control, transport setup, and the AirPlay media/input sessions.
  *
  * Reusable lifecycle entry points: [start], [close] (stop), [reconnectMfi], [reconnectIphone].
- * New call sites may wrap this with [CarPlaySessionFacade]; hosts may keep a direct reference.
+ * Hosts keep a direct reference to this class.
  *
  * All blocking USB/I2C work runs on one worker executor. Status callbacks are delivered on the
  * main thread. This class is the integration seam only and is not evidence of hardware operation.

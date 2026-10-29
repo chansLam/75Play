@@ -339,9 +339,11 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         applyShell()
     }
 
-    private fun systemNightNow(): Boolean =
-        (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-            android.content.res.Configuration.UI_MODE_NIGHT_YES
+    private val headlightThemeWatch = HeadlightThemeWatch(this) {
+        followSystemNight()?.let { nightModeController?.systemChanged(it) }
+    }
+
+    private fun systemNightNow(): Boolean = followSystemNight() ?: false
 
     private fun initNightModeController() {
         nightModeController = bindCarPlayNightMode(
@@ -698,6 +700,14 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
 
     override fun onResume() {
         super.onResume()
+        if (AirPlayPersistence.loadFloatingBallEnabled(this)) {
+            FloatingBall.show(
+                applicationContext,
+                { FloatingBall.back() },
+                { FloatingBall.backToDiPlay(applicationContext) },
+            )
+        }
+        headlightThemeWatch.start()
         CarPlayVolumeTarget.attach(this)
         radioProbe.start()
         // 主题切换/环境光/定时变化时重建 shell（Fragment 重新渲染读新色板）。
@@ -750,6 +760,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         }
     }
     override fun onPause() {
+        headlightThemeWatch.stop()
         CarPlayVolumeTarget.detach(this)
         userNavigatedFromCarPlay = false
         pausedForAdbSwitchChange = adbSwitchChangePending

@@ -12,20 +12,34 @@ class SwcCarPlayKeysTest {
         assertEquals(SwcCarPlayAction.ANSWER_CALL, SwcCarPlayKeys.actionFor("TEL"))
         assertEquals(SwcCarPlayAction.END_CALL, SwcCarPlayKeys.actionFor("HANDUP"))
         assertEquals(SwcCarPlayAction.SIRI, SwcCarPlayKeys.actionFor("VR"))
+        assertEquals(SwcWheelOutcome.TRACK_NEXT, SwcCarPlayKeys.outcomeFor("NEXT"))
+        assertEquals(SwcWheelOutcome.SIRI, SwcCarPlayKeys.outcomeFor("VR"))
     }
 
     @Test
-    fun `volume and src keys keep their native function`() {
+    fun `volume is adjusted locally after the press is swallowed`() {
         assertNull(SwcCarPlayKeys.actionFor("KEY_SWC_VOL_INC"))
-        assertNull(SwcCarPlayKeys.actionFor("KEY_SWC_VOL_DEC"))
-        assertNull(SwcCarPlayKeys.actionFor("SRC"))
+        assertNull(SwcCarPlayKeys.actionFor("VOL_DEC"))
+        assertEquals(SwcWheelOutcome.VOLUME_UP, SwcCarPlayKeys.outcomeFor("KEY_SWC_VOL_INC"))
+        assertEquals(SwcWheelOutcome.VOLUME_UP, SwcCarPlayKeys.outcomeFor("VOLUME_UP"))
+        assertEquals(SwcWheelOutcome.VOLUME_DOWN, SwcCarPlayKeys.outcomeFor("KEY_SWC_VOL_DEC"))
+        assertEquals(SwcWheelOutcome.VOLUME_DOWN, SwcCarPlayKeys.outcomeFor("VOL_DEC"))
     }
 
     @Test
-    fun `unknown and blank names are ignored`() {
+    fun `mode and unknown names are released`() {
+        for (name in listOf("Model", "MODE", "MODEL", "KEY_SWC_MODE", "KEY_MODE", "SRC", "MYSTERY_KEY")) {
+            assertNull(SwcCarPlayKeys.actionFor(name))
+            assertEquals(SwcWheelOutcome.RELEASE, SwcCarPlayKeys.outcomeFor(name))
+        }
+    }
+
+    @Test
+    fun `blank names are ignored`() {
         assertNull(SwcCarPlayKeys.actionFor(null))
         assertNull(SwcCarPlayKeys.actionFor(""))
         assertNull(SwcCarPlayKeys.actionFor("  "))
-        assertNull(SwcCarPlayKeys.actionFor("MYSTERY_KEY"))
+        assertNull(SwcCarPlayKeys.outcomeFor(null))
+        assertNull(SwcCarPlayKeys.outcomeFor("  "))
     }
 }

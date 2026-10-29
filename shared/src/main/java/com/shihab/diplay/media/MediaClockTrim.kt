@@ -1,7 +1,9 @@
 package com.shihab.diplay.media
 
+import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 
 /**
  * Keeps the head unit's audio clock in step with the iPhone's during music (#610).
@@ -12,29 +14,50 @@ import kotlin.math.roundToInt
  * controller that, once a second, trims the track's playback rate so the level stays at the start threshold.
  * The trim is bounded by [MAX_TRIM] (26 cents at most) and settles at the head unit's own drift, which is a
  * hardware constant, so the next music stream starts from the trim this one learned.
+ * Buffered music is fed ahead of real time, so the level it holds depends on how long the head
+ * unit took to start playing; with [measuresTarget] the trim measures that level and steers to it.
  */
 internal class MediaClockTrim(
     private val sampleRate: Int,
-    private val targetFrames: Long,
+    private var targetFrames: Long,
     private var integral: Double = learnedTrim,
+    private val measuresTarget: Boolean = false,
 ) {
+    private class Measuring(val steadySinceNs: Long? = null)
+
     private var level: Double? = null
     private var lastSampleNs = 0L
     private var lastUpdateNs: Long? = null
     private var compressedBacklog = false
+    private var measuring: Measuring? = if (measuresTarget) Measuring() else null
+
+    fun measureAgain() {
+        if (!measuresTarget) return
+        measuring = Measuring()
+        level = null
+    }
 
     /** The playback rate last asked of the track, in Hz. */
     var rate = sampleRate
         private set
 
     /** Include compressed packets waiting for decode: those frames are already queued audio. */
-    fun sample(queuedFrames: Long, nowNs: Long, compressedFrames: Long = 0L) {
+    fun sample(queuedFrames: Long, nowNs: Long, compressedFrames: Long = 0L, headMoving: Boolean = true) {
         if (targetFrames <= 0L) return
         // Decoder backpressure is not evidence that the head unit's clock runs at a different
         // rate; do not teach the *next* music stream an artificial clock correction.
         compressedBacklog = compressedFrames > targetFrames
         val buffered = queuedFrames.coerceAtLeast(0L) +
             compressedFrames.coerceIn(0L, sampleRate.toLong() * 16L)
+        measuring?.let { measure ->
+            if (!headMoving) return
+            val average = level?.let { targetFrames * (1.0 + it) }
+            val jumped = average != null && abs(buffered - average) > sampleRate * MEASURE_JUMP_SECONDS
+            if (measure.steadySinceNs == null || jumped) {
+                measuring = Measuring(nowNs)
+                level = null
+            }
+        }
         val error = (buffered - targetFrames).toDouble() / targetFrames
         val previous = level
         // After a pause, a rebuffer or the first write the average restarts from what is queued now.
@@ -45,9 +68,17 @@ internal class MediaClockTrim(
 
     /** The playback rate to set now, or null to keep the current one. */
     fun rateDue(nowNs: Long): Int? {
-        val error = level ?: return null
+        var error = level ?: return null
         // Without new audio the level says nothing about the clocks: keep the trim as it is.
         if (nowNs - lastSampleNs > STALE_NS) return null
+        measuring?.let { measure ->
+            val since = measure.steadySinceNs ?: return null
+            if (nowNs - since < MEASURE_NS) return null
+            targetFrames = (targetFrames * (1.0 + error)).roundToLong().coerceAtLeast(1L)
+            level = 0.0
+            error = 0.0
+            measuring = null
+        }
         val previousUpdate = lastUpdateNs
         if (previousUpdate != null && nowNs - previousUpdate < UPDATE_NS) return null
         // A pause between updates is not drift: integrate at most one normal step over it.
@@ -73,6 +104,8 @@ internal class MediaClockTrim(
         const val UPDATE_NS = 1_000_000_000L
         const val STALE_NS = 250_000_000L
         const val MAX_STEP_SECONDS = 2.0
+        const val MEASURE_NS = 3_000_000_000L
+        const val MEASURE_JUMP_SECONDS = 0.2
 
         /** The drift the last music stream settled on. Each process plays to one head unit. */
         @Volatile var learnedTrim = 0.0

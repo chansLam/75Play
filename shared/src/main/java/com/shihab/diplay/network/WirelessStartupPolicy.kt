@@ -23,9 +23,6 @@ object WirelessStartupPolicy {
      */
     const val INTERFACE_READY_MILLIS = 8_000L
 
-    /** @deprecated Use [INTERFACE_READY_MILLIS] / [SOFTAP_ENABLE_MILLIS]; kept for call-site clarity. */
-    const val HOTSPOT_READY_MILLIS = INTERFACE_READY_MILLIS
-
     const val INTERFACE_POLL_MILLIS = 250L
     const val STABLE_SAMPLES = 2
     const val FIRST_TCP_MILLIS = 30_000L

@@ -65,6 +65,11 @@ internal class VideoDecoder(
     private var feedScratch = ByteArray(0)
     private val referenceChain = VideoReferenceChain()
     private var lastKeyFrameRequestNs = 0L
+    private var consecutiveInputWithoutOutput = 0
+    private var staleFramesDropped = 0
+    private val stallRebuildTracker = DecoderStallRebuildTracker()
+    private var lastOutputRenderedNs = 0L
+    private var surfaceAttachedAtNs = if (surface != null) System.nanoTime() else 0L
     // The main screen keeps the historical log format; other screens are labelled.
     private val stats = VideoStats(statsLabel ?: if (streamType == MAIN_SCREEN_TYPE) "" else " stream=$streamType")
     private val thread = Thread(::run, "carplay-video").apply { isDaemon = true }
@@ -135,7 +140,23 @@ internal class VideoDecoder(
                         is VideoJob.Config -> configureDecoder(job)
                         is VideoJob.Frame -> {
                             try {
-                                feed(job.nalus, job.length, localTimeOf(job))
+                                val now = System.nanoTime()
+                                val rendering = lastOutputRenderedNs != 0L &&
+                                    now - lastOutputRenderedNs < MIN_OUTPUT_STALL_NS
+                                if (now - job.receivedNs > MAX_FRAME_AGE_NS && rendering) {
+                                    staleFramesDropped++
+                                    if (staleFramesDropped == 1 || staleFramesDropped % 30 == 0) {
+                                        report(
+                                            "video stale frame dropped count=$staleFramesDropped " +
+                                                "(decoder behind, keeping feed)",
+                                        )
+                                    }
+                                } else if (now - job.receivedNs > MAX_FRAME_AGE_NS) {
+                                    queue.discardFrames()
+                                    recover("video backlog exceeded 800 ms")
+                                } else {
+                                    feed(job.nalus, job.length, localTimeOf(job))
+                                }
                             } finally {
                                 VideoFrameBuffers.give(job.nalus)
                             }
@@ -152,6 +173,7 @@ internal class VideoDecoder(
                         null -> Unit
                     }
                     decoder?.let(::drainOutput)
+                    maybeRebuildAfterOutputStall()
                     stats.logIfDue()?.let(report)
                     if (referenceChain.needsKeyFrame && lastConfig != null && outputSurface != null) requestKeyFrameIfDue()
                 } catch (error: Exception) {
@@ -391,6 +413,9 @@ internal class VideoDecoder(
     private fun changeSurface(surface: Surface?) {
         if (outputSurface === surface) return
         outputSurface = surface
+        surfaceAttachedAtNs = if (surface != null) System.nanoTime() else 0L
+        stallRebuildTracker.reset()
+        consecutiveInputWithoutOutput = 0
         if (surface == null) {
             releaseDecoder()
             AppLog.i(TAG, "video decoder detached from surface")
@@ -509,12 +534,26 @@ internal class VideoDecoder(
             }
             queuedSlot = (queuedSlot + 1) % queuedPresentationUs.size
             referenceChain.onQueued()
+            consecutiveInputWithoutOutput++
         } else {
             codec.queueInputBuffer(index, 0, 0, 0, 0)
             recover("video frame exceeded codec input capacity")
             return
         }
         drainOutput(codec)
+    }
+
+    private fun maybeRebuildAfterOutputStall() {
+        if (consecutiveInputWithoutOutput <= 0 || outputSurface == null || lastConfig == null) return
+        val now = System.nanoTime()
+        if (surfaceAttachedAtNs == 0L || now - surfaceAttachedAtNs < SURFACE_WARMUP_NS) return
+        val sinceOutput = if (lastOutputRenderedNs == 0L) Long.MAX_VALUE else now - lastOutputRenderedNs
+        if (sinceOutput < MIN_OUTPUT_STALL_NS) return
+        val forceRebuild = stallRebuildTracker.onStall()
+        val reason = "video decoder output stalled: $consecutiveInputWithoutOutput frames queued without output" +
+            if (forceRebuild) " (repeated stalls; forcing decoder rebuild)" else ""
+        consecutiveInputWithoutOutput = 0
+        if (forceRebuild) recover(reason) else recoverBacklog(reason)
     }
 
     private fun recover(reason: String) {
@@ -591,7 +630,13 @@ internal class VideoDecoder(
                         stats.onLate()
                     }
                     codec.releaseOutputBuffer(index, render)
-                    if (shown) stats.onRendered()
+                    if (shown) {
+                        stats.onRendered()
+                        consecutiveInputWithoutOutput = 0
+                        staleFramesDropped = 0
+                        stallRebuildTracker.onOutput()
+                        lastOutputRenderedNs = now
+                    }
                     if (shown && !renderedFrameLogged) {
                         renderedFrameLogged = true
                         report("first frame rendered")
@@ -667,6 +712,9 @@ internal class VideoDecoder(
         const val SENDER_PAUSE_NS = 120_000_000L
         // Frames before a pause that wait for it: the decoder holds about two, sometimes three.
         const val PAUSE_HELD_FRAMES = 3
+        const val MIN_OUTPUT_STALL_NS = 1_500_000_000L
+        const val SURFACE_WARMUP_NS = 3_500_000_000L
+        const val MAX_FRAME_AGE_NS = 800_000_000L
         val START_CODE = byteArrayOf(0x00, 0x00, 0x00, 0x01)
     }
 }

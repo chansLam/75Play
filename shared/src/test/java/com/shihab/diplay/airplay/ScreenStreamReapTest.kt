@@ -32,10 +32,12 @@ class ScreenStreamReapTest {
     }
 
     @Test
-    fun screenReapClosesSessionAfterGraceExpires() {
+    fun screenReapWaitsASecondGraceBeforeClosing() {
         val session = testSession()
         scheduleReap(session)
-        Thread.sleep(600)
+        Thread.sleep(220)
+        assertFalse(session.isClosed)
+        Thread.sleep(700)
         assertTrue(session.isClosed)
         assertFalse(hasPendingReap(session))
     }

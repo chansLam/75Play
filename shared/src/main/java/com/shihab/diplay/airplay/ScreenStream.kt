@@ -21,6 +21,7 @@ enum class VideoCodec { H264, H265 }
  */
 class ScreenStream(
     private val key: ByteArray,
+    private val expectedPeer: InetAddress,
     private val onDiagnostic: (String) -> Unit = {},
     private val bindReference: InetAddress? = null,
 ) : Closeable {
@@ -63,7 +64,9 @@ class ScreenStream(
 
     private fun accept(bound: ServerSocket) {
         try {
-            val accepted = bound.accept()
+            val accepted = bound.acceptFrom(expectedPeer) {
+                onDiagnostic("Video: rejected sender outside the control session")
+            }
             // Match audio/event sockets: disable Nagle and enlarge the kernel RX buffer so short
             // Wi-Fi bursts do not drop while the decrypt/decode path catches up (KitKat SoftAP).
             val originalRx = runCatching { accepted.receiveBufferSize }.getOrDefault(0)

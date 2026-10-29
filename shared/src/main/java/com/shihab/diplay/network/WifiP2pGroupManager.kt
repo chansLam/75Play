@@ -529,21 +529,21 @@ class WifiP2pGroupManager(
                 else -> throw IOException("Wi-Fi P2P returned an unsupported band at ${frequencyMHz}MHz")
             }
 
-            val hostAddress = awaitInterfaceAddress(attempt, interfaceName, deadlineNanos)
-                ?: requestConnectionAddress(
+            val hostAddress = ipv4Host(awaitInterfaceAddress(attempt, interfaceName, deadlineNanos))
+                ?: ipv4Host(requestConnectionAddress(
                     attempt = attempt,
                     channel = channel,
                     timeoutNanos = minOf(remainingNanos(deadlineNanos), REQUEST_POLL_NANOS),
-                )
+                ))
             if (hostAddress == null) {
-                lastReason = "interface $interfaceName has no usable IPv6 or IPv4 address"
+                lastReason = "interface $interfaceName has no IPv4 address"
                 continue
             }
 
             return WirelessHotspotInfo(
                 ssid = networkName,
                 passphrase = passphrase,
-                security = groupSecurity(group),
+                security = groupSecurity(),
                 channel = channelNumber,
                 frequencyMHz = frequencyMHz,
                 bssid = interfaceHardwareAddress(interfaceName)
@@ -593,14 +593,14 @@ class WifiP2pGroupManager(
                 continue
             }
 
-            val hostAddress = awaitInterfaceAddress(attempt, interfaceName, deadlineNanos)
-                ?: requestConnectionAddress(
+            val hostAddress = ipv4Host(awaitInterfaceAddress(attempt, interfaceName, deadlineNanos))
+                ?: ipv4Host(requestConnectionAddress(
                     attempt = attempt,
                     channel = channel,
                     timeoutNanos = minOf(remainingNanos(deadlineNanos), REQUEST_POLL_NANOS),
-                )
+                ))
             if (hostAddress == null) {
-                lastReason = "interface $interfaceName has no usable IPv6 or IPv4 address"
+                lastReason = "interface $interfaceName has no IPv4 address"
                 continue
             }
 
@@ -609,7 +609,7 @@ class WifiP2pGroupManager(
             return WirelessHotspotInfo(
                 ssid = networkName,
                 passphrase = passphrase,
-                security = groupSecurity(group),
+                security = groupSecurity(),
                 channel = requestedChannel,
                 frequencyMHz = creation.frequencyMHz,
                 bssid = interfaceHardwareAddress(interfaceName)
@@ -672,6 +672,8 @@ class WifiP2pGroupManager(
         return info.groupOwnerAddress?.takeUnless(InetAddress::isAnyLocalAddress)
     }
 
+    private fun ipv4Host(address: InetAddress?): Inet4Address? = address as? Inet4Address
+
     private fun await(latch: CountDownLatch, timeoutNanos: Long): Boolean = try {
         val waitNanos = timeoutNanos.coerceAtLeast(1L)
         latch.await(waitNanos, TimeUnit.NANOSECONDS)
@@ -699,9 +701,9 @@ class WifiP2pGroupManager(
             ensureStartActive(attempt)
             val address = interfaceAddress(interfaceName)
             if (address is Inet4Address) return address
-            // Publish only the current interface snapshot. A link-local address seen earlier
-            // may disappear while DHCP/group configuration is still changing.
-            if (remainingNanos(addressDeadline) <= 0) return address
+            // A link-local IPv6 on p2p-wlan cannot be bound (EADDRNOTAVAIL) and is not the
+            // address the iPhone dials. Wait for IPv4, then let the caller ask the group owner.
+            if (remainingNanos(addressDeadline) <= 0) return null
             Thread.sleep(100)
         }
     }
@@ -758,27 +760,8 @@ class WifiP2pGroupManager(
         null
     }
 
-    private fun groupSecurity(group: WifiP2pGroup): Iap2WirelessSecurity {
-        if (Build.VERSION.SDK_INT < 36) return Iap2WirelessSecurity.WPA_WPA2
-        return when (group.securityType) {
-            WifiP2pGroup.SECURITY_TYPE_WPA2_PSK -> Iap2WirelessSecurity.WPA_WPA2
-            WifiP2pGroup.SECURITY_TYPE_WPA3_COMPATIBILITY ->
-                Iap2WirelessSecurity.WPA3_TRANSITION
-            WifiP2pGroup.SECURITY_TYPE_WPA3_SAE -> Iap2WirelessSecurity.WPA3_ONLY
-            // Several vendor supplicants report an authentication key management the framework
-            // cannot classify, which surfaces as UNKNOWN rather than as a concrete cipher suite.
-            // The group itself is still the plain WPA2-PSK group this device creates by default,
-            // so keep the assumption every older Android release relies on instead of aborting a
-            // bring-up that has already resolved its SSID, band, interface and host address.
-            WifiP2pGroup.SECURITY_TYPE_UNKNOWN -> {
-                diagnostic("Wi-Fi P2P security type not reported by the framework; assuming WPA2-PSK")
-                Iap2WirelessSecurity.WPA_WPA2
-            }
-            else -> throw IOException(
-                "Unsupported Wi-Fi P2P security type: ${group.securityType}",
-            )
-        }
-    }
+    /** Groups created here are WPA2-PSK. The framework security-type field is API 36. */
+    private fun groupSecurity(): Iap2WirelessSecurity = Iap2WirelessSecurity.WPA_WPA2
 
     private fun randomCredentials(): Credentials = Credentials(
         ssid = "$ssidPrefix${randomToken(4)}",

@@ -3,6 +3,7 @@ package com.shihab.diplay.ui
 import com.shihab.diplay.host.R
 import com.shihab.diplay.AirPlayPersistence
 import com.shihab.diplay.CarPlayNightMode
+import com.shihab.diplay.followSystemNight
 
 /**
  * 75Play 双主题。两套都是能透出座舱底图的玻璃，不再用实心色块。
@@ -147,6 +148,7 @@ object GlassColors {
         val dark = when (mode) {
             CarPlayNightMode.NIGHT -> true
             CarPlayNightMode.DAY -> false
+            CarPlayNightMode.SYSTEM -> context.followSystemNight() == true
             else -> {
                 val uiMode = context.resources.configuration.uiMode
                 (uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==

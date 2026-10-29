@@ -6,9 +6,9 @@
 
 | 上游 | 说明 | 跟踪分支 | 最新提交（移植对照） |
 | --- | --- | --- | --- |
-| [DiPlay](https://github.com/shihabal3amri/DiPlay) | 主上游 / 接收端主体 | `main` | [`4487c689`](https://github.com/shihabal3amri/DiPlay/commit/4487c689) · 2026-10-22（**最新 tip**；本批仅更新跟踪哈希，新增全部为网站下载量统计、发布说明、BYD/吉利仪表集群地图，均不适用 SoftAP 专版，无可移植内容。此前已移植至 `b309eae9`，下次从该提交之后查增量） |
+| [DiPlay](https://github.com/shihabal3amri/DiPlay) | 主上游 / 接收端主体 | `main` | [`4487c689`](https://github.com/shihabal3amri/DiPlay/commit/4487c689) · 2026-10-22（其后 compare 约 159 个提交已审。已移植 `411f0b6063` bplist 上限、`a83284c500` 控制包上限、`aeb1d73356` 数据口只接受控制对端、`0d73aed31a`/`7f40cfabaa` 缓冲音乐时钟对准稳定水位。集群、HUD、有线 USB、车道引导、轮速未移植。GitHub 限流未取到新 tip 哈希，下次从 `main` 最新提交查增量） |
 | [diplay-changan](https://github.com/c80361619/diplay-changan) | 长安 CS75（2018）Android 4.4.2 / i.MX6 | `kitkat` | [`959279ea21`](https://github.com/c80361619/diplay-changan/commit/959279ea21) · 2026-10-16（**上次移植点**；本批已移植 `51f03374` 无线 IPv4 优先/协议族切换，解决反复重连） |
-| [DiPlay-Legacy-Android](https://github.com/programmerguohuajing/DiPlay-Legacy-Android) | Legacy / KitKat 兼容 | `main` | [`46d0047f`](https://github.com/programmerguohuajing/DiPlay-Legacy-Android/commit/46d0047f) · 2026-10-23（**最新 tip = v0.2.90**；本批仅更新跟踪哈希，新增为自定义图标大小限制、USB 权限诊断日志，大部分不适用 SoftAP 专版，无可移植内容。此前已移植至 `054c6b58` 平台 AAC 解码器退化自动切换软解（Issue #170）；下次从该提交之后查增量） |
+| [DiPlay-Legacy-Android](https://github.com/programmerguohuajing/DiPlay-Legacy-Android) | Legacy / KitKat 兼容 | `main` | [`46d0047f`](https://github.com/programmerguohuajing/DiPlay-Legacy-Android/commit/46d0047f) · 2026-10-23（v0.2.90。v0.2.93–v0.3.5 [`0dc0b91f`](https://github.com/programmerguohuajing/DiPlay-Legacy-Android/commit/0dc0b91fbd193a1de03f274a3f80316381bb9ed3) 已审：移植了解码器连续输出停滞后重建、过期帧在仍出画时只丢该帧、画面流断开后多等一轮再拆会话。有线 USB、root hostapd、海思硬解、亿咖通热点、连上后断蓝牙未移植。本仓库热点只上报一个地址且默认 IPv4，没有上游那条干等 IPv6 的循环。v0.2.91–v0.2.92 那一页因限流未打开，跟踪哈希先留在这里） |
 
 目标机型为 CS75 Plus **2020** SoftAP，并非上述仓库的直接 fork；合入为改写移植（port）。建议 commit：`merge(changan|legacy): port <hash> …`。
 
