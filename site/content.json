@@ -21,20 +21,20 @@
     "whats": "专为这台车做的",
     "features": [
       {
-        "title": "无线-only",
-        "text": "三种方式：Wi‑Fi Direct（默认）、车机热点（SoftAP）、局域网。本车无 TUN，已移除 USB 有线。"
+        "title": "三种无线",
+        "text": "默认 Wi‑Fi Direct，只用 IPv4。车机热点和局域网仍可选。以前选过的 LocalOnly 会当成车机热点。直连失败会先自动重置一次。本车无 TUN，没有 USB 有线。"
       },
       {
-        "title": "主页连接",
-        "text": "空闲时是 CarPlay 标志，已连接换成播放。点一下回到投屏。进度只在连接中显示。"
+        "title": "方向盘按键",
+        "text": "CarPlay 在前台时，语音唤醒 Siri，上一曲 / 下一曲，接听 / 挂断。音量和 SRC 留给车机。画面结束或应用崩溃后，按键测试会关掉。"
       },
       {
-        "title": "全屏沉浸",
-        "text": "CarPlay 只放画面和触控。三指下滑回到 75Play，桌面图标再打开则回到 CarPlay。"
+        "title": "全屏画面",
+        "text": "固定全屏，SurfaceView，H.264。帧率 15 / 30 / 45 / 60，默认 30。中、小尺寸可在 iPhone 上看到智能缩放。三指下滑回到 75Play。"
       },
       {
-        "title": "设置留在壳层",
-        "text": "连接、显示和关于都在 75Play 里改。应用隐藏和排序，主页与 CarPlay 共用一份。"
+        "title": "设置在壳层",
+        "text": "显示与音频、关于都是三列，不进投屏画面里改。应用隐藏和排序，主页与 CarPlay 共用一份。"
       },
       {
         "title": "多语言",
@@ -45,7 +45,7 @@
     "update": "更新与签名",
     "updateText": "v1+v2 签名，兼容 Android 4.4。相同签名可覆盖升级；应用内更新检查本仓库 Releases。",
     "diagnosticsTitle": "反馈与诊断",
-    "diagnosticsText": "设置 → 诊断 → 保存报告，把 .txt 附到 Issue，并注明固件与复现步骤。勿上传热点密码。",
+    "diagnosticsText": "关于 → 诊断报告 → 导出，把 .txt 附到 Issue，并注明固件与复现步骤。勿上传热点密码。",
     "notes": "发布说明",
     "source": "源代码",
     "feedback": "报告问题",
@@ -56,7 +56,7 @@
     "changelogMore": "查看完整 CHANGELOG",
     "footer": "独立开源项目（GPL-3.0）。CarPlay 归 Apple Inc. 所有。",
     "shotsTitle": "实机截图",
-    "shotsSub": "75Play v2.0.2 车机实机截图。",
+    "shotsSub": "截图来自 v2.0.2 实机。2.0.3 的设置和关于已改成三列，版面与图中不同。",
     "shotHome": "连接中心主页",
     "shotDisplay": "设置 · 显示/音频",
     "shotAbout": "关于",
@@ -84,20 +84,20 @@
     "whats": "專為這台車做的",
     "features": [
       {
-        "title": "僅無線",
-        "text": "三種方式：Wi‑Fi Direct（預設）、車機熱點（SoftAP）、區域網路。本車無 TUN，已移除 USB 有線。"
+        "title": "三種無線",
+        "text": "預設 Wi‑Fi Direct，只用 IPv4。車機熱點和區域網路仍可選。以前選過的 LocalOnly 會當成車機熱點。直連失敗會先自動重置一次。本車無 TUN，沒有 USB 有線。"
       },
       {
-        "title": "首頁連線",
-        "text": "空閒時是 CarPlay 標誌，已連線換成播放。點一下回到投屏。進度只在連線中顯示。"
+        "title": "方向盤按鍵",
+        "text": "CarPlay 在前景時，語音喚醒 Siri，上一曲 / 下一曲，接聽 / 掛斷。音量和 SRC 留給車機。畫面結束或應用程式崩潰後，按鍵測試會關掉。"
       },
       {
-        "title": "全螢幕沉浸",
-        "text": "CarPlay 只放畫面和觸控。三指下滑回到 75Play，桌面圖示再打開則回到 CarPlay。"
+        "title": "全螢幕畫面",
+        "text": "固定全螢幕，SurfaceView，H.264。幀率 15 / 30 / 45 / 60，預設 30。中、小尺寸可在 iPhone 上看到智慧縮放。三指下滑回到 75Play。"
       },
       {
-        "title": "設定留在殼層",
-        "text": "連線、顯示和關於都在 75Play 裡改。應用隱藏和排序，首頁與 CarPlay 共用一份。"
+        "title": "設定在殼層",
+        "text": "顯示與音訊、關於都是三欄，不在投屏畫面裡改。應用隱藏和排序，首頁與 CarPlay 共用一份。"
       },
       {
         "title": "多語言",
@@ -108,7 +108,7 @@
     "update": "更新與簽章",
     "updateText": "v1+v2 簽章，相容 Android 4.4。相同簽章可覆蓋升級；應用內更新檢查本倉庫 Releases。",
     "diagnosticsTitle": "回報與診斷",
-    "diagnosticsText": "設定 → 診斷 → 儲存報告，把 .txt 附到 Issue。勿上傳熱點密碼。",
+    "diagnosticsText": "關於 → 診斷報告 → 匯出，把 .txt 附到 Issue。勿上傳熱點密碼。",
     "notes": "版本說明",
     "source": "原始碼",
     "feedback": "回報問題",
@@ -119,7 +119,7 @@
     "changelogMore": "查看完整 CHANGELOG",
     "footer": "獨立開源專案（GPL-3.0）。CarPlay 歸 Apple Inc. 所有。",
     "shotsTitle": "實機截圖",
-    "shotsSub": "75Play v2.0.2 車機實機截圖。",
+    "shotsSub": "截圖來自 v2.0.2 實機。2.0.3 的設定和關於已改成三欄，版面與圖中不同。",
     "shotHome": "連線中心首頁",
     "shotDisplay": "設定 · 顯示/音訊",
     "shotAbout": "關於",
@@ -147,20 +147,20 @@
     "whats": "Built for this car",
     "features": [
       {
-        "title": "Wireless-only",
-        "text": "Three modes: Wi‑Fi Direct (default), car hotspot (SoftAP), and existing Wi‑Fi / LAN. USB wired removed — this unit has no TUN."
+        "title": "Three wireless modes",
+        "text": "Wi‑Fi Direct is the default and uses IPv4 only. Car hotspot and existing Wi‑Fi stay available. An old LocalOnly choice is treated as the car hotspot. A failed direct link resets once before the dialog. No USB — this unit has no TUN."
       },
       {
-        "title": "Connect on the home screen",
-        "text": "A CarPlay mark while idle; a play icon once connected. Tap it to return to the picture. Progress shows only while connecting."
+        "title": "Steering-wheel keys",
+        "text": "While CarPlay is in front: voice wakes Siri, previous / next track, answer / hang up. Volume and SRC stay with the head unit. Key-test turns off when CarPlay ends or the app crashes."
       },
       {
-        "title": "Immersive display",
-        "text": "CarPlay is only the picture and touch. Three-finger swipe returns to 75Play; the launcher icon opens CarPlay again."
+        "title": "Fullscreen picture",
+        "text": "Always fullscreen, SurfaceView, H.264. Frame rate 15 / 30 / 45 / 60, default 30. Medium and small sizes can show Smart Display Zoom on the iPhone. Three-finger swipe returns to 75Play."
       },
       {
         "title": "Settings stay on the shell",
-        "text": "Connection, display, and about are edited in 75Play. Hidden apps and order are shared with CarPlay."
+        "text": "Display & audio and About are three columns, and they are not edited on the CarPlay picture. Hidden apps and order are shared with CarPlay."
       },
       {
         "title": "Languages",
@@ -171,7 +171,13 @@
     "update": "Updates & signing",
     "updateText": "Signed with v1+v2 for Android 4.4. Same-key updates overwrite; in-app update checks this repo’s Releases.",
     "diagnosticsTitle": "Issues & diagnostics",
-    "diagnosticsText": "Settings → Diagnostics → Save report. Attach the .txt to a GitHub Issue with firmware and steps. Never post hotspot passwords.",
+    "diagnosticsText": "About → Diagnostic report → Export. Attach the .txt to a GitHub Issue with firmware and steps. Never post hotspot passwords.",
+    "shotsTitle": "Screenshots",
+    "shotsSub": "Shots are from a v2.0.2 head unit. In 2.0.3, Settings and About are three columns, so those two screens differ.",
+    "shotHome": "Connection home",
+    "shotDisplay": "Settings · display / audio",
+    "shotAbout": "About",
+    "shotCarplay": "Connected CarPlay home",
     "notes": "Release notes",
     "source": "Source code",
     "feedback": "Report an issue",
@@ -204,20 +210,20 @@
     "whats": "Hecho para este coche",
     "features": [
       {
-        "title": "Solo inalámbrico",
-        "text": "Tres modos: Wi‑Fi Direct (por defecto), hotspot del coche (SoftAP) y Wi‑Fi existente / LAN. Sin USB cableado (sin TUN)."
+        "title": "Tres modos inalámbricos",
+        "text": "Wi‑Fi Direct es el predeterminado y solo usa IPv4. Siguen el hotspot del coche y el Wi‑Fi existente. Una elección antigua de LocalOnly se trata como hotspot del coche. Si Direct falla, se reinicia una vez. Sin USB (sin TUN)."
       },
       {
-        "title": "Conexión en inicio",
-        "text": "Marca de CarPlay en reposo; icono de reproducción al conectar. Tócalo para volver a la imagen. El progreso solo aparece mientras conecta."
+        "title": "Teclas del volante",
+        "text": "Con CarPlay delante: la voz despierta a Siri, pista anterior / siguiente, contestar / colgar. Volumen y SRC se quedan en el coche. La prueba de teclas se apaga al terminar CarPlay o si la app se cierra."
       },
       {
-        "title": "Pantalla inmersiva",
-        "text": "CarPlay es solo imagen y toque. Tres dedos hacia abajo vuelven a 75Play; el icono del lanzador abre CarPlay otra vez."
+        "title": "Imagen a pantalla completa",
+        "text": "Siempre a pantalla completa, SurfaceView, H.264. Fotogramas 15 / 30 / 45 / 60, por defecto 30. Los tamaños mediano y pequeño pueden mostrar zoom inteligente en el iPhone. Tres dedos hacia abajo vuelven a 75Play."
       },
       {
         "title": "Ajustes en la carcasa",
-        "text": "Conexión, pantalla y acerca de se editan en 75Play. Las apps ocultas y el orden se comparten con CarPlay."
+        "text": "Pantalla y audio, y Acerca de, van en tres columnas y no se editan sobre la imagen de CarPlay. Las apps ocultas y el orden se comparten con CarPlay."
       },
       {
         "title": "Idiomas",
@@ -228,7 +234,9 @@
     "update": "Actualizaciones y firma",
     "updateText": "Firma v1+v2 para Android 4.4. Misma clave permite actualizar; la app consulta Releases de este repo.",
     "diagnosticsTitle": "Incidencias y diagnóstico",
-    "diagnosticsText": "Ajustes → Diagnóstico → Guardar informe. Adjunta el .txt a un Issue. No publiques contraseñas del hotspot.",
+    "diagnosticsText": "Acerca de → Informe de diagnóstico → Exportar. Adjunta el .txt a un Issue. No publiques contraseñas del hotspot.",
+    "shotsTitle": "Capturas",
+    "shotsSub": "Las capturas son de un equipo real con v2.0.2. En 2.0.3, Ajustes y Acerca de tienen tres columnas y no coinciden con esas dos imágenes.",
     "notes": "Notas de versión",
     "source": "Código fuente",
     "feedback": "Informar de un problema",
@@ -261,20 +269,20 @@
     "whats": "مصمّم لهذه السيارة",
     "features": [
       {
-        "title": "لاسلكي فقط",
-        "text": "ثلاثة أوضاع: Wi‑Fi Direct (افتراضي)، نقطة اتصال السيارة (SoftAP)، وشبكة Wi‑Fi موجودة / LAN. بدون USB سلكي (لا TUN)."
+        "title": "ثلاثة أوضاع لاسلكية",
+        "text": "Wi‑Fi Direct هو الافتراضي ويستخدم IPv4 فقط. تبقى نقطة اتصال السيارة وشبكة Wi‑Fi الموجودة. اختيار LocalOnly القديم يُعامل كنقطة اتصال السيارة. عند فشل الاتصال المباشر يُعاد ضبطه مرة واحدة. بلا USB (لا TUN)."
       },
       {
-        "title": "الاتصال من الرئيسية",
-        "text": "علامة CarPlay في الانتظار، وأيقونة تشغيل بعد الاتصال. اضغطها للعودة إلى الصورة. يظهر التقدم فقط أثناء الاتصال."
+        "title": "أزرار المقود",
+        "text": "عندما يكون كار بلاي في الأمام: الصوت يوقظ Siri، المقطع السابق / التالي، الرد / الإنهاء. مستوى الصوت و SRC يبقيان للسيارة. ينطفئ اختبار الأزرار عند انتهاء كار بلاي أو تعطل التطبيق."
       },
       {
-        "title": "عرض غامر",
-        "text": "كار بلاي صورة ولمس فقط. السحب بثلاثة أصابع يعود إلى 75Play، وأيقونة المشغّل تفتح كار بلاي من جديد."
+        "title": "صورة بملء الشاشة",
+        "text": "ملء الشاشة دائمًا، SurfaceView، و H.264. معدل الإطارات 15 / 30 / 45 / 60 والافتراضي 30. الحجمان المتوسط والصغير يمكن أن يُظهرا التكبير الذكي على الآيفون. السحب بثلاثة أصابع يعود إلى 75Play."
       },
       {
         "title": "الإعدادات في الغلاف",
-        "text": "الاتصال والعرض وحول التطبيق تُعدَّل في 75Play. إخفاء التطبيقات وترتيبها مشتركان مع كار بلاي."
+        "text": "العرض والصوت وحول التطبيق في ثلاثة أعمدة، ولا تُعدَّل فوق صورة كار بلاي. إخفاء التطبيقات وترتيبها مشتركان مع كار بلاي."
       },
       {
         "title": "لغات",
@@ -285,7 +293,9 @@
     "update": "التحديثات والتوقيع",
     "updateText": "توقيع v1+v2 لأندرويد 4.4. نفس المفتاح يسمح بالتحديث؛ التطبيق يتحقق من Releases.",
     "diagnosticsTitle": "التقارير والتشخيص",
-    "diagnosticsText": "الإعدادات → التشخيص → حفظ التقرير. أرفق .txt بمشكلة على GitHub. لا تنشر كلمة مرور نقطة الاتصال.",
+    "diagnosticsText": "حول التطبيق → تقرير التشخيص → تصدير. أرفق .txt بمشكلة على GitHub. لا تنشر كلمة مرور نقطة الاتصال.",
+    "shotsTitle": "لقطات",
+    "shotsSub": "اللقطات من وحدة حقيقية بإصدار v2.0.2. في 2.0.3 أصبحت الإعدادات وحول التطبيق ثلاثة أعمدة، فتختلف هاتان الشاشتان عن الصور.",
     "notes": "ملاحظات الإصدار",
     "source": "الكود المصدري",
     "feedback": "الإبلاغ عن مشكلة",
@@ -318,20 +328,20 @@
     "whats": "Сделано для этой машины",
     "features": [
       {
-        "title": "Только беспроводной",
-        "text": "Три режима: Wi‑Fi Direct (по умолчанию), точка доступа авто (SoftAP) и существующая Wi‑Fi / LAN. USB убран — нет TUN."
+        "title": "Три беспроводных режима",
+        "text": "Wi‑Fi Direct по умолчанию и только IPv4. Точка доступа авто и существующая Wi‑Fi остаются. Старый выбор LocalOnly считается точкой доступа авто. При сбое Direct сеть сбрасывается один раз. USB нет — нет TUN."
       },
       {
-        "title": "Подключение с главного экрана",
-        "text": "Знак CarPlay в простое и значок воспроизведения после подключения. Нажатие возвращает к картинке. Прогресс только во время подключения."
+        "title": "Кнопки руля",
+        "text": "Пока CarPlay на переднем плане: голос будит Siri, предыдущий / следующий трек, ответ / завершение. Громкость и SRC остаются у машины. Тест кнопок выключается, когда CarPlay заканчивается или приложение падает."
       },
       {
-        "title": "Иммерсивный экран",
-        "text": "CarPlay — только картинка и касания. Свайп тремя пальцами возвращает в 75Play; значок запуска снова открывает CarPlay."
+        "title": "Картинка на весь экран",
+        "text": "Всегда на весь экран, SurfaceView, H.264. Кадры 15 / 30 / 45 / 60, по умолчанию 30. Средний и малый размер могут показать умное масштабирование на iPhone. Свайп тремя пальцами возвращает в 75Play."
       },
       {
         "title": "Настройки в оболочке",
-        "text": "Подключение, экран и «О программе» меняются в 75Play. Скрытые приложения и порядок общие с CarPlay."
+        "text": "Экран и звук и «О программе» — три колонки, их не правят поверх картинки CarPlay. Скрытые приложения и порядок общие с CarPlay."
       },
       {
         "title": "Языки",
@@ -342,7 +352,9 @@
     "update": "Обновления и подпись",
     "updateText": "Подпись v1+v2 для Android 4.4. Тем же ключом можно обновлять; приложение проверяет Releases.",
     "diagnosticsTitle": "Обратная связь",
-    "diagnosticsText": "Настройки → Диагностика → Сохранить отчёт. Приложите .txt к issue. Не публикуйте пароль точки доступа.",
+    "diagnosticsText": "О программе → Диагностический отчёт → Экспорт. Приложите .txt к issue. Не публикуйте пароль точки доступа.",
+    "shotsTitle": "Снимки",
+    "shotsSub": "Снимки с реального ГУ на v2.0.2. В 2.0.3 настройки и «О программе» стали тремя колонками, эти два экрана уже другие.",
     "notes": "Заметки к релизу",
     "source": "Исходный код",
     "feedback": "Сообщить о проблеме",
@@ -375,20 +387,20 @@
     "whats": "Зроблено для цієї машини",
     "features": [
       {
-        "title": "Лише бездротовий",
-        "text": "Три режими: Wi‑Fi Direct (за замовчуванням), точка доступу авто (SoftAP) і наявна Wi‑Fi / LAN. USB прибрано — немає TUN."
+        "title": "Три бездротові режими",
+        "text": "Wi‑Fi Direct за замовчуванням і лише IPv4. Точка доступу авто та наявна Wi‑Fi лишаються. Старий вибір LocalOnly вважається точкою доступу авто. Якщо Direct не вдається, мережа скидається один раз. USB немає — немає TUN."
       },
       {
-        "title": "Підключення з головного екрана",
-        "text": "Знак CarPlay у простої та значок відтворення після підключення. Натискання повертає до зображення. Прогрес лише під час підключення."
+        "title": "Кнопки керма",
+        "text": "Поки CarPlay на передньому плані: голос будить Siri, попередній / наступний трек, відповідь / завершення. Гучність і SRC лишаються в машини. Тест кнопок вимикається, коли CarPlay закінчується або застосунок падає."
       },
       {
-        "title": "Імерсивний екран",
-        "text": "CarPlay — лише зображення й дотик. Свайп трьома пальцями повертає в 75Play; значок запуску знову відкриває CarPlay."
+        "title": "Зображення на весь екран",
+        "text": "Завжди на весь екран, SurfaceView, H.264. Кадри 15 / 30 / 45 / 60, типово 30. Середній і малий розмір можуть показати розумне масштабування на iPhone. Свайп трьома пальцями повертає в 75Play."
       },
       {
         "title": "Налаштування в оболонці",
-        "text": "Підключення, екран і «Про програму» змінюються в 75Play. Приховані програми й порядок спільні з CarPlay."
+        "text": "Екран і звук та «Про програму» — три колонки, їх не змінюють поверх зображення CarPlay. Приховані програми й порядок спільні з CarPlay."
       },
       {
         "title": "Мови",
@@ -399,7 +411,9 @@
     "update": "Оновлення та підпис",
     "updateText": "Підпис v1+v2 для Android 4.4. Тим самим ключем можна оновлювати; застосунок перевіряє Releases.",
     "diagnosticsTitle": "Зворотний зв’язок",
-    "diagnosticsText": "Налаштування → Діагностика → Зберегти звіт. Додайте .txt до issue. Не публікуйте пароль точки доступу.",
+    "diagnosticsText": "Про програму → Діагностичний звіт → Експорт. Додайте .txt до issue. Не публікуйте пароль точки доступу.",
+    "shotsTitle": "Знімки",
+    "shotsSub": "Знімки з реальної магнітоли на v2.0.2. У 2.0.3 налаштування та «Про програму» стали трьома колонками, ці два екрани вже інші.",
     "notes": "Нотатки до релізу",
     "source": "Вихідний код",
     "feedback": "Повідомити про проблему",

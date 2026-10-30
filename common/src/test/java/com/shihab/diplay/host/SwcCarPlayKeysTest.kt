@@ -17,13 +17,12 @@ class SwcCarPlayKeysTest {
     }
 
     @Test
-    fun `volume is adjusted locally after the press is swallowed`() {
+    fun `volume is released to the head unit like source`() {
         assertNull(SwcCarPlayKeys.actionFor("KEY_SWC_VOL_INC"))
         assertNull(SwcCarPlayKeys.actionFor("VOL_DEC"))
-        assertEquals(SwcWheelOutcome.VOLUME_UP, SwcCarPlayKeys.outcomeFor("KEY_SWC_VOL_INC"))
-        assertEquals(SwcWheelOutcome.VOLUME_UP, SwcCarPlayKeys.outcomeFor("VOLUME_UP"))
-        assertEquals(SwcWheelOutcome.VOLUME_DOWN, SwcCarPlayKeys.outcomeFor("KEY_SWC_VOL_DEC"))
-        assertEquals(SwcWheelOutcome.VOLUME_DOWN, SwcCarPlayKeys.outcomeFor("VOL_DEC"))
+        for (name in listOf("KEY_SWC_VOL_INC", "VOLUME_UP", "KEY_SWC_VOL_DEC", "VOL_DEC", "SRC")) {
+            assertEquals(SwcWheelOutcome.RELEASE, SwcCarPlayKeys.outcomeFor(name))
+        }
     }
 
     @Test

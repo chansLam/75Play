@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="default_connection_mode">默认连接模式</string>
-    <string name="default_connection_wireless">无线</string>
 </resources>

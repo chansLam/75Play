@@ -28,6 +28,7 @@ class CarPlayHostVideoSurfaceTest {
 
     @Test fun acceleratedWindowKeepsItsTextureAndTheOverlayOrder() {
         val activity = Robolectric.buildActivity(CarPlayHostActivity::class.java).get()
+        activity.directSurfaceView = false
         val texture = AttachedTexture(activity, true)
         val root = FrameLayout(activity).apply { addView(texture) }
         set(activity, "videoView", texture)

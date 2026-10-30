@@ -12,6 +12,12 @@ class WirelessHostAddressTest {
         assertEquals(ipv4, wirelessHostAddress(listOf(ip("fe80::1234"), ipv4), 7))
     }
 
+    @Test fun wifiDirectNeverPublishesLinkLocalWhenIpv4IsRequired() {
+        assertNull(wirelessHostAddress(listOf(ip("fe80::1234")), 7, ipv4Only = true))
+        val ipv4 = ip("192.168.49.1")
+        assertEquals(ipv4, wirelessHostAddress(listOf(ip("fe80::1234"), ipv4), 7, ipv4Only = true))
+    }
+
     @Test fun scopedLinkLocalIsUsedWhenTheAccessPointHasNoIpv4() {
         val result = wirelessHostAddress(listOf(ip("fe80::1234")), 7) as Inet6Address
         assertTrue(result.isLinkLocalAddress)

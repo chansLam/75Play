@@ -12,8 +12,7 @@ import com.shihab.diplay.ui.settings.HardwareColumn
 import com.shihab.diplay.ui.settings.SystemColumn
 
 /**
- * Vehicle page: about the app, then system and hardware facts.
- * Behavior settings live on the display and audio page.
+ * About page: app notes, update and diagnostics, then system and hardware facts.
  */
 class FragmentAbout : Fragment() {
 
@@ -28,17 +27,19 @@ class FragmentAbout : Fragment() {
             setBackgroundColor(0)
             setPadding(pad, pad, pad, pad)
         }
-        val cols = GlassSettingsColumn.stage(
+        val cols = GlassSettingsColumn.columns(
             ctx,
-            ctx.getString(R.string.about_title_system) to { card: LinearLayout ->
-                systemColumn.fill(card)
-            },
             listOf(
+                ctx.getString(R.string.about_title_system) to { card: LinearLayout ->
+                    systemColumn.fillAbout(card)
+                },
+                ctx.getString(R.string.about_update_section) to { card: LinearLayout ->
+                    systemColumn.fillMaintenance(card)
+                },
                 ctx.getString(R.string.about_title_hardware) to { card: LinearLayout ->
                     hardwareColumn.fill(card)
                 },
             ),
-            listOf(1f),
         )
         root.addView(cols, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         return root

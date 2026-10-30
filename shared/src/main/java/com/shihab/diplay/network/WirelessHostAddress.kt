@@ -4,10 +4,19 @@ import java.net.Inet4Address
 import java.net.Inet6Address
 import java.net.InetAddress
 
-internal fun wirelessHostAddress(addresses: List<InetAddress>, interfaceIndex: Int, preferIpv4: Boolean = true): InetAddress? {
-    val ipv4 = if (preferIpv4) addresses.filterIsInstance<Inet4Address>().firstOrNull {
+internal fun usableIpv4(addresses: List<InetAddress>): Inet4Address? =
+    addresses.filterIsInstance<Inet4Address>().firstOrNull {
         !it.isLoopbackAddress && !it.isLinkLocalAddress && !it.isAnyLocalAddress && !it.isMulticastAddress
-    } else null
+    }
+
+internal fun wirelessHostAddress(
+    addresses: List<InetAddress>,
+    interfaceIndex: Int,
+    preferIpv4: Boolean = true,
+    ipv4Only: Boolean = false,
+): InetAddress? {
+    val ipv4 = if (preferIpv4 || ipv4Only) usableIpv4(addresses) else null
+    if (ipv4Only) return ipv4
     val selected = ipv4 ?: HotspotAddressPolicy.select(addresses) ?: return null
     if (selected is Inet6Address && interfaceIndex > 0) {
         return Inet6Address.getByAddress(null, selected.address, interfaceIndex)

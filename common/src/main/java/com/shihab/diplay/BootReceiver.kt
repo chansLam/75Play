@@ -9,6 +9,8 @@ import com.shihab.diplay.util.AppLog
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        // A crash that killed the process can leave key-test mode on across a reboot.
+        com.shihab.diplay.host.SwcCarPlayKeys.forceOff(context)
         val launchEnabled = AirPlayPersistence.loadAutoStartOnBoot(context)
         StartupDiagnosticSnapshot.received(context, launchEnabled)
         if (!launchEnabled) return

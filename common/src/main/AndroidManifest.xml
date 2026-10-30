@@ -81,6 +81,8 @@
             android:resizeableActivity="true"
             android:theme="@style/Theme.Xcertplay" />
         <service android:name="com.shihab.diplay.DiPlaySessionService" android:exported="false" />
+        <!-- Restarted by the system after a crash so key-test mode cannot stay on. -->
+        <service android:name="com.shihab.diplay.host.SwcKeyTestGuardService" android:exported="false" />
         <!-- Background wireless CarPlay handshake (replaces the connect-only host Activity). -->
         <service android:name="com.shihab.diplay.CarPlayConnectService" android:exported="false" />
 

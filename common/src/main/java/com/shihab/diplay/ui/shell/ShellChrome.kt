@@ -202,7 +202,7 @@ class ShellChrome(
      * 的入口：
      *  - [android.app.Activity.onConfigurationChanged]（旋转 / 系统密度变化）；
      *  - [android.app.Activity.onMultiWindowModeChanged]（分屏切换）；
-     *  - 回前台后发现 ROM 把密度改回去了（onResume / onWindowFocusChanged 里 enforceInterfaceSize）；
+     *  - 回前台后语言被系统改回去（onResume / onWindowFocusChanged 里 enforceAppLocale）；
      *  - 主题 / 深色模式切换走 Activity 重建时无需单独调用（recreate 即等价）。
      * 语言切换目前走 [android.app.Activity.recreate]，同样无需单独调用。
      * 注意：本方法只清缓存，不改当前页（shown）导航状态，调用方随后要再 showPage(page)。

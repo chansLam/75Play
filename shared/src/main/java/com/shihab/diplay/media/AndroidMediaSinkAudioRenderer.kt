@@ -52,6 +52,8 @@ internal class AudioRenderer(
     private var codec: MediaCodec? = null
     private var track: AudioTrack? = null
     private var pcm = ByteArray(64 * 1024)
+    /** Reused while draining AAC output; allocating this per poll causes Dalvik GC hitches. */
+    private val outputInfo = MediaCodec.BufferInfo()
     /** Reused RTP payload strip (after 12-byte header) for LPCM/Opus — avoids per-packet copyOfRange. */
     private var rtpPayloadScratch = ByteArray(0)
     private var playbackStarted = false
@@ -729,7 +731,7 @@ internal class AudioRenderer(
 
     private fun drainCodec(codec: MediaCodec) {
         diagnosticStage = "decoder-output"
-        val info = MediaCodec.BufferInfo()
+        val info = outputInfo
         while (running) {
             diagnosticStage = "decoder-output"
             val index = codec.dequeueOutputBuffer(info, 0)

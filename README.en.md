@@ -6,7 +6,7 @@ An open-source wireless CarPlay receiver for the factory head unit (`OS_S311-WT`
 
 > Independent implementation, **not** Apple-certified, not affiliated with Apple or Changan. Set up while safely parked.
 >
-> Modified and optimized from [DiPlay-Legacy-Android](https://github.com/programmerguohuajing/DiPlay-Legacy-Android). Current release **v2.0.2** — see [CHANGELOG](CHANGELOG.md).
+> Modified and optimized from [DiPlay-Legacy-Android](https://github.com/programmerguohuajing/DiPlay-Legacy-Android). Current release **v2.0.3-beta** — see [CHANGELOG](CHANGELOG.md).
 
 [Download APK](https://github.com/chansLam/75Play/releases) · [Project site](https://chansLam.github.io/75Play/en/) · [中文](README.md)
 
@@ -14,10 +14,10 @@ An open-source wireless CarPlay receiver for the factory head unit (`OS_S311-WT`
 
 ## Highlights
 
-- **Wireless-only CarPlay** — Wi‑Fi Direct / car hotspot (SoftAP) / existing Wi‑Fi (LAN); USB wired removed (this head unit has no TUN)
-- **One-tap connect** — Wi‑Fi Direct / car hotspot auto-prepare the link on switch; LAN starts CarPlay after Wi‑Fi joins
-- **Immersive display** — wide-screen layout; launch head-unit apps from CarPlay; floating ball to return
-- **Glass dual-theme UI** — home and settings grouped by driver goals
+- **Three wireless modes** — Wi‑Fi Direct is the default and uses IPv4 only; car hotspot and existing Wi‑Fi stay available. A failed direct link resets once. No USB — this head unit has no TUN
+- **Steering-wheel keys** — voice wakes Siri, previous / next track, answer / hang up. Volume and SRC stay with the head unit
+- **Fullscreen picture** — always fullscreen, SurfaceView, H.264. Frame rate 15 / 30 / 45 / 60, default 30. Medium and small sizes can show Smart Display Zoom on the iPhone
+- **Settings stay on the shell** — Display & audio and About are three columns, and they are not edited on the CarPlay picture
 - **Languages** — zh-Hans / zh-Hant / en / ar / es / ru / uk
 - **Android terminal** (experimental)
 
@@ -55,7 +55,7 @@ Full guide (Chinese): [docs/INSTALL.md](docs/INSTALL.md).
 
 Open an [Issue](https://github.com/chansLam/75Play/issues) with:
 
-1. A diagnostic report from **Settings → Diagnostics** (`.txt`)
+1. A diagnostic report from **About → Diagnostic report → Export** (`.txt`)
 2. Head-unit firmware and iPhone / iOS versions
 3. Reproduction steps
 
@@ -64,5 +64,4 @@ Open an [Issue](https://github.com/chansLam/75Play/issues) with:
 ## License & trademarks
 
 - Source: **GPL-3.0** ([`LICENSE`](LICENSE))
-- Some UI derives from DiAuto (**AGPL-3.0**); see [docs/THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md)
 - CarPlay belongs to Apple Inc.; use of this software does not imply Apple certification

@@ -52,7 +52,7 @@ internal class HostDisplayLayout(private val activity: CarPlayHostActivity) {
     private fun applyDisplaySize(size: DisplaySize) {
         val display = activity.sessionDisplay
         if (display != null && applyViewArea(size, display)) return
-        val layoutChanged = displayLayoutChanged(size)
+        val layoutChanged = displayLayoutChanged()
         if (activity.shuttingDown.get()) return
         if (size == activity.activeDisplaySize && !layoutChanged) {
             // Teardown may have removed the session that made this same-size rotation pending.
@@ -172,19 +172,11 @@ internal class HostDisplayLayout(private val activity: CarPlayHostActivity) {
         return metrics.heightPixels > metrics.widthPixels
     }
 
-    fun displayLayoutChanged(newSize: DisplaySize? = activity.activeDisplaySize): Boolean {
+    fun displayLayoutChanged(): Boolean {
         val display = activity.sessionDisplay ?: return false
         if (display.rotation != activity.displayRotation()) return true
         if (display.hideTopBar != activity.hideTopBar || display.hideBottomBar != activity.hideBottomBar) {
             return true
-        }
-        if (newSize != null && newSize.width > 0 && newSize.height > 0) {
-            val baseAspect = display.width.toDouble() / display.height
-            val currentAspect = newSize.width.toDouble() / newSize.height
-            val aspectDiff = kotlin.math.abs(currentAspect / baseAspect - 1.0)
-            if (aspectDiff > 0.08 && AirPlayPersistence.loadAdaptPipResolution(activity)) {
-                return true
-            }
         }
         return false
     }

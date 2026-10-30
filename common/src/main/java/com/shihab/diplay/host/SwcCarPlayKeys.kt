@@ -5,7 +5,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -30,11 +29,10 @@ enum class SwcWheelOutcome {
     ANSWER_CALL,
     END_CALL,
     SIRI,
-    VOLUME_UP,
-    VOLUME_DOWN,
     /**
      * Not a CarPlay key. The framework already swallowed this press; test mode is opened
-     * again only after a short gap so a later press can reach the head unit.
+     * again only after a short gap so a later press can reach the head unit. Volume and
+     * source (SRC) both take this path so the head unit keeps them.
      */
     RELEASE,
 }
@@ -46,8 +44,8 @@ enum class SwcWheelOutcome {
  * the key by the time it arrives, so listening there cannot stop volume, mode or source.
  * Key-test mode (`coagent_settings_key_test_mode`) is the switch that swallows the press and
  * reports it as `KEY_CHANGED_TEST_MODE`. Mapped names, including the voice key, go to the
- * session. Volume is applied here because the MCU step was swallowed. Every other name drops
- * test mode so the head unit's own path is open for the next press.
+ * session. Volume and source (SRC) drop test mode so the head unit's own path is open
+ * for the next press.
  */
 object SwcCarPlayKeys {
     private const val TAG = "DiPlay-SwcKeys"
@@ -80,7 +78,7 @@ object SwcCarPlayKeys {
         else -> null
     }
 
-    /** Mapped keys go to CarPlay. Volume is adjusted locally. Every other name is released. */
+    /** Mapped keys go to CarPlay. Volume, source and every other name are released. */
     internal fun outcomeFor(name: String?): SwcWheelOutcome? {
         when (actionFor(name)) {
             SwcCarPlayAction.TRACK_NEXT -> return SwcWheelOutcome.TRACK_NEXT
@@ -90,44 +88,66 @@ object SwcCarPlayKeys {
             SwcCarPlayAction.SIRI -> return SwcWheelOutcome.SIRI
             null -> Unit
         }
-        val key = name?.trim()?.uppercase()?.takeIf { it.isNotEmpty() } ?: return null
-        return when (key) {
-            "KEY_SWC_VOL_INC", "VOL_INC", "VOLUME_UP" -> SwcWheelOutcome.VOLUME_UP
-            "KEY_SWC_VOL_DEC", "VOL_DEC", "VOLUME_DOWN" -> SwcWheelOutcome.VOLUME_DOWN
-            else -> SwcWheelOutcome.RELEASE
-        }
+        name?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return SwcWheelOutcome.RELEASE
+    }
+
+    /** True while this process is swallowing wheel keys for the CarPlay screen. */
+    internal fun isHolding(): Boolean = receiver != null
+
+    /**
+     * Turns key-test mode off. The settings write happens before anything else so a crash
+     * handler can still clear the switch if the main looper is already failing.
+     */
+    fun forceOff(context: Context) {
+        runCatching { Settings.System.putInt(context.contentResolver, KEY_TEST_SETTING, 0) }
+            .onFailure { AppLog.w(TAG, "cannot disable key test mode", it) }
+        runCatching { handler.removeCallbacks(rearmTestMode) }
     }
 
     /** Enables key-test interception and starts mapping wheel keys. Call from onStart. */
     fun start(activity: Activity, controller: () -> CarPlayController?) {
         if (receiver != null) return
-        val previousMode = runCatching {
-            Settings.System.getInt(activity.contentResolver, KEY_TEST_SETTING, 0)
-        }.getOrDefault(0)
-        val changed = runCatching {
+        runCatching {
             Settings.System.putInt(activity.contentResolver, KEY_TEST_SETTING, 1)
         }.onFailure { AppLog.w(TAG, "cannot enable key test mode", it) }
-            .isSuccess
-        val r = Receiver(previousMode, changed, controller)
+        val r = Receiver(controller)
         val filter = IntentFilter(KEY_TEST_ACTION).apply { priority = IntentFilter.SYSTEM_HIGH_PRIORITY }
         runCatching { activity.registerReceiver(r, filter) }
             .onFailure { AppLog.w(TAG, "register failed", it); return }
         appContext = activity.applicationContext
         receiver = r
+        // A sticky guard is restarted by the system after this process dies, and that restart
+        // clears the switch. A Java crash also clears it, but a native kill does not run that handler.
+        armGuard(activity.applicationContext)
     }
 
-    /** Restores the framework's key handling and stops mapping. Call from onStop. */
+    /**
+     * Stops mapping and turns key-test mode off. Always writes 0: a sudden end can leave the
+     * switch at 1, and the next start would otherwise remember that 1 and restore it.
+     */
     fun stop(activity: Activity) {
         handler.removeCallbacks(rearmTestMode)
-        val r = receiver ?: return
+        val r = receiver
         receiver = null
         appContext = null
-        runCatching { activity.unregisterReceiver(r) }
-            .onFailure { AppLog.w(TAG, "unregister failed", it) }
-        if (r.changedSetting) {
-            runCatching {
-                Settings.System.putInt(activity.contentResolver, KEY_TEST_SETTING, r.previousMode)
-            }
+        if (r != null) {
+            runCatching { activity.unregisterReceiver(r) }
+                .onFailure { AppLog.w(TAG, "unregister failed", it) }
+        }
+        forceOff(activity)
+        disarmGuard(activity.applicationContext)
+    }
+
+    private fun armGuard(context: Context) {
+        runCatching {
+            context.startService(Intent(context, SwcKeyTestGuardService::class.java))
+        }.onFailure { AppLog.w(TAG, "key test guard did not start", it) }
+    }
+
+    private fun disarmGuard(context: Context) {
+        runCatching {
+            context.stopService(Intent(context, SwcKeyTestGuardService::class.java))
         }
     }
 
@@ -143,18 +163,7 @@ object SwcCarPlayKeys {
         handler.postDelayed(rearmTestMode, PASS_THROUGH_MILLIS)
     }
 
-    private fun adjustVolume(context: Context, raise: Boolean) {
-        val audio = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
-        audio.adjustStreamVolume(
-            AudioManager.STREAM_MUSIC,
-            if (raise) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER,
-            AudioManager.FLAG_SHOW_UI,
-        )
-    }
-
     private class Receiver(
-        val previousMode: Int,
-        val changedSetting: Boolean,
         private val controller: () -> CarPlayController?,
     ) : BroadcastReceiver() {
         private var lastName: String? = null
@@ -165,17 +174,13 @@ object SwcCarPlayKeys {
             val name = intent.getStringExtra(KEY_TEST_EXTRA) ?: return
             val outcome = outcomeFor(name) ?: return
             val now = SystemClock.elapsedRealtime()
-            val once = outcome != SwcWheelOutcome.VOLUME_UP &&
-                outcome != SwcWheelOutcome.VOLUME_DOWN &&
-                outcome != SwcWheelOutcome.RELEASE
+            val once = outcome != SwcWheelOutcome.RELEASE
             if (once && name == lastName && now - lastAt < REPEAT_WINDOW_MILLIS) return
             if (once) {
                 lastName = name
                 lastAt = now
             }
             when (outcome) {
-                SwcWheelOutcome.VOLUME_UP, SwcWheelOutcome.VOLUME_DOWN ->
-                    adjustVolume(context, outcome == SwcWheelOutcome.VOLUME_UP)
                 SwcWheelOutcome.RELEASE -> releaseToHeadUnit()
                 else -> {
                     val c = controller() ?: return

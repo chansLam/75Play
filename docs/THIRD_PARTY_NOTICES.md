@@ -19,7 +19,6 @@
 ## 谱系与依赖
 
 - 接收端谱系：[xcertplay](https://github.com/shilapi/xcertplay) 等 — 根目录 `LICENSE` 为 **GPL-3.0**。
-- 界面：`DiPlayActivity` 等衍生自 [DiAuto](https://github.com/shihabal3amri/DiAuto)（**AGPL-3.0**，见 [`docs/licenses/DiAuto-AGPL-3.0.txt`](licenses/DiAuto-AGPL-3.0.txt)）。
 - 更早上游曾致谢 LIVI、Showcase 等；源码署名保留。
 - 依赖摘要：AndroidX / Kotlin（Apache 2.0）、Bouncy Castle、JmDNS（Apache 2.0）、SLF4J（MIT）；可选 SpeexDSP、软件 libopus（BSD）。详见 [`docs/licenses/dependencies/`](licenses/dependencies/)。
 - CarPlay 图标归 Apple Inc.；使用不代表认证。

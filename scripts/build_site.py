@@ -208,7 +208,7 @@ for lang, d in data.items():
   <section class="band shots" id="shots">
     <div class="band-inner">
       <h2>{e(d.get('shotsTitle', 'Screenshots'))}</h2>
-      <p class="fine">{e(d.get('shotsSub', '75Play v2.0.2 real-device screenshots.'))}</p>
+      <p class="fine">{e(d.get('shotsSub', 'Screenshots are from a v2.0.2 head unit. Settings and About are three columns in 2.0.3.'))}</p>
       <div class="shot-grid">
         <a href="{prefix}assets/screenshots/carplay-home.png"><img loading="lazy" src="{prefix}assets/screenshots/carplay-home.png" alt="{e(d.get('shotCarplay','CarPlay home'))}"></a>
         <a href="{prefix}assets/screenshots/home.png"><img loading="lazy" src="{prefix}assets/screenshots/home.png" alt="{e(d.get('shotHome','Home'))}"></a>

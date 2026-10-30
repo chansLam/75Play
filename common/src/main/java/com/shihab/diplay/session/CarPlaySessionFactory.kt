@@ -10,20 +10,25 @@ import androidx.core.content.ContextCompat
 import com.shihab.diplay.AirPlayPersistence
 import com.shihab.diplay.AndroidTvInputMode
 import com.shihab.diplay.CarPlayConnectText
+import com.shihab.diplay.CarPlayDock
 import com.shihab.diplay.CarPlayMediaKeys
+import com.shihab.diplay.CarPlayRotation
+import com.shihab.diplay.CarPlayViewAreas
 import com.shihab.diplay.CarPlayVolumeTarget
 import com.shihab.diplay.DiPlayBluetooth
 import com.shihab.diplay.DiPlayBootstrap
 import com.shihab.diplay.DiPlayPreferences
-import com.shihab.diplay.HevcSupport
 import com.shihab.diplay.airplay.AirPlayConfig
 import com.shihab.diplay.airplay.AirPlayDisplaySettings
 import com.shihab.diplay.airplay.AirPlayDisplayConfig
 import com.shihab.diplay.airplay.AirPlayIcon
 import com.shihab.diplay.airplay.AirPlayIdentity
+import com.shihab.diplay.airplay.AirPlaySafeArea
 import com.shihab.diplay.airplay.AirPlaySessionListener
 import com.shihab.diplay.airplay.CarPlayDisplayScale
 import com.shihab.diplay.airplay.CarPlayMediaEngine
+import com.shihab.diplay.airplay.CarPlaySmartDisplayZoom
+import com.shihab.diplay.compat.realSdkInt
 import com.shihab.diplay.host.R
 import com.shihab.diplay.location.AndroidCarPlayLocationProvider
 import com.shihab.diplay.media.AndroidMediaSink
@@ -38,6 +43,8 @@ import com.shihab.diplay.orchestration.ManualHotspotSecurity
 import com.shihab.diplay.orchestration.MfiTarget
 import com.shihab.diplay.orchestration.WirelessHotspotMode
 import com.shihab.diplay.transport.EvChargingConnectors
+import com.shihab.diplay.SidePanelSettings
+import com.shihab.diplay.SplitScreenSettings
 import com.shihab.diplay.transport.Iap2IdentificationConfig
 import com.shihab.diplay.transport.Iap2LocationProvider
 
@@ -223,16 +230,37 @@ internal object CarPlaySessionFactory {
         // matches the Smooth Video setting the host built its view with. Read the same persisted flag
         // and compute the delay exactly like CarPlayHostActivity.createMediaSink.
         val smoothVideo = AirPlayPersistence.loadSmoothVideo(ctx)
-        val sessionHevc = HevcSupport.usable(
-            AirPlayPersistence.loadHevcEnabled(ctx), false, HevcSupport.decoders(),
+        val sessionHevc = false
+        // The phone reads this /info during the background handshake and keeps it when the host
+        // adopts the session. The display fields below are the ones that handshake used to omit:
+        // physical size (otherwise 200 mm), KitKat's advertised frame rate, the safe area, and any
+        // extra view areas the dock, split screen or side panel need.
+        val physical = AirPlayDisplaySettings.resolvePhysicalSizeMm(
+            currentWidthPixels = safeWidth,
+            currentHeightPixels = safeHeight,
+            maximumWidthPixels = maxOf(maxW, safeWidth),
+            maximumHeightPixels = maxOf(maxH, safeHeight),
+            referenceMillimeters = AirPlayPersistence.loadWidthPhysicalMm(ctx),
+            basis = AirPlayPersistence.loadPhysicalSizeBasis(ctx),
         )
+        val reportedFps = if (realSdkInt() <= 19) CarPlaySmartDisplayZoom.advertisedFps(fps) else fps
         val baseDisplay = AirPlayDisplayConfig(
             widthPixels = safeWidth,
             heightPixels = safeHeight,
-            fps = fps,
+            widthPhysicalMm = physical.widthMm,
+            heightPhysicalMm = physical.heightMm,
+            fps = reportedFps,
             primaryInputDevice = if (AndroidTvInputMode.shouldUseKnobAsPrimaryInput(ctx)) 3 else 1,
         )
-        val scaled = CarPlayDisplayScale.applyPercent(baseDisplay, AirPlayPersistence.loadDisplayScalePercent(ctx))
+        val scaled = headlessDisplay(
+            ctx,
+            CarPlayDisplayScale.applyPercent(baseDisplay, AirPlayPersistence.loadDisplayScalePercent(ctx)),
+            windowWidth = safeWidth,
+            windowHeight = safeHeight,
+            screenWidth = real.widthPixels.coerceAtLeast(safeWidth),
+            screenHeight = real.heightPixels.coerceAtLeast(safeHeight),
+            hevc = sessionHevc,
+        )
         val microphoneGranted = ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
         val airPlayConfig = AirPlayConfig(
@@ -240,7 +268,7 @@ internal object CarPlaySessionFactory {
             deviceId = deviceId,
             btMac = DiPlayBluetooth.localAddress(ctx) ?: deviceId,
             sourceVersion = "950.7.1",
-            main = scaled,
+            main = scaled.display,
             rightHandDrive = AirPlayPersistence.loadRightHandDrive(ctx),
             hevc = sessionHevc,
             microphone = microphoneGranted,
@@ -257,8 +285,8 @@ internal object CarPlaySessionFactory {
         val locationProvider = locationProvider(ctx, config.locationReportingEnabled)
         val sink = createHeadlessMediaSink(
             ctx = ctx,
-            videoWidth = scaled.widthPixels,
-            videoHeight = scaled.heightPixels,
+            videoWidth = scaled.display.widthPixels,
+            videoHeight = scaled.display.heightPixels,
             fps = fps,
             smoothVideo = smoothVideo,
         )
@@ -295,15 +323,123 @@ internal object CarPlaySessionFactory {
         attachMediaKeys(ctx, controller)
 
         val display = CarPlaySessionDisplay(
-            scaled.widthPixels, scaled.heightPixels,
+            scaled.display.widthPixels, scaled.display.heightPixels,
             rotation = rotation,
-            hideTopBar = AirPlayPersistence.loadHideTopBar(ctx),
-            hideBottomBar = AirPlayPersistence.loadHideBottomBar(ctx),
+            hideTopBar = true,
+            hideBottomBar = true,
             windowWidth, windowHeight,
-            viewAreas = null,
+            viewAreas = scaled.viewAreas,
         )
         return CarPlaySessionBuilt(controller, sink, display)
     }
+
+    /**
+     * Safe area, and the extra view areas a fixed dock, split screen, side panel or turning screen
+     * declare. Defaults stay a single full-screen area, matching a host session with those options off.
+     */
+    private fun headlessDisplay(
+        ctx: Context,
+        scaled: AirPlayDisplayConfig,
+        windowWidth: Int,
+        windowHeight: Int,
+        screenWidth: Int,
+        screenHeight: Int,
+        hevc: Boolean,
+    ): HeadlessDisplay {
+        val display = scaled.copy(
+            safeArea = AirPlaySafeArea.toInsets(
+                mapping = AirPlayPersistence.resolveSafeAreaRect(ctx, windowWidth, windowHeight),
+                activityWidthPixels = windowWidth,
+                activityHeightPixels = windowHeight,
+                displayWidthPixels = scaled.widthPixels,
+                displayHeightPixels = scaled.heightPixels,
+            ),
+            safeAreaDrawOutside = AirPlayPersistence.loadSafeAreaDrawOutside(ctx),
+        )
+        val rightHandDrive = AirPlayPersistence.loadRightHandDrive(ctx)
+        val dock = CarPlayDock.load(ctx)
+        val screenLong = maxOf(screenWidth, screenHeight)
+        val screenShort = minOf(screenWidth, screenHeight)
+        val (landscapeWindow, portraitWindow) = CarPlayRotation.turnedWindows(
+            windowWidth, windowHeight, screenWidth, screenHeight,
+        )
+        fun systemDimension(name: String): Int {
+            val id = ctx.resources.getIdentifier(name, "dimen", "android")
+            return if (id != 0) runCatching { ctx.resources.getDimensionPixelSize(id) }.getOrDefault(0) else 0
+        }
+        val statusBar = systemDimension("status_bar_height")
+        val navigationBar = systemDimension("navigation_bar_height")
+        val divider = (systemDimension("docked_stack_divider_thickness") -
+            2 * systemDimension("docked_stack_divider_insets")).coerceAtLeast(0)
+        val splitWindow: (Boolean) -> Pair<Float, Float>? = { portrait ->
+            if (!SplitScreenSettings.enabled(ctx)) null else {
+                val window = if (portrait) portraitWindow else landscapeWindow
+                val expected = SplitScreenSettings.expectedWindow(
+                    portrait, screenLong, screenShort, statusBar, navigationBar, divider,
+                )
+                SplitScreenSettings.ofWindow(
+                    SplitScreenSettings.window(ctx, portrait, expected),
+                    if (portrait) screenShort else screenLong,
+                    if (portrait) screenLong else screenShort,
+                    window.first, window.second,
+                )
+            }
+        }
+        val longPixels = maxOf(display.widthPixels, display.heightPixels)
+        val square = if (CarPlayRotation.enabled(ctx)) {
+            CarPlayRotation.squareSide(
+                longPixels, CarPlayRotation.picture(ctx), hevc, preferSoftwareHevcDecoder = false,
+            )
+        } else {
+            null
+        }
+        val canvas = if (square == null) display else {
+            val longMm = if (display.widthPixels >= display.heightPixels) display.widthPhysicalMm else display.heightPhysicalMm
+            val squareMm = longMm?.let { (it.toLong() * square / longPixels).toInt() }
+            display.copy(
+                widthPixels = square, heightPixels = square,
+                widthPhysicalMm = squareMm, heightPhysicalMm = squareMm,
+                viewArea = null, safeArea = null,
+            )
+        }
+        val areas = if (square == null) {
+            CarPlayViewAreas.build(
+                canvas.widthPixels, canvas.heightPixels,
+                listOf(CarPlayViewAreas.Screen(
+                    canvas.widthPixels, canvas.heightPixels,
+                    portrait = canvas.heightPixels > canvas.widthPixels,
+                )),
+                dock, splitWindow,
+                startPortrait = canvas.heightPixels > canvas.widthPixels,
+                sidePanel = SidePanelSettings.enabled(ctx),
+                rightHandDrive = rightHandDrive,
+            )
+        } else {
+            val (landscape, portrait) = CarPlayRotation.turningAreas(
+                square, windowWidth, windowHeight, screenWidth, screenHeight,
+            )
+            CarPlayViewAreas.build(
+                square, square,
+                listOf(
+                    CarPlayViewAreas.Screen(landscape.first, landscape.second, portrait = false),
+                    CarPlayViewAreas.Screen(portrait.first, portrait.second, portrait = true),
+                ),
+                dock, splitWindow,
+                startPortrait = windowHeight > windowWidth,
+                sidePanel = SidePanelSettings.enabled(ctx),
+                rightHandDrive = rightHandDrive,
+            )
+        }
+        val declared = if (areas == null) canvas else canvas.copy(
+            viewAreas = areas.areas, initialViewArea = areas.current,
+        )
+        return HeadlessDisplay(declared, areas)
+    }
+
+    private data class HeadlessDisplay(
+        val display: AirPlayDisplayConfig,
+        val viewAreas: CarPlayViewAreas?,
+    )
 
     fun attachMediaKeys(ctx: Context, controller: CarPlayController) {
         CarPlayMediaKeys.attach(ctx, controller)

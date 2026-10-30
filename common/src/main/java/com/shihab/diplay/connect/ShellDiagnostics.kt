@@ -100,7 +100,7 @@ class ShellDiagnostics(
                     appendLine("Connection: ${if (AirPlayPersistence.loadWirelessEnabled(appContext)) "wireless" else "USB"}")
                     appendLine("Authentication: local experimental beta identity; no remote fallback")
                     appendLine("CarPlay setup: ${if (setupError() == null) "ready" else "authentication unavailable"}")
-                    appendLine("Saved video preference (may differ from active session): ${if (AirPlayPersistence.loadHevcEnabled(appContext)) "HEVC" else "H.264"}; ${AirPlayPersistence.loadFps(appContext)} fps")
+                    appendLine("Video: H.264; ${AirPlayPersistence.loadFps(appContext)} fps")
                     appendLine("CarPlay size: ${com.shihab.diplay.airplay.CarPlaySize.fromWidthMillimeters(AirPlayPersistence.loadWidthPhysicalMm(appContext)).label}")
                     appendLine("Saved resolution preference (may differ from active session): ${AirPlayPersistence.loadDisplayScalePercent(appContext)}%")
                     appendLine("Session: ${if (CarPlayBackgroundSession.active) "active" else if (CarPlayBackgroundSession.hasSession()) "connecting" else "stopped"}")

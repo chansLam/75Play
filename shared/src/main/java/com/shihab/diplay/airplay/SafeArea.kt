@@ -1,7 +1,5 @@
 package com.shihab.diplay.airplay
 
-import kotlin.math.roundToInt
-
 /** A safe-area rectangle in the activity's current pixel coordinate space. */
 data class SafeAreaRect(
     val left: Int,
@@ -48,41 +46,6 @@ object AirPlaySafeArea {
         val bottom = roundFraction(heightPixels, 3, 4)
             .coerceIn(top + 1, heightPixels)
         return SafeAreaRect(left, top, right, bottom)
-    }
-
-    /**
-     * Changan / 梧桐 (OS_S311-WT) head units keep an opaque left system dock that apps cannot hide.
-     * Reserve that strip so CarPlay UI and video sit to the right of it.
-     */
-    fun changanLeftDock(
-        widthPixels: Int,
-        heightPixels: Int,
-        density: Float,
-        // Photo of CS75 Plus OS_S311-WT: left dock ~6–8% of width (nav/media/apps/分屏).
-        leftDockDp: Int = 96,
-    ): SafeAreaRect {
-        require(widthPixels > 0 && heightPixels > 0) { "Activity dimensions must be positive" }
-        val maxLeft = (widthPixels * 0.22f).toInt().coerceAtLeast(1)
-        val left = (leftDockDp * density).roundToInt()
-            .coerceIn(48, maxLeft)
-            .coerceAtMost(widthPixels - 1)
-        return SafeAreaRect(left, 0, widthPixels, heightPixels)
-    }
-
-    /**
-     * Custom safe-area mapping wins. Otherwise, when [leftSystemDockInset] is on, reserve the
-     * Changan left system dock strip. Null means the full activity.
-     */
-    fun effectiveMapping(
-        custom: SafeAreaRect?,
-        leftSystemDockInset: Boolean,
-        widthPixels: Int,
-        heightPixels: Int,
-        density: Float,
-    ): SafeAreaRect? {
-        if (custom != null) return custom
-        if (leftSystemDockInset) return changanLeftDock(widthPixels, heightPixels, density)
-        return null
     }
 
     fun resolve(

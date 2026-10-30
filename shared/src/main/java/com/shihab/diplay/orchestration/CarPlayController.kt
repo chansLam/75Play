@@ -1406,6 +1406,10 @@ class CarPlayController(
         )
 
     private fun flipWirelessAddressFamily() {
+        if (config.wirelessHotspotMode == WirelessHotspotMode.WIFI_P2P) {
+            debugLog("wireless address family flip skipped: Wi-Fi Direct is IPv4 only")
+            return
+        }
         val stored = appContext.getSharedPreferences(WIRELESS_PREFS, Context.MODE_PRIVATE)
             .getString(HOTSPOT_FAMILY_PREFERENCE_KEY, null)
         if (stored != null && stored != "AUTO") {
@@ -1744,8 +1748,10 @@ class CarPlayController(
             val causes = generateSequence(error) { it.cause }
                 .takeWhile { seenCauses.add(it) }
                 .toList()
+            val wifiResetRequired = causes.any { it is com.shihab.diplay.network.P2pResetRequiredException } ||
+                causes.any { it.message?.contains("needs a reset", ignoreCase = true) == true }
             onStatus(CarPlayStatus.Failed(error.message ?: error.javaClass.simpleName,
-                wifiResetRequired = false,
+                wifiResetRequired = wifiResetRequired,
                 causes.filterIsInstance<WirelessStartupException>().firstOrNull()?.reason),
                 if (wireless) wirelessGeneration.get() else null)
         }

@@ -131,45 +131,4 @@ class SafeAreaTest {
         assertNull(SafeAreaCodec.decode("1,2,3"))
         assertNull(SafeAreaCodec.decode("1,2,1,4"))
     }
-
-    @Test
-    fun leftSystemDockInsetUsesChanganDockWhenNoCustomMapping() {
-        val dock = AirPlaySafeArea.effectiveMapping(
-            custom = null,
-            leftSystemDockInset = true,
-            widthPixels = 1920,
-            heightPixels = 720,
-            density = 1.5f,
-        )
-
-        assertEquals(AirPlaySafeArea.changanLeftDock(1920, 720, 1.5f), dock)
-    }
-
-    @Test
-    fun customSafeAreaOverridesLeftSystemDockInset() {
-        val custom = SafeAreaRect(200, 0, 1920, 720)
-
-        val mapping = AirPlaySafeArea.effectiveMapping(
-            custom = custom,
-            leftSystemDockInset = true,
-            widthPixels = 1920,
-            heightPixels = 720,
-            density = 1.5f,
-        )
-
-        assertEquals(custom, mapping)
-    }
-
-    @Test
-    fun disabledLeftSystemDockInsetKeepsFullScreen() {
-        assertNull(
-            AirPlaySafeArea.effectiveMapping(
-                custom = null,
-                leftSystemDockInset = false,
-                widthPixels = 1920,
-                heightPixels = 720,
-                density = 1.5f,
-            ),
-        )
-    }
 }

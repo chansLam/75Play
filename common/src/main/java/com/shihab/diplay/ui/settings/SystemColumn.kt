@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.shihab.diplay.ui.settings
 
-import android.view.View
 import android.widget.LinearLayout
 import androidx.fragment.app.Fragment
 import com.shihab.diplay.host.R
@@ -13,7 +12,7 @@ internal class SystemColumn(page: Fragment) : AboutColumnKit(page) {
     private var versionTaps = 0
     private var lastTap = 0L
 
-    private fun buildSystemColumn(card: LinearLayout) {
+    private fun buildAbout(card: LinearLayout) {
         val ctx = card.context
         val preview = GlassSettingsRows.label(
             ctx,
@@ -44,17 +43,16 @@ internal class SystemColumn(page: Fragment) : AboutColumnKit(page) {
             },
         )
         card.addView(divider(ctx))
-        card.addView(sectionGap(ctx))
-        card.addView(sectionTitle(ctx, ctx.getString(R.string.about_update_section)))
+        card.addView(sectionTitle(ctx, ctx.getString(R.string.about_credits_section)))
+        card.addView(paragraph(ctx, ctx.getString(R.string.about_license_text)))
+    }
+
+    private fun buildMaintenance(card: LinearLayout) {
+        val ctx = card.context
         card.addView(glassSwitchRow(ctx, ctx.getString(R.string.about_auto_update), host.autoUpdateEnabled()) { host.setAutoUpdateEnabled(it) })
         card.addView(paragraph(ctx, ctx.getString(R.string.about_auto_update_hint)))
         card.addView(settingRow(ctx, ctx.getString(R.string.about_check_software), ghostButton(ctx, ctx.getString(R.string.about_check)) { host.updateCheckNow() }))
         card.addView(divider(ctx))
-        card.addView(sectionGap(ctx))
-        card.addView(sectionTitle(ctx, ctx.getString(R.string.about_credits_section)))
-        card.addView(paragraph(ctx, ctx.getString(R.string.about_license_text)))
-        card.addView(divider(ctx))
-        card.addView(sectionGap(ctx))
         card.addView(settingRow(ctx, ctx.getString(R.string.about_export_report), ghostButton(ctx, ctx.getString(R.string.about_export)) { host.exportDiagnosticsNow() }))
         card.addView(settingRow(ctx, ctx.getString(R.string.choose_save_location), capPick(ctx, ctx.getString(R.string.about_default)) { host.chooseReportDestination() }))
     }
@@ -70,16 +68,7 @@ internal class SystemColumn(page: Fragment) : AboutColumnKit(page) {
             setPadding(0, GlassSettingsRows.dp(ctx, 2), 0, GlassSettingsRows.dp(ctx, 2))
         }
 
-    /** Share leftover column height between the preview, update, and credits blocks. */
-    private fun sectionGap(ctx: android.content.Context): View {
-        val gap = View(ctx)
-        gap.layoutParams = if (LayoutMetrics.isCockpit(ctx)) {
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
-        } else {
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, GlassSettingsRows.dp(ctx, 8))
-        }
-        return gap
-    }
+    fun fillAbout(card: LinearLayout) = buildAbout(card)
 
-    fun fill(card: LinearLayout) = buildSystemColumn(card)
+    fun fillMaintenance(card: LinearLayout) = buildMaintenance(card)
 }

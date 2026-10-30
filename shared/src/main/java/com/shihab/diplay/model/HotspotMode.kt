@@ -7,7 +7,6 @@ package com.shihab.diplay.model
  */
 enum class WirelessHotspotMode {
     WIFI_P2P,
-    LOCAL_ONLY_HOTSPOT,
     MANUAL,
     EXISTING_WIFI,
 }

@@ -40,21 +40,11 @@ internal class AudioSettingsColumn(page: Fragment) : SettingsColumnKit(page) {
             capPick(ctx, ctx.getString(R.string.setting_channel_value, AirPlayPersistence.loadCallAudioChannel(ctx))) { cap ->
                 showChannelPicker(cap, ctx.getString(R.string.setting_call_channel), AirPlayPersistence.loadCallAudioChannel(ctx)) { v -> AirPlayPersistence.saveCallAudioChannel(ctx, v) }
             }))
-        card.addView(reconnectSwitchRow(ctx, ctx.getString(R.string.advanced_audio_channel_mapping), AirPlayPersistence.loadAdvancedAudioChannelMapping(ctx)) { on ->
-            AirPlayPersistence.saveAdvancedAudioChannelMapping(ctx, on); host.reconnectIfRunning()
-        })
         card.addView(reconnectSwitchRow(ctx, ctx.getString(R.string.setting_main_buffered_audio), AirPlayPersistence.loadMainBufferedAudio(ctx)) { on ->
             AirPlayPersistence.saveMainBufferedAudio(ctx, on); host.reconnectIfRunning()
         })
-        card.addView(reconnectSwitchRow(ctx, ctx.getString(R.string.setting_audio_focus_control), AirPlayPersistence.loadAudioFocusEnabled(ctx)) { on ->
-            AirPlayPersistence.saveAudioFocusEnabled(ctx, on)
-            host.reconnectIfRunning()
-        })
         card.addView(reconnectSwitchRow(ctx, ctx.getString(R.string.setting_call_echo_cancellation), AirPlayPersistence.loadCallEchoCancellation(ctx)) { on ->
             AirPlayPersistence.saveCallEchoCancellation(ctx, on); host.reconnectIfRunning()
-        })
-        card.addView(reconnectSwitchRow(ctx, ctx.getString(R.string.setting_call_voice_filter), AirPlayPersistence.loadCallVoiceFilter(ctx)) { on ->
-            AirPlayPersistence.saveCallVoiceFilter(ctx, on); host.reconnectIfRunning()
         })
         card.addView(glassSwitchRow(ctx, ctx.getString(R.string.setting_call_speakerphone), AirPlayPersistence.loadCallSpeakerphone(ctx)) { AirPlayPersistence.saveCallSpeakerphone(ctx, it) })
     }

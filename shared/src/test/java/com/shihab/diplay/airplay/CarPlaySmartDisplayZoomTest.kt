@@ -6,35 +6,31 @@ import org.junit.Test
 import kotlin.math.hypot
 
 class CarPlaySmartDisplayZoomTest {
-    @Test fun headUnitWidthRisesToTheDensityThatShowsSmartDisplayZoom() {
-        val reported = CarPlaySmartDisplayZoom.force(
-            AirPlayDisplayConfig(
-                widthPixels = 1920,
-                heightPixels = 720,
-                widthPhysicalMm = 300,
-                heightPhysicalMm = 113,
-            ),
+    @Test fun mediumAndSmallKeepTheirWidthSoSmartDisplayZoomStaysAvailable() {
+        val medium = AirPlayDisplayConfig(
+            widthPixels = 1920,
+            heightPixels = 720,
+            widthPhysicalMm = 300,
+            heightPhysicalMm = 113,
         )
-
-        assertEquals(244, reported.widthPhysicalMm)
-        assertEquals(91, reported.heightPhysicalMm)
-        assertEquals(1920, reported.widthPixels)
-        assertEquals(720, reported.heightPixels)
-        assertQualifies(reported)
+        val small = AirPlayDisplayConfig(
+            widthPixels = 1920,
+            heightPixels = 720,
+            widthPhysicalMm = 350,
+            heightPhysicalMm = 131,
+        )
+        assertEquals(medium, CarPlaySmartDisplayZoom.force(medium))
+        assertEquals(small, CarPlaySmartDisplayZoom.force(small))
     }
 
-    @Test fun everyCarPlaySizeOnTheHeadUnitIsForcedOntoThatReport() {
-        val smallControls = CarPlaySmartDisplayZoom.force(
-            AirPlayDisplayConfig(
-                widthPixels = 1920,
-                heightPixels = 720,
-                widthPhysicalMm = 350,
-                heightPhysicalMm = 131,
-            ),
+    @Test fun largeControlsAreNotRewrittenIntoTheZoomReport() {
+        val large = AirPlayDisplayConfig(
+            widthPixels = 1920,
+            heightPixels = 720,
+            widthPhysicalMm = 250,
+            heightPhysicalMm = 94,
         )
-        assertEquals(244, smallControls.widthPhysicalMm)
-        assertEquals(1920, smallControls.widthPixels)
-        assertQualifies(smallControls)
+        assertEquals(large, CarPlaySmartDisplayZoom.force(large))
     }
 
     @Test fun aPhoneThatAlreadyClearsTheDensityIsUnchanged() {

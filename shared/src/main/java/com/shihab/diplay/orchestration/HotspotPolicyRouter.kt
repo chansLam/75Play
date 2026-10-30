@@ -1,39 +1,30 @@
 package com.shihab.diplay.orchestration
 
 import android.content.Context
-import com.shihab.diplay.compat.realSdkInt
 import com.shihab.diplay.network.ExistingWifiManager
-import com.shihab.diplay.network.LocalOnlyHotspotManager
+import com.shihab.diplay.network.LegacyWifiP2pGroupManager
 import com.shihab.diplay.network.ManualHotspotManager
 import com.shihab.diplay.network.WirelessHotspotManager
 import com.shihab.diplay.model.WirelessStartupException
 import com.shihab.diplay.model.WirelessStartupFailure
-import com.shihab.diplay.network.WifiP2pGroupManager
 
 /**
- * Single policy routing point over the hotspot backends: Wi-Fi P2P, LocalOnlyHotspot,
- * Manual/Car-hotspot, and Existing Wi-Fi.
+ * Single policy routing point over the API 19 hotspot backends: Wi-Fi P2P, Manual/Car-hotspot,
+ * and Existing Wi-Fi.
  */
 internal object HotspotPolicyRouter {
     fun create(
         mode: WirelessHotspotMode,
         context: Context,
         config: CarPlayRuntimeConfig,
-        /** Plain diagnostic sink for P2P / LocalOnly / Existing Wi-Fi builds. */
+        /** Plain diagnostic sink for P2P / Existing Wi-Fi builds. */
         onLog: (String) -> Unit,
         /** Manual-hotspot diagnostic sink (caller decorates it with the run generation). */
         onManualDiagnostic: (String) -> Unit,
         isCancelled: () -> Boolean,
         onNetworkChanged: () -> Unit,
     ): WirelessHotspotManager = when (mode) {
-        WirelessHotspotMode.WIFI_P2P -> {
-            check(realSdkInt() >= 28)
-            WifiP2pGroupManager(context, onLog, preferredChannel = config.wifiP2pPreferredChannel)
-        }
-        WirelessHotspotMode.LOCAL_ONLY_HOTSPOT -> {
-            check(realSdkInt() >= 26) { "Local hotspot requires Android 8; choose Wi-Fi Direct or Car hotspot" }
-            LocalOnlyHotspotManager(context, onLog)
-        }
+        WirelessHotspotMode.WIFI_P2P -> LegacyWifiP2pGroupManager(context, onLog)
         WirelessHotspotMode.EXISTING_WIFI -> ExistingWifiManager(
             context, config.existingWifiSsid, config.existingWifiPassphrase, onLog,
             onNetworkChanged = { onNetworkChanged() },

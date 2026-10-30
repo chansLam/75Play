@@ -5,12 +5,14 @@ import com.shihab.diplay.airplay.AirPlayConfig
 import com.shihab.diplay.mfi.MfiAuthenticator
 import com.shihab.diplay.network.HotspotAddressPolicy
 import com.shihab.diplay.network.WirelessHotspotBackend
+import com.shihab.diplay.network.usableIpv4
 import com.shihab.diplay.network.WirelessHotspotInfo
 import com.shihab.diplay.network.WirelessHotspotManager
 import com.shihab.diplay.network.WirelessInterfaceDiagnostics
 import com.shihab.diplay.network.WirelessReceiveDiagnostics
 import com.shihab.diplay.network.WirelessStartupDiagnostics
 import java.io.IOException
+import java.net.Inet4Address
 import java.net.Inet6Address
 import java.net.InetAddress
 import java.net.NetworkInterface
@@ -80,16 +82,27 @@ internal object WirelessHotspotStack {
         beginConnectionProof(generation) {
             if (!isStaleWirelessRun(generation)) startedHotspot?.onCarPlayConfirmed()
         }
+        val direct = hotspotInfo.backend == WirelessHotspotBackend.WIFI_P2P
         val storedFamily = appContext.getSharedPreferences(wirelessPrefsName, Context.MODE_PRIVATE)
             .getString(hotspotFamilyPreferenceKey, null)
-        val preferredFamily = if (storedFamily == "AUTO") null else HotspotAddressPolicy.parseFamily(storedFamily)
-        val candidates = hotspotCandidates(hotspotInfo, debugLog)
+        // p2p-wlan link-local IPv6 binds with EADDRNOTAVAIL on this head unit. Wi-Fi Direct
+        // publishes an IPv4 address only and does not keep an IPv6 alternate to flip to.
+        val preferredFamily = if (direct) {
+            HotspotAddressPolicy.FAMILY_IPV4
+        } else if (storedFamily == "AUTO") {
+            null
+        } else {
+            HotspotAddressPolicy.parseFamily(storedFamily)
+        }
+        val scanned = hotspotCandidates(hotspotInfo, debugLog)
+        val candidates = if (direct) scanned.mapNotNull { usableIpv4(listOf(it)) } else scanned
         val hostAddress = HotspotAddressPolicy.select(candidates, preferredFamily)
-            ?: hotspotInfo.hostAddress
+            ?: hotspotInfo.hostAddress?.takeUnless { direct && it !is Inet4Address }
             ?: throw IOException(
-                "Wireless hotspot did not provide a usable host address",
+                if (direct) "Wi-Fi Direct did not provide an IPv4 address"
+                else "Wireless hotspot did not provide a usable host address",
             )
-        val alternate = HotspotAddressPolicy.alternateFamilyCandidate(candidates, hostAddress)
+        val alternate = if (direct) null else HotspotAddressPolicy.alternateFamilyCandidate(candidates, hostAddress)
         setPublishedAddress(hostAddress)
         setAlternateAddress(alternate)
         if (

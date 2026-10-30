@@ -100,13 +100,6 @@ class CarHotspotSetupTest {
         assertFalse(CarHotspotSettings.shouldEnable(context, true, WirelessHotspotMode.EXISTING_WIFI))
     }
 
-    @Test fun localOnlyCoercesToManualWhileWifiDirectIsKept() {
-        AirPlayPersistence.saveWirelessHotspotMode(context, WirelessHotspotMode.WIFI_P2P)
-        assertEquals(WirelessHotspotMode.WIFI_P2P, AirPlayPersistence.loadWirelessHotspotMode(context))
-        AirPlayPersistence.saveWirelessHotspotMode(context, WirelessHotspotMode.LOCAL_ONLY_HOTSPOT)
-        assertEquals(WirelessHotspotMode.MANUAL, AirPlayPersistence.loadWirelessHotspotMode(context))
-    }
-
     @Test fun disablingTheChoiceCancelsFutureStartupWithoutChangingConnectionSettings() {
         configureHotspot()
         CarHotspotSettings.setEnabled(context, true)

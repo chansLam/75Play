@@ -10,12 +10,13 @@ import com.shihab.diplay.host.R
 import com.shihab.diplay.ui.settings.AudioSettingsColumn
 import com.shihab.diplay.ui.settings.DisplaySettingsColumn
 import com.shihab.diplay.ui.settings.GlassSettingsColumn
+import com.shihab.diplay.ui.settings.GlassSettingsRows
 import com.shihab.diplay.ui.settings.VehicleColumn
 import com.shihab.diplay.ui.settings.VideoSettingsColumn
 
 /**
- * Settings page: display, audio, picture, then the behavior settings moved off the about page.
- * Reconnect-required rows still go through GlassSettingsRows.reconnectSwitchRow.
+ * Settings page: three cockpit columns. Picture and the former “other” rows share the last
+ * column so a short card does not leave a hole over the wallpaper.
  */
 class FragmentSetting : Fragment() {
 
@@ -32,33 +33,25 @@ class FragmentSetting : Fragment() {
             setBackgroundColor(0)
             setPadding(pad, pad, pad, pad)
         }
-        val cols = GlassSettingsColumn.stage(
+        val cols = GlassSettingsColumn.columns(
             ctx,
-            ctx.getString(R.string.settings_display) to { card: LinearLayout ->
-                displayColumn.fill(card)
-            },
             listOf(
+                ctx.getString(R.string.settings_display) to { card: LinearLayout ->
+                    displayColumn.fill(card)
+                },
                 ctx.getString(R.string.audio) to { card: LinearLayout ->
                     audioColumn.fill(card)
                 },
                 ctx.getString(R.string.settings_advanced) to { card: LinearLayout ->
                     videoColumn.fill(card)
-                },
-                ctx.getString(R.string.about_title_vehicle) to { card: LinearLayout ->
+                    card.addView(GlassSettingsRows.divider(card.context))
+                    GlassSettingsRows.cardTitle(card, ctx.getString(R.string.about_title_vehicle))
                     vehicleColumn.fill(card)
                 },
             ),
-            listOf(1.35f, 0.75f),
         )
         root.addView(cols, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         return root
-    }
-
-    override fun onResume() {
-        super.onResume()
-        // 本页被壳层 show/hide 缓存：从快捷面板等其它入口改了系统栏开关后回到本页时，
-        // 按 prefs 重同步两个开关的视觉态（只刷新开关，不重建设置列、不破坏滚动位置）。
-        displayColumn.syncSystemBarSwitchesFromPrefs()
     }
 
 }

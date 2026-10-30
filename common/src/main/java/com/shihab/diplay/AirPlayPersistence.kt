@@ -7,8 +7,6 @@ import com.shihab.diplay.airplay.CarPlayDisplayScale
 import com.shihab.diplay.airplay.CarPlayUiScale
 import com.shihab.diplay.airplay.AirPlayIdentity
 import com.shihab.diplay.airplay.PairingStore
-import com.shihab.diplay.airplay.AirPlaySafeArea
-import com.shihab.diplay.compat.realSdkInt
 import com.shihab.diplay.airplay.SafeAreaCodec
 import com.shihab.diplay.airplay.SafeAreaRect
 import com.shihab.diplay.network.WifiP2pChannels
@@ -42,10 +40,6 @@ object AirPlayPersistence {
     private const val KEY_PAIRING_IDS = "pairing_ids"
     private const val KEY_DISPLAY_SCALE_TENTHS = "display_scale_tenths"
     private const val KEY_UI_SCALE_PERCENT = "ui_scale_percent"
-    private const val KEY_HEVC_ENABLED = "hevc_enabled"
-    private const val KEY_HEVC_SOFTWARE_DECODER = "hevc_software_decoder"
-    private const val KEY_ADVANCED_AUDIO_CHANNEL_MAPPING = "advanced_audio_channel_mapping"
-    private const val KEY_AUDIO_FOCUS_ENABLED = "audio_focus_enabled"
     private const val KEY_AUDIO_FOCUS_AUTO_YIELD = "audio_focus_auto_yield"
     private const val KEY_MEDIA_AUDIO_CHANNEL = "media_audio_channel"
     private const val KEY_CALL_SPEAKERPHONE = "call_speakerphone"
@@ -73,22 +67,15 @@ object AirPlayPersistence {
     private const val KEY_MEDIA_BUFFER_MS = "media_buffer_ms"
     private const val KEY_MAIN_BUFFERED_AUDIO = "main_buffered_audio"
     private const val KEY_CALL_ECHO_CANCELLATION = "call_echo_cancellation"
-    private const val KEY_CALL_VOICE_FILTER = "call_voice_filter"
     private const val KEY_SMOOTH_VIDEO = "smooth_video"
-    private const val KEY_DIRECT_SURFACE_VIEW = "direct_surface_view"
     private const val KEY_SETTINGS_GESTURE_FINGERS = "settings_gesture_fingers"
     private const val KEY_WIDTH_PHYSICAL_MM = "display_width_physical_mm"
-    private const val KEY_ALLOW_ENLARGED_CANVAS = "allow_enlarged_canvas"
     private const val KEY_PHYSICAL_SIZE_BASIS = "display_physical_size_basis"
     private const val KEY_MAX_DETECTED_WIDTH = "display_max_detected_width"
     private const val KEY_MAX_DETECTED_HEIGHT = "display_max_detected_height"
     private const val KEY_RIGHT_HAND_DRIVE = "right_hand_drive"
-    private const val KEY_HIDE_TOP_BAR = "hide_top_bar"
-    private const val KEY_HIDE_BOTTOM_BAR = "hide_bottom_bar"
     private const val KEY_HARMAN_FULLSCREEN = "harman_fullscreen"
     private const val KEY_SAFE_AREA_DRAW_OUTSIDE = "safe_area_draw_outside"
-    private const val KEY_LEFT_SYSTEM_DOCK_INSET = "left_system_dock_inset"
-    private const val KEY_ADAPT_PIP_RESOLUTION = "adapt_pip_resolution"
     private const val KEY_AUTO_START_ON_BOOT = "auto_start_on_boot"
     private const val KEY_LOCATION_REPORTING_ENABLED = "location_reporting_enabled"
     private const val KEY_MFI_TARGET = "mfi_target"
@@ -164,10 +151,6 @@ object AirPlayPersistence {
             .apply()
     }
 
-    fun loadHevcEnabled(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean(KEY_HEVC_ENABLED, false)
-
     fun loadCallSpeakerphone(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_CALL_SPEAKERPHONE, false)
 
@@ -180,45 +163,9 @@ object AirPlayPersistence {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getBoolean(KEY_TEMPORARY_SYSTEM_BARS, false)
 
-    fun saveTemporarySystemBars(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putBoolean(KEY_TEMPORARY_SYSTEM_BARS, enabled)
-            .apply()
-    }
-
-    fun loadUiScalePercent(context: Context): Int = CarPlayUiScale.sanitize(
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getInt(KEY_UI_SCALE_PERCENT, CarPlayUiScale.DEFAULT),
-    )
-
     fun saveUiScalePercent(context: Context, percent: Int) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putInt(KEY_UI_SCALE_PERCENT, CarPlayUiScale.sanitize(percent)).apply()
-    }
-
-    fun saveHevcEnabled(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putBoolean(KEY_HEVC_ENABLED, enabled)
-            .apply()
-    }
-
-    fun loadHevcSoftwareDecoderEnabled(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean(KEY_HEVC_SOFTWARE_DECODER, false)
-
-    fun saveHevcSoftwareDecoderEnabled(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putBoolean(KEY_HEVC_SOFTWARE_DECODER, enabled)
-            .apply()
-    }
-
-    fun loadAdvancedAudioChannelMapping(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean(KEY_ADVANCED_AUDIO_CHANNEL_MAPPING, false)
-
-    fun saveAdvancedAudioChannelMapping(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putBoolean(KEY_ADVANCED_AUDIO_CHANNEL_MAPPING, enabled)
+            .putInt(KEY_UI_SCALE_PERCENT, CarPlayUiScale.sanitize(percent))
             .apply()
     }
 
@@ -242,26 +189,6 @@ object AirPlayPersistence {
     fun loadCustomBluetoothMac(context: Context): String? =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getString(KEY_CUSTOM_BLUETOOTH_MAC, null)?.takeIf { it.isNotBlank() }
-
-    fun saveCustomBluetoothMac(context: Context, mac: String?) {
-        val editor = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-        if (mac.isNullOrBlank()) {
-            editor.remove(KEY_CUSTOM_BLUETOOTH_MAC)
-        } else {
-            editor.putString(KEY_CUSTOM_BLUETOOTH_MAC, mac.trim())
-        }
-        editor.apply()
-    }
-
-    fun loadAudioFocusEnabled(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean(KEY_AUDIO_FOCUS_ENABLED, false)
-
-    fun saveAudioFocusEnabled(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putBoolean(KEY_AUDIO_FOCUS_ENABLED, enabled)
-            .apply()
-    }
 
     fun loadAudioFocusAutoYield(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -336,57 +263,30 @@ object AirPlayPersistence {
             ?.takeIf { it.isNotBlank() }
             ?: DEFAULT_MFI_I2C_PATH
 
-    fun saveMfiI2cPath(context: Context, path: String) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(KEY_MFI_I2C_PATH, path.trim())
-            .apply()
-    }
-
     fun loadRemoteMfiServer(context: Context): String =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getString(KEY_REMOTE_MFI_SERVER, null)
             .orEmpty()
-
-    fun saveRemoteMfiServer(context: Context, server: String) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(KEY_REMOTE_MFI_SERVER, server)
-            .apply()
-    }
 
     fun loadRemoteMfiToken(context: Context): String =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getString(KEY_REMOTE_MFI_TOKEN, null)
             .orEmpty()
 
-    fun saveRemoteMfiToken(context: Context, token: String) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(KEY_REMOTE_MFI_TOKEN, token)
-            .apply()
-    }
-
     fun loadWirelessHotspotMode(context: Context): WirelessHotspotMode {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val stored = prefs.getString(KEY_WIRELESS_HOTSPOT_MODE, null)
-        val mode = WirelessHotspotMode.entries.firstOrNull { it.name == stored }
-            ?: WirelessHotspotMode.WIFI_P2P
-        // Default to Wi-Fi Direct; LocalOnlyHotspot is retired as a selectable mode.
-        val supported = if (mode == WirelessHotspotMode.LOCAL_ONLY_HOTSPOT) {
-            WirelessHotspotMode.MANUAL
-        } else {
-            mode
-        }
+        // LocalOnlyHotspot was an Android 8+ mode. Migrate its old persisted value to the
+        // car hotspot before resolving the API 19-only mode enum.
+        val supported = if (stored == "LOCAL_ONLY_HOTSPOT") WirelessHotspotMode.MANUAL
+        else WirelessHotspotMode.entries.firstOrNull { it.name == stored } ?: WirelessHotspotMode.WIFI_P2P
         if (stored != supported.name) saveWirelessHotspotMode(context, supported)
         return supported
     }
 
     fun saveWirelessHotspotMode(context: Context, mode: WirelessHotspotMode) {
-        val supported = if (mode == WirelessHotspotMode.LOCAL_ONLY_HOTSPOT) {
-            WirelessHotspotMode.MANUAL
-        } else {
-            mode
-        }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(KEY_WIRELESS_HOTSPOT_MODE, supported.name)
+            .putString(KEY_WIRELESS_HOTSPOT_MODE, mode.name)
             .apply()
     }
 
@@ -446,22 +346,10 @@ object AirPlayPersistence {
             ?: ManualHotspotBand.AUTO
     }
 
-    fun saveManualHotspotBand(context: Context, band: ManualHotspotBand) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(KEY_MANUAL_HOTSPOT_BAND, band.name)
-            .apply()
-    }
-
     fun loadManualHotspotChannel(context: Context): Int =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getInt(KEY_MANUAL_HOTSPOT_CHANNEL, 0)
             .coerceIn(0, 196)
-
-    fun saveManualHotspotChannel(context: Context, channel: Int) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putInt(KEY_MANUAL_HOTSPOT_CHANNEL, channel.coerceIn(0, 196))
-            .apply()
-    }
 
     fun loadManualHotspotSecurity(context: Context): ManualHotspotSecurity {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -505,41 +393,17 @@ object AirPlayPersistence {
             // Default on for Changan head units so iPhone navigation can use the car GPS.
             .getBoolean(KEY_LOCATION_REPORTING_ENABLED, true)
 
-    fun saveLocationReportingEnabled(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putBoolean(KEY_LOCATION_REPORTING_ENABLED, enabled)
-            .apply()
-    }
-
     fun loadManufacturer(context: Context): String =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getString(KEY_MANUFACTURER, null)
             ?.takeIf { it.isNotBlank() }
             ?: DEFAULT_MANUFACTURER
 
-    fun saveManufacturer(context: Context, manufacturer: String) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(KEY_MANUFACTURER, manufacturer)
-            .apply()
-    }
-
     fun loadModel(context: Context): String =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getString(KEY_MODEL, null)
             ?.takeIf { it.isNotBlank() }
             ?: DEFAULT_MODEL
-
-    fun saveModel(context: Context, model: String) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(KEY_MODEL, model)
-            .apply()
-    }
-
-    fun saveOemLabel(context: Context, oemLabel: String) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(KEY_OEM_LABEL, oemLabel)
-            .apply()
-    }
 
     fun loadAmbientLightThreshold(context: Context): AmbientLightThreshold = AmbientLightThreshold.fromStored(
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -604,20 +468,6 @@ object AirPlayPersistence {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_SMOOTH_VIDEO, enabled).apply()
     }
 
-    /**
-     * Direct SurfaceView hardware rendering: defaults to true on older/low-end Android (API <= 23)
-     * to eliminate TextureView GPU composition bottlenecks on chips like MT3561 and Allwinner T3.
-     */
-    fun loadDirectSurfaceView(context: Context): Boolean {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val defaultMode = realSdkInt() <= android.os.Build.VERSION_CODES.M
-        return prefs.getBoolean(KEY_DIRECT_SURFACE_VIEW, defaultMode)
-    }
-
-    fun saveDirectSurfaceView(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_DIRECT_SURFACE_VIEW, enabled).apply()
-    }
-
     fun saveMediaBufferMillis(context: Context, millis: Int) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putInt(KEY_MEDIA_BUFFER_MS, com.shihab.diplay.media.MediaAudioBuffer.sanitize(millis)).apply()
@@ -631,31 +481,10 @@ object AirPlayPersistence {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_CALL_ECHO_CANCELLATION, enabled).apply()
     }
 
-    /** Experimental bass cut on CarPlay call audio; opt-in, applies at reconnect. */
-    fun loadCallVoiceFilter(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_CALL_VOICE_FILTER, false)
-
-    fun saveCallVoiceFilter(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_CALL_VOICE_FILTER, enabled).apply()
-    }
-
     fun saveFps(context: Context, fps: Int) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putInt(KEY_FPS, AirPlayDisplaySettings.sanitizeFps(fps))
             .apply()
-    }
-
-    /**
-     * Experimental: on Android 4.4 the decoder capability query is impossible, so the host can only
-     * report an enlarged CarPlay canvas (smaller icons/text, resolution above 100%) when the user
-     * accepts the risk. Opt-in, applies at reconnect.
-     */
-    fun loadAllowEnlargedCanvas(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_ALLOW_ENLARGED_CANVAS, false)
-
-    fun saveAllowEnlargedCanvas(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putBoolean(KEY_ALLOW_ENLARGED_CANVAS, enabled).apply()
     }
 
     fun loadWidthPhysicalMm(context: Context): Int =
@@ -682,12 +511,6 @@ object AirPlayPersistence {
             ?: AirPlayDisplaySettings.DEFAULT_PHYSICAL_SIZE_BASIS
     }
 
-    fun savePhysicalSizeBasis(context: Context, basis: AirPlayPhysicalSizeBasis) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(KEY_PHYSICAL_SIZE_BASIS, basis.name)
-            .apply()
-    }
-
     fun loadMaximumDetectedDisplay(context: Context): Pair<Int, Int> {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         return prefs.getInt(KEY_MAX_DETECTED_WIDTH, 0) to
@@ -705,14 +528,6 @@ object AirPlayPersistence {
             .apply()
     }
 
-    /** Whether to renegotiate resolution when entering/exiting freeform floating windows or launcher PiP. */
-    fun loadAdaptPipResolution(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_ADAPT_PIP_RESOLUTION, false)
-
-    fun saveAdaptPipResolution(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_ADAPT_PIP_RESOLUTION, enabled).apply()
-    }
-
     /** Fingers for the swipe-down that opens settings; some head units reserve three. */
     fun loadSettingsGestureFingers(context: Context): Int =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -726,32 +541,6 @@ object AirPlayPersistence {
     fun loadRightHandDrive(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getBoolean(KEY_RIGHT_HAND_DRIVE, false)
-
-    fun saveRightHandDrive(context: Context, rightHandDrive: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putBoolean(KEY_RIGHT_HAND_DRIVE, rightHandDrive)
-            .apply()
-    }
-
-    fun loadHideTopBar(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean(KEY_HIDE_TOP_BAR, true)
-
-    fun saveHideTopBar(context: Context, hide: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putBoolean(KEY_HIDE_TOP_BAR, hide)
-            .apply()
-    }
-
-    fun loadHideBottomBar(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean(KEY_HIDE_BOTTOM_BAR, true)
-
-    fun saveHideBottomBar(context: Context, hide: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putBoolean(KEY_HIDE_BOTTOM_BAR, hide)
-            .apply()
-    }
 
     fun loadHarmanFullscreen(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -773,17 +562,6 @@ object AirPlayPersistence {
             .apply()
     }
 
-    /** When the left OEM system dock cannot be hidden, reserve space for CarPlay. */
-    fun loadLeftSystemDockInset(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean(KEY_LEFT_SYSTEM_DOCK_INSET, false)
-
-    fun saveLeftSystemDockInset(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putBoolean(KEY_LEFT_SYSTEM_DOCK_INSET, enabled)
-            .apply()
-    }
-
     fun loadSafeAreaRect(context: Context, widthPixels: Int, heightPixels: Int): SafeAreaRect? {
         require(widthPixels > 0 && heightPixels > 0) { "Activity dimensions must be positive" }
         return SafeAreaCodec.decode(
@@ -792,18 +570,9 @@ object AirPlayPersistence {
         )
     }
 
-    /**
-     * Safe area used for negotiation and summary: saved custom mapping, else left-dock inset
-     * when that setting is on, else full screen (null).
-     */
+    /** Saved custom safe area, or null when the full screen is used. */
     fun resolveSafeAreaRect(context: Context, widthPixels: Int, heightPixels: Int): SafeAreaRect? =
-        AirPlaySafeArea.effectiveMapping(
-            custom = loadSafeAreaRect(context, widthPixels, heightPixels),
-            leftSystemDockInset = loadLeftSystemDockInset(context),
-            widthPixels = widthPixels,
-            heightPixels = heightPixels,
-            density = context.resources.displayMetrics.density,
-        )
+        loadSafeAreaRect(context, widthPixels, heightPixels)
 
     fun saveSafeAreaRect(
         context: Context,
@@ -820,20 +589,6 @@ object AirPlayPersistence {
                 safeAreaKey(activityWidthPixels, activityHeightPixels),
                 SafeAreaCodec.encode(rect.clampTo(activityWidthPixels, activityHeightPixels)),
             )
-        if (commit) editor.commit() else editor.apply()
-    }
-
-    fun clearSafeAreaRect(
-        context: Context,
-        activityWidthPixels: Int,
-        activityHeightPixels: Int,
-        commit: Boolean = false,
-    ) {
-        require(activityWidthPixels > 0 && activityHeightPixels > 0) {
-            "Activity dimensions must be positive"
-        }
-        val editor = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .remove(safeAreaKey(activityWidthPixels, activityHeightPixels))
         if (commit) editor.commit() else editor.apply()
     }
 

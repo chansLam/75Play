@@ -14,16 +14,16 @@
 
 ## 亮点
 
-- **无线-only CarPlay** — Wi‑Fi Direct / 车机热点（SoftAP）/ 局域网；本车阉割 TUN，已移除 USB 有线
-- **一键连接** — Wi‑Fi Direct / 车机热点切换即自动准备网络；局域网连上 Wi‑Fi 后自动进 CarPlay
-- **全屏沉浸** — 宽屏适配；CarPlay 内打开车机应用；悬浮小白点返回
-- **玻璃双主题 UI** — 主页与设置按司机目标分组
+- **三种无线** — Wi‑Fi Direct 默认且只用 IPv4；车机热点与局域网仍可选。直连失败先自动重置一次。本车无 TUN，没有 USB 有线
+- **方向盘按键** — 语音唤醒 Siri，上一曲 / 下一曲，接听 / 挂断。音量和 SRC 留给车机
+- **全屏画面** — 固定全屏，SurfaceView，H.264。帧率 15 / 30 / 45 / 60，默认 30。中、小尺寸可在 iPhone 上看到智能缩放
+- **设置在壳层** — 显示与音频、关于都是三列，不在投屏画面里改
 - **多语言** — 简 / 繁中文、英文、阿拉伯语、西班牙语、俄语、乌克兰语
 - **安卓终端**（实验性）
 
-## 实机截图 · v2.0.2
+## 实机截图
 
-长安 CS75 Plus 2020 车机实机效果：
+下面四张来自 v2.0.2 实机。2.0.3 的设置和关于已改成三列，那两张的版面与现在不同：
 
 <div align="center">
   <img src="site/assets/screenshots/carplay-home.png" width="280" alt="已连接 CarPlay 主页"/>
@@ -66,7 +66,7 @@
 
 在 [Issues](https://github.com/chansLam/75Play/issues) 开单，并附上：
 
-1. 「设置 → 诊断」导出的报告（`.txt`）
+1. 「关于 → 诊断报告 → 导出」得到的报告（`.txt`）
 2. 车机固件、iPhone / iOS 版本
 3. 复现步骤
 
@@ -75,5 +75,4 @@
 ## 协议与商标
 
 - 源码：**GPL-3.0**（见 [`LICENSE`](LICENSE)）
-- 部分 UI 衍生自 DiAuto（**AGPL-3.0**），见 [docs/THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md)
 - CarPlay 归 Apple Inc. 所有；使用本软件不代表 Apple 认证

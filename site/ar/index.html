@@ -42,7 +42,7 @@
   <section class="band features" id="features">
     <div class="band-inner">
       <h2>مصمّم لهذه السيارة</h2>
-      <ul class="feature-list"><li><strong>لاسلكي فقط</strong><span>ثلاثة أوضاع: Wi‑Fi Direct (افتراضي)، نقطة اتصال السيارة (SoftAP)، وشبكة Wi‑Fi موجودة / LAN. بدون USB سلكي (لا TUN).</span></li><li><strong>الاتصال من الرئيسية</strong><span>علامة CarPlay في الانتظار، وأيقونة تشغيل بعد الاتصال. اضغطها للعودة إلى الصورة. يظهر التقدم فقط أثناء الاتصال.</span></li><li><strong>عرض غامر</strong><span>كار بلاي صورة ولمس فقط. السحب بثلاثة أصابع يعود إلى 75Play، وأيقونة المشغّل تفتح كار بلاي من جديد.</span></li><li><strong>الإعدادات في الغلاف</strong><span>الاتصال والعرض وحول التطبيق تُعدَّل في 75Play. إخفاء التطبيقات وترتيبها مشتركان مع كار بلاي.</span></li><li><strong>لغات</strong><span>zh-Hans / zh-Hant / en / ar / es / ru / uk.</span></li></ul>
+      <ul class="feature-list"><li><strong>ثلاثة أوضاع لاسلكية</strong><span>Wi‑Fi Direct هو الافتراضي ويستخدم IPv4 فقط. تبقى نقطة اتصال السيارة وشبكة Wi‑Fi الموجودة. اختيار LocalOnly القديم يُعامل كنقطة اتصال السيارة. عند فشل الاتصال المباشر يُعاد ضبطه مرة واحدة. بلا USB (لا TUN).</span></li><li><strong>أزرار المقود</strong><span>عندما يكون كار بلاي في الأمام: الصوت يوقظ Siri، المقطع السابق / التالي، الرد / الإنهاء. مستوى الصوت و SRC يبقيان للسيارة. ينطفئ اختبار الأزرار عند انتهاء كار بلاي أو تعطل التطبيق.</span></li><li><strong>صورة بملء الشاشة</strong><span>ملء الشاشة دائمًا، SurfaceView، و H.264. معدل الإطارات 15 / 30 / 45 / 60 والافتراضي 30. الحجمان المتوسط والصغير يمكن أن يُظهرا التكبير الذكي على الآيفون. السحب بثلاثة أصابع يعود إلى 75Play.</span></li><li><strong>الإعدادات في الغلاف</strong><span>العرض والصوت وحول التطبيق في ثلاثة أعمدة، ولا تُعدَّل فوق صورة كار بلاي. إخفاء التطبيقات وترتيبها مشتركان مع كار بلاي.</span></li><li><strong>لغات</strong><span>zh-Hans / zh-Hant / en / ar / es / ru / uk.</span></li></ul>
       <p class="fine scope">شانجان CS75 Plus 2020 فقط (OS_S311-WT · API 19 · armeabi-v7a).</p>
     </div>
   </section>
@@ -57,8 +57,8 @@
 
   <section class="band shots" id="shots">
     <div class="band-inner">
-      <h2>Screenshots</h2>
-      <p class="fine">75Play v2.0.2 real-device screenshots.</p>
+      <h2>لقطات</h2>
+      <p class="fine">اللقطات من وحدة حقيقية بإصدار v2.0.2. في 2.0.3 أصبحت الإعدادات وحول التطبيق ثلاثة أعمدة، فتختلف هاتان الشاشتان عن الصور.</p>
       <div class="shot-grid">
         <a href="../assets/screenshots/carplay-home.png"><img loading="lazy" src="../assets/screenshots/carplay-home.png" alt="CarPlay home"></a>
         <a href="../assets/screenshots/home.png"><img loading="lazy" src="../assets/screenshots/home.png" alt="Home"></a>
@@ -68,7 +68,7 @@
     </div>
   </section>
 
-  <section class="band changelog" id="changelog"><div class="band-inner"><h2>سجل الإصدارات</h2><article class="release"><h3><bdi>v2.0.3-beta</bdi></h3><ul><li>—</li></ul></article><article class="release"><h3><bdi>v2.0.2</bdi></h3><ul><li><strong>壳层</strong>：面板不再描边。浅色正文为纯黑，浅色玻璃更透，顶栏与左侧导航连在一起。暗色未连接按钮改为蓝色圆盘。</li><li><strong>连接</strong>：连接中重新显示准备、网络、手机、握手、画面。</li><li><strong>音量</strong>：导航提示播放时，音量键改调导航，结束后回到媒体。导航音轨打不开时不再退回媒体音轨。</li><li><strong>方控</strong>：媒体键在按下时发给 iPhone。已有会话时，壳层也能把方控转进去。</li><li><strong>悬浮球</strong>：默认停在左下，避开右侧应用栏。</li><li><strong>画面</strong>：ChaCha20-Poly1305 用本地库解密，帧缓冲复用，按有效长度入队。</li><li><strong>回声消除</strong>：Speex 改为定点运算。</li><li><strong>主页</strong>：界面已经拆掉时，不再因为测量连接按钮而闪退。</li></ul></article><article class="release"><h3><bdi>v2.0.1</bdi></h3><ul><li><strong>壳层</strong>：贴边导航和顶栏（页名、连接状态、时钟）。主页上连接与车机应用左右铺开。</li><li><strong>连接</strong>：空闲和连接中是 CarPlay 标志，已连接换成播放，点一下回到投屏。进度只在连接中出现；连接中可以取消，已连接可以断开。三指回到主页后，顶栏保持已连接。</li><li><strong>进入 CarPlay</strong>：只承载画面和触控，不再盖加载层，也不在画面里放设置。</li><li><strong>返回</strong>：三指下滑回到 75Play。从桌面再次打开则回到 CarPlay。</li><li><strong>应用列表</strong>：主页和 CarPlay 里的隐藏、排序共用同一份记录。</li><li><strong>开发者终端</strong>：关于页入口保留，打开前需确认。</li><li><strong>车机热点</strong>：启用收成一处，壳、开机和连接不再各写一套。</li><li><strong>进入画面</strong>：后台连接记下当前屏幕旋转和窗口大小。Host 不再把不一致的旋转当成屏幕变化，拆掉会话再连一次。</li></ul></article><p class="fine"><a href="https://github.com/chansLam/75Play/blob/main/CHANGELOG.md">CHANGELOG الكامل على GitHub</a></p></div></section>
+  <section class="band changelog" id="changelog"><div class="band-inner"><h2>سجل الإصدارات</h2><article class="release"><h3><bdi>v2.0.3-beta</bdi></h3><ul><li><strong>方控</strong>：方向盘按键在 CarPlay 画面前台时由按键测试接管。语音唤醒 Siri，上一曲 / 下一曲，电话接听 / 挂断。音量和 SRC 交还车机。</li><li><strong>悬浮球</strong>：只负责回到壳层，默认关闭。方控学习、Root 注入和方控设置入口已去掉。</li><li><strong>显示</strong>：帧率可选 15 / 30 / 45 / 60，默认仍是 30，改动需要重连。画面固定全屏，固定走 SurfaceView 和 H.264。</li><li><strong>智能缩放</strong>：连接时按所选物理尺寸上报。中、小尺寸让 iPhone 显示「智能缩放显示」，大尺寸不显示。KitKat 上报的帧率至少为 60，避免 iOS 把这一项藏起来。实际解码仍用设置里的帧率。</li><li><strong>主题</strong>：跟随系统时读取车机大灯主题（<code>coagent_theme</code>），不再只看 Android 的 <code>uiMode</code>。</li><li><strong>设置</strong>：显示与音频改成三列。去掉界面大小、左侧 Dock 内边距、自适应 PiP、隐藏顶栏 / 底栏、Root 全局隐藏导航栏、HEVC、画面调整、直接 SurfaceView、高级通道映射、音频焦点和通话语音过滤。旧的顶栏 / 底栏开关不再读取，画面保持全屏。若以前开过 Root 隐藏导航栏，启动时把系统属性改回，不重启显示服务。</li><li><strong>连接</strong>：Wi‑Fi Direct 只使用 IPv4，并只走 KitKat 的组网。以前选过的 LocalOnly 热点会当成车机热点。直连失败时先自动重置一次，再次失败才提示。</li><li><strong>关于</strong>：改成三列（应用说明、更新与诊断、系统与硬件）。去掉构建时间，增加 Wi‑Fi MAC。不再写界面沿用 DiAuto。</li></ul></article><article class="release"><h3><bdi>v2.0.2</bdi></h3><ul><li><strong>壳层</strong>：面板不再描边。浅色正文为纯黑，浅色玻璃更透，顶栏与左侧导航连在一起。暗色未连接按钮改为蓝色圆盘。</li><li><strong>连接</strong>：连接中重新显示准备、网络、手机、握手、画面。</li><li><strong>音量</strong>：导航提示播放时，音量键改调导航，结束后回到媒体。导航音轨打不开时不再退回媒体音轨。</li><li><strong>方控</strong>：媒体键在按下时发给 iPhone。已有会话时，壳层也能把方控转进去。</li><li><strong>悬浮球</strong>：默认停在左下，避开右侧应用栏。</li><li><strong>画面</strong>：ChaCha20-Poly1305 用本地库解密，帧缓冲复用，按有效长度入队。</li><li><strong>回声消除</strong>：Speex 改为定点运算。</li><li><strong>主页</strong>：界面已经拆掉时，不再因为测量连接按钮而闪退。</li></ul></article><article class="release"><h3><bdi>v2.0.1</bdi></h3><ul><li><strong>壳层</strong>：贴边导航和顶栏（页名、连接状态、时钟）。主页上连接与车机应用左右铺开。</li><li><strong>连接</strong>：空闲和连接中是 CarPlay 标志，已连接换成播放，点一下回到投屏。进度只在连接中出现；连接中可以取消，已连接可以断开。三指回到主页后，顶栏保持已连接。</li><li><strong>进入 CarPlay</strong>：只承载画面和触控，不再盖加载层，也不在画面里放设置。</li><li><strong>返回</strong>：三指下滑回到 75Play。从桌面再次打开则回到 CarPlay。</li><li><strong>应用列表</strong>：主页和 CarPlay 里的隐藏、排序共用同一份记录。</li><li><strong>开发者终端</strong>：关于页入口保留，打开前需确认。</li><li><strong>车机热点</strong>：启用收成一处，壳、开机和连接不再各写一套。</li><li><strong>进入画面</strong>：后台连接记下当前屏幕旋转和窗口大小。Host 不再把不一致的旋转当成屏幕变化，拆掉会话再连一次。</li></ul></article><p class="fine"><a href="https://github.com/chansLam/75Play/blob/main/CHANGELOG.md">CHANGELOG الكامل على GitHub</a></p></div></section>
 
   <section class="band meta" id="updates">
     <div class="band-inner split">
@@ -78,7 +78,7 @@
       </div>
       <div>
         <h2>التقارير والتشخيص</h2>
-        <p>الإعدادات → التشخيص → حفظ التقرير. أرفق .txt بمشكلة على GitHub. لا تنشر كلمة مرور نقطة الاتصال.</p>
+        <p>حول التطبيق → تقرير التشخيص → تصدير. أرفق .txt بمشكلة على GitHub. لا تنشر كلمة مرور نقطة الاتصال.</p>
         <p class="fine"><a href="https://github.com/chansLam/75Play/issues">الإبلاغ عن مشكلة</a> · <a href="https://github.com/chansLam/75Play/issues/new">مشكلة جديدة</a></p>
       </div>
     </div>

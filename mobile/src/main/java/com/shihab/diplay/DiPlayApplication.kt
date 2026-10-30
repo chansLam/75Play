@@ -44,21 +44,21 @@ class DiPlayApplication : MultiDexApplication() {
         super.onCreate()
         bootLog("oncreate-after-super")
         setupCrashHandler()
+        // A killed CarPlay session can leave coagent key-test mode on, which swallows the wheel.
+        com.shihab.diplay.host.SwcCarPlayKeys.forceOff(this)
         bootLog("handler-registered")
-        // Set the navbar property on cold start. Do not kill surfaceflinger here: this process
-        // is the launcher, so that kill would start us again and loop. The settings switch is
-        // the only path that restarts the display stack, and only when getprop differs.
+        // Older builds could hide the system navigation bar with root. Clear that request and
+        // put the property back without restarting surfaceflinger (this process is the launcher).
         if (RootNavbar.hiddenRequested(this)) {
-            bootLog("rootnavbar-requested-true")
+            AirPlayPersistence.saveRootHideNavbar(this, false)
+            bootLog("rootnavbar-clear")
             Thread(
                 {
-                    runCatching { RootNavbar.applyHidden(true) }
-                    bootLog("rootnavbar-done")
+                    runCatching { RootNavbar.applyHidden(false) }
+                    bootLog("rootnavbar-cleared")
                 },
                 "root-navbar",
             ).apply { isDaemon = true }.start()
-        } else {
-            bootLog("rootnavbar-requested-false")
         }
         bootLog("oncreate-done")
     }
@@ -67,6 +67,7 @@ class DiPlayApplication : MultiDexApplication() {
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
+                com.shihab.diplay.host.SwcCarPlayKeys.forceOff(this)
                 recordCrash(this, thread, throwable)
             } catch (ignored: Throwable) {
                 // Never re-enter a crashing handler or throw here — the default handler still

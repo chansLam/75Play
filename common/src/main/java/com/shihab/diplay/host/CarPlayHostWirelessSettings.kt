@@ -68,7 +68,6 @@ internal class CarPlayHostWirelessSettings(private val host: Host) {
 
     fun hotspotModeLabel(mode: WirelessHotspotMode): String = when (mode) {
         WirelessHotspotMode.WIFI_P2P -> host.getString(R.string.wi_fi_p2p_5_ghz)
-        WirelessHotspotMode.LOCAL_ONLY_HOTSPOT -> host.getString(R.string.localonlyhotspot)
         WirelessHotspotMode.MANUAL -> host.getString(R.string.manual_hotspot)
         WirelessHotspotMode.EXISTING_WIFI -> host.getString(R.string.existing_wifi_title)
     }

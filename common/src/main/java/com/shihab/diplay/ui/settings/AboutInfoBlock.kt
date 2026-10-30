@@ -25,8 +25,6 @@ import kotlin.math.roundToInt
  * Read-only system / hardware sheet. One selectable text block, not a row per field.
  */
 internal object AboutInfoBlock {
-    fun appBuildTime(ctx: Context): String? = buildTimeLabel(ctx)
-
     /** System fields, then hardware fields. Empty values are omitted. */
     fun fill(card: LinearLayout) {
         val ctx = card.context
@@ -39,7 +37,6 @@ internal object AboutInfoBlock {
 
     private fun systemRows(ctx: Context): List<Pair<String, String?>> = listOf(
         ctx.getString(R.string.about_system_version) to releaseLabel(ctx),
-        ctx.getString(R.string.about_build_time) to appBuildTime(ctx),
         ctx.getString(R.string.about_info_security) to securityPatch(),
         ctx.getString(R.string.about_info_storage) to storageLabel(ctx),
     )
@@ -56,7 +53,7 @@ internal object AboutInfoBlock {
             ctx.getString(R.string.about_info_memory) to memoryLabel(ctx),
             ctx.getString(R.string.about_info_screen) to screenLabel(ctx),
             ctx.getString(R.string.about_info_wifi) to wifiSummary(ctx),
-            ctx.getString(R.string.about_info_wifi_mac) to wifiMac(ctx),
+            ctx.getString(R.string.about_info_wifi_mac) to wifiMacLabel(ctx),
             ctx.getString(R.string.about_bluetooth_mac) to (DiPlayBluetooth.localAddress(ctx) ?: unknown),
         )
     }
@@ -112,16 +109,6 @@ internal object AboutInfoBlock {
     private fun securityPatch(): String? {
         if (realSdkInt() < 23) return null
         return blankToNull(Build.VERSION.SECURITY_PATCH)
-    }
-
-    private fun buildTimeLabel(ctx: Context): String? {
-        val stamped = runCatching {
-            ctx.assets.open("build-time.txt").bufferedReader().use { it.readText() }.trim()
-        }.getOrNull()
-        if (!stamped.isNullOrBlank()) return stamped
-        val modified = runCatching { File(ctx.applicationInfo.sourceDir).lastModified() }.getOrDefault(0L)
-        if (modified <= 0L) return null
-        return java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(java.util.Date(modified))
     }
 
     private fun storageLabel(ctx: Context): String? = runCatching {
@@ -220,10 +207,31 @@ internal object AboutInfoBlock {
     }
 
     @SuppressLint("HardwareIds")
-    private fun wifiMac(ctx: Context): String? {
-        val mac = wifiInfo(ctx)?.macAddress?.trim()?.lowercase(Locale.US) ?: return null
-        if (mac.isEmpty() || mac == "02:00:00:00:00:00" || mac == "00:00:00:00:00:00") return null
-        return mac
+    private fun wifiMacLabel(ctx: Context): String {
+        val fromInterface = interfaceMac()
+        val fromWifi = wifiInfo(ctx)?.macAddress
+        return listOf(fromInterface, fromWifi).firstOrNull { isHardwareMac(it) }
+            ?.trim()?.lowercase(Locale.US)
+            ?: ctx.getString(R.string.about_unknown)
+    }
+
+    private fun isHardwareMac(mac: String?): Boolean {
+        val value = mac?.trim()?.lowercase(Locale.US) ?: return false
+        return value.isNotEmpty() && value != "02:00:00:00:00:00" && value != "00:00:00:00:00:00"
+    }
+
+    private fun interfaceMac(): String? = runCatching {
+        java.util.Collections.list(java.net.NetworkInterface.getNetworkInterfaces())
+            .filter { nic ->
+                val name = nic.name.lowercase(Locale.US)
+                name.startsWith("wlan") || name.startsWith("wifi")
+            }
+            .firstNotNullOfOrNull { formatMac(it.hardwareAddress) }
+    }.getOrNull()
+
+    private fun formatMac(bytes: ByteArray?): String? {
+        if (bytes == null || bytes.isEmpty()) return null
+        return bytes.joinToString(":") { "%02x".format(it.toInt() and 0xff) }
     }
 
     private fun wifiInfo(ctx: Context?): android.net.wifi.WifiInfo? {

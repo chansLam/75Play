@@ -28,7 +28,6 @@ interface DiPlayHost {
     fun confirmReconnectChange(message: String, onCancel: (() -> Unit)? = null, onApply: () -> Unit)
     fun updateCheckNow()
     fun exportDiagnosticsNow()
-    fun setRootHideNavbar(enabled: Boolean)
     fun chooseReportDestination()
     fun autoUpdateEnabled(): Boolean
     fun setAutoUpdateEnabled(enabled: Boolean)

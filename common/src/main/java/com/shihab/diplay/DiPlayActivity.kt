@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// UI copy and visual language adapted from DiAuto. See docs/THIRD_PARTY_NOTICES.md.
 package com.shihab.diplay
 import com.shihab.diplay.connect.ShellConnectCoordinator
 import com.shihab.diplay.connect.ShellDiagnostics
@@ -64,7 +63,7 @@ import java.io.File
 import kotlin.math.roundToInt
 import com.shihab.diplay.util.AppLog
 
-/** DiAuto's visual language, with a connection flow for an independent CarPlay receiver. */
+/** Shell activity: connection, settings, and diagnostics. */
 class DiPlayActivity : FragmentActivity(), DiPlayHost {
     private val handler = Handler(Looper.getMainLooper())
     private val automaticUpdateCheck = Runnable {
@@ -94,7 +93,6 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         )
     }
     private var pendingCarHotspotSetup = false
-    private var hotspotJoinControls: HotspotJoinControls? = null
     private var setupError: String? = null
     private var initialLaunch = true
     private var usbPermissionOperation: HeadUnitPermissionSetup.Operation? = null
@@ -121,25 +119,14 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
     private var languagePreferenceAtCreate = AppLocale.SYSTEM
     private var userNavigatedFromCarPlay = false
 
-    private var interfaceOverride: Configuration? = null
-    private var interfaceSystemDensityDpi = 0
-    private var interfaceRecreateRequested = false
-
-    private fun enforceInterfaceSize(): Boolean {
-        val language = AppLocale.enforce(this)
-        if (language) AppLog.i("DiPlayUi", "app language re-applied")
-        val override = interfaceOverride ?: return language
-        val found = resources.displayMetrics.densityDpi
-        if (!InterfaceSize.enforce(resources, override)) return language
-        AppLog.i("DiPlayUi", "interface size re-applied: $found -> ${override.densityDpi} dpi")
-        return true
+    private fun enforceAppLocale(): Boolean {
+        val applied = AppLocale.enforce(this)
+        if (applied) AppLog.i("DiPlayUi", "app language re-applied")
+        return applied
     }
 
     override fun attachBaseContext(newBase: Context) {
-        val base = AppLocale.wrap(newBase)
-        super.attachBaseContext(base)
-        interfaceSystemDensityDpi = base.resources.configuration.densityDpi
-        interfaceOverride = InterfaceSize.attach(this, base)
+        super.attachBaseContext(AppLocale.wrap(newBase))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -151,7 +138,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         if (intent.hasExtra("page")) {
             userNavigatedFromCarPlay = true
         }
-        enforceInterfaceSize()
+        enforceAppLocale()
         languagePreferenceAtCreate = AppLocale.preference(this)
         WindowCompat.setDecorFitsSystemWindows(window, true)
         runCatching {
@@ -278,42 +265,6 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
     }
     override fun updateCheckNow() { updater.check(manual = true) }
     override fun exportDiagnosticsNow() { exportDiagnostics() }
-    override fun setRootHideNavbar(enabled: Boolean) {
-        AirPlayPersistence.saveRootHideNavbar(this, enabled)
-        if (enabled) {
-            Thread({
-                AsyncDiagnosticLog.append(ActiveSessionLog.current, "RootNavbar: hide requested")
-                // enable() probes su once; do not call available() first (double grant prompt).
-                val ok = RootNavbar.enable()
-                AsyncDiagnosticLog.append(ActiveSessionLog.current, "RootNavbar: enable result=$ok")
-                if (!ok) {
-                    AirPlayPersistence.saveRootHideNavbar(this, false)
-                    AsyncDiagnosticLog.append(ActiveSessionLog.current, "RootNavbar: FAILED - fallback disabled")
-                    runOnUiThread {
-                        toast(getString(R.string.diplay_root_failed_fallback))
-                        shellChrome.discardPage(page)
-                        showPage(page)
-                    }
-                }
-            }, "root-navbar-apply").apply { isDaemon = true }.start()
-        } else {
-            Thread({
-                AsyncDiagnosticLog.append(ActiveSessionLog.current, "RootNavbar: restore requested")
-                val ok = RootNavbar.applyHidden(false, restartDisplay = true)
-                AsyncDiagnosticLog.append(ActiveSessionLog.current, "RootNavbar: restore result=$ok")
-                if (!ok) {
-                    // Keep the preference as "hide requested" so boot will retry, and tell the driver.
-                    AirPlayPersistence.saveRootHideNavbar(this, true)
-                    AsyncDiagnosticLog.append(ActiveSessionLog.current, "RootNavbar: restore FAILED - kept enabled")
-                    runOnUiThread {
-                        toast(getString(R.string.diplay_root_failed_fallback))
-                        shellChrome.discardPage(page)
-                        showPage(page)
-                    }
-                }
-            }, "root-navbar-apply").apply { isDaemon = true }.start()
-        }
-    }
 
     override fun autoUpdateEnabled(): Boolean = updater.autoEnabled()
     override fun setAutoUpdateEnabled(enabled: Boolean) { updater.setAutoEnabled(enabled) }
@@ -659,36 +610,15 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
     }
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        if (updateInterfaceSize(newConfig)) return
-        // Write scaled window dp into live resources (override field alone is not enough).
-        enforceInterfaceSize()
+        enforceAppLocale()
         shellChrome.discardPages()
         showPage(page)
-    }
-
-    /** True while a density change is recreating this activity. */
-    private fun updateInterfaceSize(configuration: Configuration): Boolean {
-        if (interfaceRecreateRequested) return true
-        // The activity handles real system density changes too. Its callback contains our installed
-        // density, while application resources retain the current unscaled system density.
-        applicationContext.resources.configuration.densityDpi.takeIf { it > 0 }?.let {
-            interfaceSystemDensityDpi = it
-        }
-        val next = InterfaceSize.configurationChange(configuration, interfaceSystemDensityDpi,
-            InterfaceSize.preference(this))
-        if (InterfaceSize.needsRecreate(interfaceOverride, next)) {
-            interfaceRecreateRequested = true
-            recreate()
-            return true
-        }
-        interfaceOverride = next
-        return false
     }
     override fun onStart() {
         super.onStart()
         wifiEnableAttempts = 0
         // Results from the image picker and crop screens arrive before onResume.
-        enforceInterfaceSize()
+        enforceAppLocale()
     }
 
     override fun onStop() {
@@ -722,7 +652,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         ImmersiveBars.applyToWindow(window, force = true)
         ImmersiveBars.installAutoHide(this)
         // Returning from another activity can bring the head unit's own density back.
-        if (enforceInterfaceSize()) {
+        if (enforceAppLocale()) {
             shellChrome.discardPages()
             showPage(page)
         }
@@ -777,7 +707,6 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         wifiEnableGeneration++
         handler.removeCallbacks(automaticUpdateCheck)
         if (lazyUpdaterInitialized()) updater.close()
-        hotspotJoinControls?.close()
         cancelHeadUnitPermissionSetup()
         shellConnect.release()
         radioProbe.stop()
@@ -791,7 +720,6 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
 
     override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean, newConfig: Configuration) {
         super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig)
-        if (updateInterfaceSize(newConfig)) return
         shellChrome.discardPages()
         showPage(page)
     }
@@ -803,8 +731,8 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
             ImmersiveBars.applyToWindow(window, force = true)
             ImmersiveBars.installAutoHide(this)
         }
-        // Some head units put their own density back without any other callback.
-        if (hasFocus && enforceInterfaceSize()) {
+        // Some head units reset the app language without any other callback.
+        if (hasFocus && enforceAppLocale()) {
             shellChrome.discardPages()
             showPage(page)
         }
@@ -892,6 +820,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
     }
 
     override fun connect(wireless: Boolean) {
+        if (!suppressWifiResetFlagClear) autoWifiResetUsed = false
         startupHotspotCancelled = true
         if (wireless && pendingCarHotspotSetup) { toast(getString(R.string.save_your_hotspot_details_in_connection_setup_first)); return }
         if (setupError != null) {
@@ -1031,7 +960,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
             onFailed = { msg ->
                 refreshStatus()
                 handler.postDelayed(recheckStatusRunnable, 250L)
-                DiPlayDialog.showInfo(this, getString(R.string.connection_failed), msg, ok = getString(R.string.back))
+                presentConnectFailure(msg)
             },
             onRefreshHome = {
                 refreshStatus()
@@ -1104,14 +1033,23 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         val channel = manager.initialize(applicationContext, mainLooper, null)
         try {
             manager.requestGroupInfo(channel) { group ->
-                if (group == null) { closeP2pChannel(channel); connect(true); return@requestGroupInfo }
+                if (group == null) {
+                    closeP2pChannel(channel)
+                    connectAfterWifiReset()
+                    return@requestGroupInfo
+                }
                 manager.removeGroup(channel, object : android.net.wifi.p2p.WifiP2pManager.ActionListener {
                     override fun onSuccess() {
                         val deadline = android.os.SystemClock.elapsedRealtime() + 4000
                         fun waitUntilRemoved() {
                             manager.requestGroupInfo(channel) { remaining ->
                                 when {
-                                    remaining == null -> { closeP2pChannel(channel); if (!isFinishing && (Build.VERSION.SDK_INT < 17 || !isDestroyed)) connect(true) }
+                                    remaining == null -> {
+                                        closeP2pChannel(channel)
+                                        if (!isFinishing && (Build.VERSION.SDK_INT < 17 || !isDestroyed)) {
+                                            connectAfterWifiReset()
+                                        }
+                                    }
                                     android.os.SystemClock.elapsedRealtime() >= deadline -> {
                                         closeP2pChannel(channel); toast(getString(R.string.wi_fi_direct_is_still_busy_close_the_other_projection_app))
                                     }
@@ -1139,17 +1077,42 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         runCatching { channel.javaClass.getMethod("close").invoke(channel) }
     }
 
-    private fun consumeConnectFailure() {
-        val message = intent.getStringExtra(EXTRA_FAILURE_MESSAGE)?.takeIf { it.isNotBlank() } ?: return
-        intent.removeExtra(EXTRA_FAILURE_MESSAGE)
-        CarPlayConnectService.markIdle()
-        CarPlayBackgroundSession.forceReset()
+    private var autoWifiResetUsed = false
+    private var suppressWifiResetFlagClear = false
+
+    private fun connectAfterWifiReset() {
+        suppressWifiResetFlagClear = true
+        try {
+            connect(true)
+        } finally {
+            suppressWifiResetFlagClear = false
+        }
+    }
+
+    /** A stuck Wi-Fi Direct group is reset and the connect is retried once, without a confirm dialog. */
+    private fun presentConnectFailure(message: String) {
+        val friendly = getString(R.string.a_previous_wi_fi_direct_connection_is_still_running_reset)
+        val needsReset = message == friendly || message.contains(friendly) ||
+            message.contains("needs a reset", ignoreCase = true)
+        if (needsReset && !autoWifiResetUsed) {
+            autoWifiResetUsed = true
+            resetWirelessGroup()
+            return
+        }
         DiPlayDialog.showInfo(
             this,
             getString(R.string.connection_failed),
             message,
             ok = getString(R.string.back),
         )
+    }
+
+    private fun consumeConnectFailure() {
+        val message = intent.getStringExtra(EXTRA_FAILURE_MESSAGE)?.takeIf { it.isNotBlank() } ?: return
+        intent.removeExtra(EXTRA_FAILURE_MESSAGE)
+        CarPlayConnectService.markIdle()
+        CarPlayBackgroundSession.forceReset()
+        presentConnectFailure(message)
     }
 
     private fun refreshStatus() {

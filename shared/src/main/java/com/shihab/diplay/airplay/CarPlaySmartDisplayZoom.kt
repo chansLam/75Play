@@ -24,7 +24,24 @@ object CarPlaySmartDisplayZoom {
     fun force(display: AirPlayDisplayConfig): AirPlayDisplayConfig {
         if (display.widthPixels <= 0 || display.heightPixels <= 0) return display
         if (qualifies(display)) return display
-        return applyDensity(liftPixels(display))
+        val widthMm = display.widthPhysicalMm
+        val heightMm = display.heightPhysicalMm
+        // Large controls report a narrow panel. iOS does not offer 智能缩放显示 for that size,
+        // and shrinking a wider (medium/small) report down into it hides the row for every size.
+        if (widthMm != null && heightMm != null &&
+            widthMm <= CarPlaySize.LARGE.widthMillimeters &&
+            hypot(widthMm.toDouble(), heightMm.toDouble()) >= MIN_DIAGONAL_MM
+        ) {
+            return display
+        }
+        val adjusted = applyDensity(liftPixels(display))
+        val adjustedWidth = adjusted.widthPhysicalMm
+        if (widthMm != null && widthMm > CarPlaySize.LARGE.widthMillimeters &&
+            adjustedWidth != null && adjustedWidth < widthMm
+        ) {
+            return display
+        }
+        return adjusted
     }
 
     private fun qualifies(display: AirPlayDisplayConfig): Boolean {

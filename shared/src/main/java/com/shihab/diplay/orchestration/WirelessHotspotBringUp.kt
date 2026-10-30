@@ -1,13 +1,11 @@
 package com.shihab.diplay.orchestration
 
 import android.content.Context
-import com.shihab.diplay.compat.realSdkInt
 import com.shihab.diplay.network.CarHotspotEnable
 import com.shihab.diplay.network.CarHotspotSettings
 import com.shihab.diplay.network.CarHotspotStatus
 import com.shihab.diplay.network.CarHotspotTethering
 import com.shihab.diplay.network.LegacyWifiP2pGroupManager
-import com.shihab.diplay.network.LocalOnlyHotspotManager
 import com.shihab.diplay.network.WirelessHotspotInfo
 import com.shihab.diplay.network.WirelessHotspotManager
 import com.shihab.diplay.model.WirelessStartupException
@@ -38,7 +36,7 @@ internal object WirelessHotspotBringUp {
         onNetworkChanged: () -> Unit,
         closeBestEffort: (String, () -> Unit) -> Unit,
     ): WirelessHotspotInfo {
-        if (config.wirelessHotspotMode == WirelessHotspotMode.WIFI_P2P && realSdkInt() < 28) {
+        if (config.wirelessHotspotMode == WirelessHotspotMode.WIFI_P2P) {
             return startLegacyWifiDirectWithFallback(
                 appContext = appContext,
                 generation = generation,
@@ -165,31 +163,10 @@ internal object WirelessHotspotBringUp {
             if (getHotspot() === primary) setHotspot(null)
             closeBestEffort("legacy-wifi-p2p") { primary?.close() }
             if (isStaleWirelessRun(generation)) throw primaryFailure
-            if (realSdkInt() < 26) throw IOException(
+            throw IOException(
                 "Wi-Fi Direct could not start on this head unit; use the car hotspot: ${primaryFailure.message}",
                 primaryFailure,
             )
-            debugLog(
-                "legacy Wi-Fi Direct failed; falling back to LocalOnlyHotspot: " +
-                    (primaryFailure.message ?: primaryFailure.javaClass.simpleName),
-            )
-
-            val fallback = LocalOnlyHotspotManager(appContext, debugLog)
-            setHotspot(fallback)
-            try {
-                return fallback.start(HOTSPOT_START_TIMEOUT_MILLIS)
-            } catch (fallbackFailure: Exception) {
-                if (getHotspot() === fallback) setHotspot(null)
-                closeBestEffort("legacy-local-hotspot-fallback") { fallback.close() }
-                if (isStaleWirelessRun(generation)) throw fallbackFailure
-                fallbackFailure.addSuppressed(primaryFailure)
-                throw IOException(
-                    "Wi-Fi Direct failed (${primaryFailure.message ?: primaryFailure.javaClass.simpleName}); " +
-                        "local hotspot fallback also failed " +
-                        "(${fallbackFailure.message ?: fallbackFailure.javaClass.simpleName})",
-                    fallbackFailure,
-                )
-            }
         }
     }
 }

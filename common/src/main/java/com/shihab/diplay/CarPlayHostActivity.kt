@@ -243,7 +243,7 @@ class CarPlayHostActivity : ComponentActivity() {
     // Smooth video (a setting): SurfaceView output with frames released at the iPhone's frame time.
     internal var smoothVideo = false
     // Direct SurfaceView output: hardware overlay without TextureView composition overhead.
-    internal var directSurfaceView = false
+    internal var directSurfaceView = true
     // Sinks whose sessions are being torn down; their decoders may still render to the current surface
     // until they have released their codecs, so a destroyed surface is detached from them too. A restart
     // and a shutdown can overlap, so this is a set.
@@ -311,13 +311,12 @@ class CarPlayHostActivity : ComponentActivity() {
     private var displayScaleTenths = CarPlayDisplayScale.DEFAULT_TENTHS
     private var uiScalePercent = CarPlayUiScale.DEFAULT
     internal var displayDiagnosticAttempt: String? = null
-    private var hevcEnabled = true
+    private var hevcEnabled = false
     internal var hevcSoftwareDecoderEnabled = false
     private val hevcDecoders by lazy { HevcSupport.decoders() }
     /** The codec a session asks for: the HEVC setting falls back to H.264 without a decoder for it (#727). */
     private val sessionHevc: Boolean
         get() = HevcSupport.usable(hevcEnabled, hevcSoftwareDecoderEnabled, hevcDecoders)
-    internal var advancedAudioChannelMappingSupported = false
     internal var advancedAudioChannelMapping = false
     internal var navigationStreamType = android.media.AudioManager.STREAM_MUSIC
     private var debugLogsEnabled = false
@@ -445,8 +444,6 @@ class CarPlayHostActivity : ComponentActivity() {
         lastConfiguration = Configuration(resources.configuration)
         darkMode = savedInstanceState?.getBoolean("carplay_night_active")
             ?: (followSystemNight() == true)
-        advancedAudioChannelMappingSupported =
-            resources.getBoolean(R.bool.config_advanced_audio_channel_mapping)
         airPlayIdentity = AirPlayPersistence.loadIdentity(this)
         loadPersistedSettings()
         locationPermissionAvailable = hasFineLocationPermission()
@@ -547,7 +544,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun loadPersistedSettings() {
         AirPlayPersistence.warm(this)
         smoothVideo = AirPlayPersistence.loadSmoothVideo(this)
-        directSurfaceView = AirPlayPersistence.loadDirectSurfaceView(this)
+        directSurfaceView = true
         carPlayDock = CarPlayDock.load(this)
         carPlayNightMode = AirPlayPersistence.loadCarPlayNightMode(this)
         ambientLightThreshold = AirPlayPersistence.loadAmbientLightThreshold(this)
@@ -567,11 +564,9 @@ class CarPlayHostActivity : ComponentActivity() {
         displayScaleTenths = CarPlayDisplayScale.sanitize((displayScalePercent + 5) / 10)
         // Size is now chosen only through CarPlaySize; ignore the canvas scale older builds stored.
         uiScalePercent = CarPlayUiScale.DEFAULT
-        hevcEnabled = AirPlayPersistence.loadHevcEnabled(this)
+        hevcEnabled = false
         hevcSoftwareDecoderEnabled = false
-        advancedAudioChannelMapping =
-            advancedAudioChannelMappingSupported &&
-                AirPlayPersistence.loadAdvancedAudioChannelMapping(this)
+        advancedAudioChannelMapping = false
         navigationStreamType = AirPlayPersistence.loadNavigationStreamType(this)
         debugLogsEnabled = AirPlayPersistence.loadDebugLogsEnabled(this)
         autoStartOnBoot = AirPlayPersistence.loadAutoStartOnBoot(this)
@@ -586,8 +581,8 @@ class CarPlayHostActivity : ComponentActivity() {
             maximumDetectedHeightPixels = height
         }
         rightHandDrive = AirPlayPersistence.loadRightHandDrive(this)
-        hideTopBar = AirPlayPersistence.loadHideTopBar(this)
-        hideBottomBar = AirPlayPersistence.loadHideBottomBar(this)
+        hideTopBar = true
+        hideBottomBar = true
         harmanFullscreenEnabled = AirPlayPersistence.loadHarmanFullscreen(this)
         safeAreaDrawOutside = AirPlayPersistence.loadSafeAreaDrawOutside(this)
         locationPermissionAvailable = hasFineLocationPermission()
@@ -757,20 +752,13 @@ class CarPlayHostActivity : ComponentActivity() {
             requestLocationPermission()
         }
         wirelessPermissionsReady = !wirelessEnabled || hasRequiredWirelessPermissions()
-        advancedAudioChannelMapping =
-            advancedAudioChannelMappingSupported &&
-                AirPlayPersistence.loadAdvancedAudioChannelMapping(this)
         gestureFingerCount = AirPlayPersistence.loadSettingsGestureFingers(this)
         settingsGestureHint?.text = getString(R.string.open_diplay_settings_hint, gestureFingerCount)
-        var systemBarsChanged = false
-        val savedHideTopBar = AirPlayPersistence.loadHideTopBar(this)
-        val savedHideBottomBar = AirPlayPersistence.loadHideBottomBar(this)
         val savedHarmanFullscreen = AirPlayPersistence.loadHarmanFullscreen(this)
-        systemBarsChanged = hideTopBar != savedHideTopBar ||
-            hideBottomBar != savedHideBottomBar ||
+        val systemBarsChanged = !hideTopBar || !hideBottomBar ||
             harmanFullscreenEnabled != savedHarmanFullscreen
-        hideTopBar = savedHideTopBar
-        hideBottomBar = savedHideBottomBar
+        hideTopBar = true
+        hideBottomBar = true
         harmanFullscreenEnabled = savedHarmanFullscreen
         applyFullscreenMode()
         if (systemBarsChanged) refreshDisplaySizeAfterLayout()
@@ -887,6 +875,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        SwcCarPlayKeys.stop(this)
         notePicture(false)
         // Returning to the shell keeps the session. A destroy that is not sessionShutdown must
         // drop this Activity as owner so it cannot reconnect on a dead context.
@@ -1067,18 +1056,8 @@ class CarPlayHostActivity : ComponentActivity() {
 
     private fun decoderCanvasSupport(display: AirPlayDisplayConfig): CanvasSupport = try {
         if (realSdkInt() < 21) {
-            // API 19 has no codec capability query, so an enlarged canvas can only be advertised
-            // when the user opts in; the decoder may then fail on the bigger stream.
-            if (AirPlayPersistence.loadAllowEnlargedCanvas(this)) {
-                CanvasSupport(
-                    true,
-                    "kitkat_enlarged_canvas_allowed",
-                    "Enlarged canvas allowed on Android 4.4 by the experimental setting; " +
-                        "the decoder may fail on ${display.widthPixels}x${display.heightPixels}",
-                )
-            } else {
-                CanvasSupport(false, "legacy_decoder_capabilities", "Keep the native screen canvas on Android 4.4")
-            }
+            // API 19 has no codec capability query. Stay on the panel's own canvas.
+            CanvasSupport(false, "legacy_decoder_capabilities", "Keep the native screen canvas on Android 4.4")
         } else {
         val mime = if (sessionHevc) MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
         // Match MediaCodec.createDecoderByType's first suitable decoder; do not silently force
@@ -1190,8 +1169,9 @@ class CarPlayHostActivity : ComponentActivity() {
                         else R.string.this_head_unit_cannot_use_the_smaller_size_at_this_resolut), true)
             }
         }
-        // iOS decides whether Settings shows 智能缩放显示. KitKat sessions always advertise a
-        // 2x, ~10-inch panel at 60 fps so that row is offered. A phone's own pixels already qualify.
+        // iOS decides whether Settings shows 智能缩放显示. KitKat sessions advertise 60 fps so
+        // that page is not hidden. Medium and small keep the selected physical width; large
+        // stays a narrow panel, which is the one size iOS does not offer the row for.
         if (realSdkInt() <= 19) {
             val reported = CarPlaySmartDisplayZoom.force(scaledDisplay)
             if (reported != scaledDisplay) {
@@ -1545,6 +1525,7 @@ class CarPlayHostActivity : ComponentActivity() {
         sessionShutdown(terminateProcess, reason, completion)
 
     internal fun sessionShutdown(terminateProcess: Boolean, reason: String, completion: () -> Unit = {}) {
+        SwcCarPlayKeys.stop(this)
         if (!shuttingDown.compareAndSet(false, true)) { completion(); return }
         sessionTeardownStarted.set(true)
         resetSidePanel()

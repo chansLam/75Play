@@ -301,7 +301,7 @@ class AirPlaySession(
             "Content-Type: $PLIST_CONTENT_TYPE\r\n" +
             "Content-Length: ${body.size}\r\n" +
             "CSeq: $eventCseq\r\n\r\n"
-        trace("airplay event tx headers=$head bodyHex=${body.toHex()}")
+        trace("airplay event tx bodyBytes=${body.size}")
         return try {
             val bytes = cipher.encrypt(head.toByteArray(Charsets.US_ASCII) + body)
             val output = socket.getOutputStream()
@@ -464,10 +464,7 @@ class AirPlaySession(
                         AirPlayControlDiagnostics.request(request.method, request.path, request.body.size),
                         false,
                     )
-                    trace(
-                        "airplay control rx headers=${request.headers} " +
-                            "bodyHex=${request.body.toHex()}",
-                    )
+                    trace("airplay control rx ${request.method} ${request.path} bodyBytes=${request.body.size}")
                     val response = try {
                         handle(request)
                     } catch (error: Exception) {
@@ -495,7 +492,7 @@ class AirPlaySession(
                         false,
                     )
                     val wire = RtspMessage.buildResponse(request, response)
-                    trace("airplay control tx wireHex=${wire.toHex()}")
+                    trace("airplay control tx status=${response.status ?: 200} bodyBytes=${response.body.size}")
                     output.write(cipher?.encrypt(wire) ?: wire)
                     if (cipher == null && pairVerify.controlKeys != null) {
                         val keys = pairVerify.controlKeys!!

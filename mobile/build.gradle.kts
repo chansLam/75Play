@@ -1,9 +1,6 @@
 import com.android.build.gradle.internal.tasks.L8DexDesugarLibTask
 import java.security.KeyStore
 import java.security.MessageDigest
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import org.gradle.api.DefaultTask
 import org.gradle.api.provider.Property
 import org.gradle.api.file.RegularFileProperty
@@ -189,34 +186,6 @@ val rejectBundledCredentials by tasks.registering {
     }
 }
 tasks.named("preBuild") { dependsOn(rejectBundledCredentials) }
-
-abstract class GenerateBuildStampTask : DefaultTask() {
-    @get:org.gradle.api.tasks.OutputDirectory
-    abstract val outputDir: org.gradle.api.file.DirectoryProperty
-
-    @TaskAction
-    fun write() {
-        val dir = outputDir.get().asFile
-        dir.mkdirs()
-        val stamp = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-            .withZone(ZoneId.systemDefault())
-            .format(Instant.now())
-        dir.resolve("build-time.txt").writeText(stamp)
-    }
-}
-
-val generateBuildStamp = tasks.register<GenerateBuildStampTask>("generateBuildStamp") {
-    group = "build"
-    description = "Write the wall-clock build time consumed by the vehicle page."
-    outputDir.set(layout.buildDirectory.dir("generated/build-stamp"))
-    outputs.upToDateWhen { false }
-}
-
-androidComponents {
-    onVariants { variant ->
-        variant.sources.assets?.addGeneratedSourceDirectory(generateBuildStamp) { it.outputDir }
-    }
-}
 
 // Car-test packages must be standalone. Keep ordinary source/CI builds identity-free.
 val requireStandaloneAuthentication by tasks.registering {

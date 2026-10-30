@@ -59,7 +59,6 @@ class SmoothVideoHostLifecycleTest {
     @Before fun setUp() {
         CarPlayBackgroundSession.clear()
         activity = Robolectric.buildActivity(CarPlayHostActivity::class.java).get()
-        AirPlayPersistence.saveAdaptPipResolution(activity, false)
         AirPlayPersistence.saveMfiTarget(activity, MfiTarget.I2C)
         // Host startup without vendor-service workers or real transports.
         controllerConstruction = mockConstruction(CarPlayController::class.java)

@@ -54,7 +54,7 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
             videoHeight = videoHeight,
             preferSoftwareHevcDecoder = hevcSoftwareDecoderEnabled,
             advancedAudioChannelMapping = advancedAudioChannelMapping,
-            audioFocusEnabled = AirPlayPersistence.loadAudioFocusEnabled(this),
+            audioFocusEnabled = false,
             audioFocusAutoYield = AirPlayPersistence.loadAudioFocusAutoYield(this),
             mediaChannel = AirPlayPersistence.loadMediaAudioChannel(this),
             navigationChannel = AirPlayPersistence.loadNavigationAudioChannel(this),
@@ -75,7 +75,7 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
             onMediaAudioChanged = CarPlayMediaKeys::onMediaAudioChanged,
             onNavigationAudible = CarPlayVolumeTarget::navigation,
             callEchoCancellation = AirPlayPersistence.loadCallEchoCancellation(this),
-            callVoiceFilter = AirPlayPersistence.loadCallVoiceFilter(this),
+            callVoiceFilter = false,
             callSpeakerphone = { AirPlayPersistence.loadCallSpeakerphone(this) },
             // Only a SurfaceView honours release timestamps; smooth video always selects one.
             videoPacingDelayMillis = CarPlaySessionFactory.videoPacingDelayMillis(smoothVideo, fps),
@@ -311,7 +311,7 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
         }
         val controllerGeneration = wirelessStartup.generation
         val config = sessionCreateRuntimeConfig()
-        val effectiveSize = if (isMultiWindowActive() && !AirPlayPersistence.loadAdaptPipResolution(this) &&
+        val effectiveSize = if (isMultiWindowActive() &&
             maximumDetectedWidthPixels >= size.width && maximumDetectedHeightPixels >= size.height &&
             (maximumDetectedWidthPixels > size.width || maximumDetectedHeightPixels > size.height)) {
             CarPlayHostActivity.DisplaySize(maximumDetectedWidthPixels, maximumDetectedHeightPixels)
@@ -407,8 +407,7 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
         }
         if (controller == null && adopt()) return
         // The video view is chosen once per activity; a changed video surface setting needs a new one.
-        if (controller == null && (AirPlayPersistence.loadSmoothVideo(this) != smoothVideo ||
-            AirPlayPersistence.loadDirectSurfaceView(this) != directSurfaceView)) {
+        if (controller == null && AirPlayPersistence.loadSmoothVideo(this) != smoothVideo) {
             appendLog("Video surface setting changed; rebuilding the video view")
             // No session runs here, but a restart keeps this host as the session owner; the new instance
             // must be able to start its own.

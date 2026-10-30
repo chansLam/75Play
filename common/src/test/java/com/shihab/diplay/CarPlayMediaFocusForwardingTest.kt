@@ -2,10 +2,8 @@ package com.shihab.diplay
 import com.shihab.diplay.host.CarPlayBackgroundSession
 import com.shihab.diplay.session.CarPlaySessionDisplay
 
-import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Looper
-import android.os.Build
 import android.view.Surface
 import com.shihab.diplay.media.AndroidMediaSink
 import com.shihab.diplay.orchestration.CarPlayController
@@ -149,8 +147,6 @@ class CarPlayMediaFocusForwardingTest {
         CarPlayMediaKeys.onMediaAudioChanged(true)
         shadowOf(Looper.getMainLooper()).idle()
         if (clearInitialGrant) clearInvocations(sink)
-        if (Build.VERSION.SDK_INT < 26) return ReflectionHelpers.getField(CarPlayMediaKeys, "legacyFocusListener")
-        val request = ReflectionHelpers.getField<AudioFocusRequest>(CarPlayMediaKeys, "focusRequest")
-        return ReflectionHelpers.callInstanceMethod(request, "getOnAudioFocusChangeListener")
+        return requireNotNull(ReflectionHelpers.getField(CarPlayMediaKeys, "legacyFocusListener"))
     }
 }

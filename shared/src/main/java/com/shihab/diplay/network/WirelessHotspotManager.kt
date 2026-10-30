@@ -6,7 +6,6 @@ import java.net.InetAddress
 
 enum class WirelessHotspotBackend(val label: String) {
     WIFI_P2P("Wi-Fi P2P"),
-    LOCAL_ONLY_HOTSPOT("LocalOnlyHotspot"),
     MANUAL_HOTSPOT("Manual hotspot"),
     EXISTING_WIFI("Existing Wi-Fi / Same LAN"),
 }

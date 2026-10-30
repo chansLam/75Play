@@ -7,22 +7,13 @@ import android.widget.TextView
 import androidx.fragment.app.Fragment
 import com.shihab.diplay.AirPlayPersistence
 import com.shihab.diplay.CarPlayDock
-import com.shihab.diplay.InterfaceSize
 import com.shihab.diplay.airplay.CarPlaySize
 import com.shihab.diplay.airplay.SafeAreaRect
-import com.shihab.diplay.compat.realSdkInt
 import com.shihab.diplay.host.R
 import com.shihab.diplay.localizedLabel
 import com.shihab.diplay.ui.DiPlayDialog
-import com.shihab.diplay.ui.GlassColors
-import com.shihab.diplay.ui.GlassSwitch
-import com.shihab.diplay.ui.LayoutMetrics
 
 internal class DisplaySettingsColumn(page: Fragment) : SettingsColumnKit(page) {
-    /** 系统栏开关引用：Fragment 被壳层 show/hide 缓存后，onResume 需要按 prefs 重同步视觉态。 */
-    private var hideTopBarSwitch: GlassSwitch? = null
-    private var hideBottomBarSwitch: GlassSwitch? = null
-
     private fun buildDisplayCard(card: LinearLayout) {
         val ctx = card.context
         val curSize = CarPlaySize.fromWidthMillimeters(AirPlayPersistence.loadWidthPhysicalMm(ctx))
@@ -49,33 +40,12 @@ internal class DisplaySettingsColumn(page: Fragment) : SettingsColumnKit(page) {
                 }
             }
         }))
-        // Android 4.4 无法查询解码器能力，只有用户显式接受风险才上报放大画布。
-        if (realSdkInt() <= 19) {
-            card.addView(reconnectSwitchRow(ctx, ctx.getString(R.string.settings_allow_enlarged_canvas), AirPlayPersistence.loadAllowEnlargedCanvas(ctx)) { on ->
-                AirPlayPersistence.saveAllowEnlargedCanvas(ctx, on)
-                host.reconnectIfRunning()
-            })
-        }
-        card.addView(settingRow(ctx, ctx.getString(R.string.settings_interface_size), capPick(ctx, InterfaceSize.displayName(ctx, InterfaceSize.preference(ctx))) { cap -> showInterfaceSizePicker(cap) }))
         card.addView(settingRow(ctx, ctx.getString(R.string.safe_area), capPick(ctx, safeAreaSummary(ctx)) { cap -> showSafeAreaEditor(cap) }))
         card.addView(reconnectSwitchRow(ctx, ctx.getString(R.string.draw_outside_safe_area), AirPlayPersistence.loadSafeAreaDrawOutside(ctx)) { on ->
             AirPlayPersistence.saveSafeAreaDrawOutside(ctx, on)
             host.reconnectIfRunning()
         })
         card.addView(settingRow(ctx, ctx.getString(R.string.carplay_dock), capPick(ctx, dockLabel(ctx, CarPlayDock.load(ctx))) { cap -> showDockPicker(cap) }))
-        card.addView(reconnectSwitchRow(ctx, ctx.getString(R.string.setting_left_system_dock_inset), AirPlayPersistence.loadLeftSystemDockInset(ctx)) { on ->
-            AirPlayPersistence.saveLeftSystemDockInset(ctx, on)
-            host.reconnectIfRunning()
-        })
-        card.addView(divider(ctx))
-        val hideTopRow = glassSwitchRow(ctx, ctx.getString(R.string.setting_hide_top_bar), AirPlayPersistence.loadHideTopBar(ctx)) { AirPlayPersistence.saveHideTopBar(ctx, it) }
-        card.addView(hideTopRow)
-        hideTopBarSwitch = (hideTopRow as LinearLayout).findSwitch()
-        val hideBottomRow = glassSwitchRow(ctx, ctx.getString(R.string.setting_hide_bottom_bar), AirPlayPersistence.loadHideBottomBar(ctx)) { AirPlayPersistence.saveHideBottomBar(ctx, it) }
-        card.addView(hideBottomRow)
-        hideBottomBarSwitch = (hideBottomRow as LinearLayout).findSwitch()
-        card.addView(glassSwitchRow(ctx, ctx.getString(R.string.setting_root_hide_navbar), AirPlayPersistence.loadRootHideNavbar(ctx)) { host.setRootHideNavbar(it) })
-        card.addView(glassSwitchRow(ctx, ctx.getString(R.string.setting_adapt_pip_resolution), AirPlayPersistence.loadAdaptPipResolution(ctx)) { AirPlayPersistence.saveAdaptPipResolution(ctx, it) })
     }
 
     private fun dockLabel(ctx: android.content.Context, dock: CarPlayDock): String = when (dock) {
@@ -107,20 +77,6 @@ internal class DisplaySettingsColumn(page: Fragment) : SettingsColumnKit(page) {
         showDropdown(anchor, labels, scales.indexOf(cur).coerceAtLeast(0), syncAnchorText = false) { idx ->
             GlassSettingsRows.confirmReconnect(host, ctx) {
                 AirPlayPersistence.saveDisplayScalePercent(ctx, scales[idx])
-                (anchor as? TextView)?.text = labels[idx] + " ▾"
-                host.reconnectIfRunning()
-            }
-        }
-    }
-
-    private fun showInterfaceSizePicker(anchor: View) {
-        val ctx = anchor.context
-        val choices = InterfaceSize.CHOICES
-        val labels = choices.map { InterfaceSize.displayName(ctx, it) }
-        val cur = InterfaceSize.preference(ctx)
-        showDropdown(anchor, labels, choices.indexOf(cur).coerceAtLeast(0), syncAnchorText = false) { idx ->
-            GlassSettingsRows.confirmReconnect(host, ctx) {
-                InterfaceSize.save(ctx, choices[idx])
                 (anchor as? TextView)?.text = labels[idx] + " ▾"
                 host.reconnectIfRunning()
             }
@@ -201,26 +157,6 @@ internal class DisplaySettingsColumn(page: Fragment) : SettingsColumnKit(page) {
                 }
             }
         }
-    }
-
-    /** glassSwitchRow 的行是 LinearLayout，开关是其直接子 View。 */
-    private fun LinearLayout.findSwitch(): GlassSwitch? =
-        (0 until childCount).map { getChildAt(it) }.filterIsInstance<GlassSwitch>().firstOrNull()
-
-    /**
-     * 设置页 onResume 时调用：快捷面板等其它入口可能在本页 pause 期间改了系统栏开关。
-     * 只按 prefs 刷新视觉态并临时摘掉 listener，避免把「读到的值」当用户操作再保存一次。
-     */
-    internal fun syncSystemBarSwitchesFromPrefs() {
-        hideTopBarSwitch?.let { syncSwitch(it, AirPlayPersistence.loadHideTopBar(it.context)) }
-        hideBottomBarSwitch?.let { syncSwitch(it, AirPlayPersistence.loadHideBottomBar(it.context)) }
-    }
-
-    private fun syncSwitch(sw: GlassSwitch, value: Boolean) {
-        val listener = sw.onCheckedChangeListener
-        sw.onCheckedChangeListener = null
-        sw.setChecked(value, animate = false)
-        sw.onCheckedChangeListener = listener
     }
 
     fun fill(card: LinearLayout) = buildDisplayCard(card)

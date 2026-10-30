@@ -6,7 +6,6 @@ import com.shihab.diplay.airplay.AirPlayDisplayConfig
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -18,8 +17,7 @@ import org.robolectric.util.ReflectionHelpers
 import java.util.concurrent.ExecutorService
 
 /**
- * Android 4.4 has no decoder capability query: the host can only advertise an enlarged CarPlay
- * canvas when the user opts in through the experimental setting.
+ * Android 4.4 has no decoder capability query, so an enlarged canvas stays on the panel size.
  *
  * The head unit fakes SDK_INT while RELEASE stays 4.4.x, so KitKat is reached the way
  * [com.shihab.diplay.compat.realSdkInt] does it on the device.
@@ -47,22 +45,6 @@ class CarPlayHostKitKatCanvasTest {
     @Test fun kitkatKeepsTheNativeCanvasByDefault() {
         assertEquals("legacy_decoder_capabilities", support(3072, 1584).second)
         assertFalse(support(3072, 1584).first)
-    }
-
-    @Test fun kitkatAdvertisesTheEnlargedCanvasWhenTheUserOptsIn() {
-        AirPlayPersistence.saveAllowEnlargedCanvas(activity, true)
-
-        val (supported, reason) = support(3072, 1584)
-        assertTrue(supported)
-        assertEquals("kitkat_enlarged_canvas_allowed", reason)
-    }
-
-    @Test fun theEnlargedCanvasOptInIsSessionPersistent() {
-        assertFalse(AirPlayPersistence.loadAllowEnlargedCanvas(activity))
-        AirPlayPersistence.saveAllowEnlargedCanvas(activity, true)
-        assertTrue(AirPlayPersistence.loadAllowEnlargedCanvas(activity))
-        AirPlayPersistence.saveAllowEnlargedCanvas(activity, false)
-        assertFalse(AirPlayPersistence.loadAllowEnlargedCanvas(activity))
     }
 
     private fun support(width: Int, height: Int): Pair<Boolean, String> {

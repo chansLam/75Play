@@ -47,7 +47,6 @@ class CarPlayHostDisplaySizeTest {
 
     @Before fun setUp() {
         activity = Robolectric.buildActivity(CarPlayHostActivity::class.java).get()
-        AirPlayPersistence.saveAdaptPipResolution(activity, false)
         AirPlayPersistence.saveHarmanFullscreen(activity, false)
         // Source-only tests have no provisioned local authentication identity.
         AirPlayPersistence.saveMfiTarget(activity, MfiTarget.I2C)
@@ -92,14 +91,6 @@ class CarPlayHostDisplaySizeTest {
         assertSame(display, getField("sessionDisplay"))
         assertEquals(0, getField("restartGeneration"))
         assertEquals(1, keepLogs())
-    }
-
-    @Test fun aNarrowWindowWithAdaptPipResolutionTriggersReconnect() {
-        AirPlayPersistence.saveAdaptPipResolution(activity, true)
-        val display = startSession()
-        applySize(700, 990)
-        assertEquals(1, getField("restartGeneration"))
-        assertNull(getField("sessionDisplay"))
     }
 
     @Test fun connectingInANarrowWindowRebuildsWhenTheCameraCloses() {
@@ -155,24 +146,22 @@ class CarPlayHostDisplaySizeTest {
         assertEquals(1, getField("restartGeneration"))
     }
 
-    @Test fun resumingReadsSavedBarsAndRebuildsEvenWhenTheWindowSizeIsUnchanged() {
+    @Test fun resumingKeepsFullscreenEvenWhenSavedBarsDiffer() {
         startSession()
-        // 测试窗口未挂载，使用主线程队列执行布局后的刷新。
         val video = object : TextureView(activity) {
             override fun post(action: Runnable): Boolean = Handler(Looper.getMainLooper()).post(action)
         }.apply { layout(0, 0, 1920, 990) }
         setField("videoView", video)
-        AirPlayPersistence.saveHideTopBar(activity, true)
-        AirPlayPersistence.saveHideBottomBar(activity, false)
+        setField("hideTopBar", false)
+        setField("hideBottomBar", false)
 
         invoke("onResume")
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600))
 
         assertEquals(true, getField("hideTopBar"))
-        assertEquals(false, getField("hideBottomBar"))
-        assertWindowBars(true, false)
-        assertEquals(1, getField("restartGeneration"))
-        assertTrue(getField("handshakeResetInProgress") as Boolean)
+        assertEquals(true, getField("hideBottomBar"))
+        assertWindowBars(true, true)
+        assertEquals(0, getField("restartGeneration"))
     }
 
     @Test fun resumingWithUnchangedBarsKeepsTheSession() {
@@ -185,9 +174,7 @@ class CarPlayHostDisplaySizeTest {
         assertEquals(0, getField("restartGeneration"))
     }
 
-    @Test fun resumingReloadsPersistedSystemBars() {
-        AirPlayPersistence.saveHideTopBar(activity, true)
-        AirPlayPersistence.saveHideBottomBar(activity, true)
+    @Test fun resumingRestoresFullscreenBars() {
         startSession()
         setField("hideTopBar", false)
         setField("hideBottomBar", false)
@@ -304,8 +291,12 @@ class CarPlayHostDisplaySizeTest {
         allowStartup()
         startSession(rotation = Surface.ROTATION_180)
         scheduleSize(1920, 990)
-        activity.javaClass.getDeclaredMethod("restartCarPlay", String::class.java)
-            .apply { isAccessible = true }.invoke(activity, "Test reconnect")
+        val restart = activity.javaClass.declaredMethods.first {
+            it.name.startsWith("restartCarPlay") &&
+                it.parameterTypes.contentEquals(arrayOf(String::class.java))
+        }
+        restart.isAccessible = true
+        restart.invoke(activity, "Test reconnect")
         finishTeardown()
         assertNull(getField("sessionDisplay"))
 
@@ -449,8 +440,9 @@ class CarPlayHostDisplaySizeTest {
         .apply { isAccessible = true }.newInstance(width, height)
 
     private fun applySize(width: Int, height: Int) {
-        activity.javaClass.getDeclaredMethod("applyDisplaySize", sizeClass)
-            .apply { isAccessible = true }.invoke(activity, size(width, height))
+        val layout = activity.javaClass.getDeclaredField("hostDisplayLayout").apply { isAccessible = true }.get(activity)
+        layout.javaClass.getDeclaredMethod("applyDisplaySize", sizeClass)
+            .apply { isAccessible = true }.invoke(layout, size(width, height))
     }
 
     private fun scheduleSize(width: Int, height: Int) {

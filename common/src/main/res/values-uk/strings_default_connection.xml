@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="default_connection_mode">Типове підключення</string>
-    <string name="default_connection_wireless">Бездротове</string>
 </resources>

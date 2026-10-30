@@ -10,6 +10,7 @@ import android.os.Looper
 import android.os.SystemClock
 import com.shihab.diplay.model.Iap2WirelessSecurity
 import java.io.IOException
+import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.NetworkInterface
 import java.util.Collections
@@ -119,20 +120,15 @@ internal class LegacyWifiP2pGroupManager(
                 val interfaceName = runCatching {
                     group.getInterface()?.takeIf { it.isNotBlank() }
                 }.getOrNull()
-                val connectionAddress = requestConnectionInfo(p2pChannel, 1_500)
-                val networkInterface = interfaceName?.let {
-                    runCatching { NetworkInterface.getByName(it) }.getOrNull()
-                }
-                val hostAddress = networkInterface?.let { iface ->
-                    wirelessHostAddress(
-                        addresses = Collections.list(iface.inetAddresses),
-                        interfaceIndex = iface.index,
-                        preferIpv4 = true,
-                    )
-                } ?: connectionAddress
+                val connectionAddress = requestConnectionInfo(p2pChannel, 1_500) as? Inet4Address
+                // getInterface() is API 30, so KitKat has to find p2p-wlan* itself. A link-local
+                // IPv6 on that interface cannot be bound (EADDRNOTAVAIL); wait for IPv4.
+                val p2pIpv4 = ipv4OnP2pInterface(interfaceName)
+                val hostAddress = p2pIpv4?.second ?: connectionAddress
+                val resolvedInterface = p2pIpv4?.first ?: interfaceName
 
                 val frameworkFrequency = readFrameworkFrequency(group)
-                val driverFrequency = interfaceName?.let { name ->
+                val driverFrequency = resolvedInterface?.let { name ->
                     LegacyHotspotRadio.read(name, null).also { reading ->
                         diagnostic(
                             "Legacy Wi-Fi Direct radio iface=$name " +
@@ -147,7 +143,7 @@ internal class LegacyWifiP2pGroupManager(
                 if (ssid == null || passphrase == null || hostAddress == null) {
                     lastReason =
                         "incomplete group ssid=${ssid != null} passphrase=${passphrase != null} " +
-                            "host=${hostAddress != null} iface=${interfaceName ?: "unknown"}"
+                            "ipv4=${hostAddress != null} iface=${resolvedInterface ?: "unknown"}"
                     Thread.sleep(150)
                     continue
                 }
@@ -159,7 +155,7 @@ internal class LegacyWifiP2pGroupManager(
                     else -> "system selected"
                 }
                 diagnostic(
-                    "Legacy Wi-Fi Direct ready iface=${interfaceName ?: "unknown"} " +
+                    "Legacy Wi-Fi Direct ready iface=${resolvedInterface ?: "unknown"} " +
                         "band=$bandLabel channel=$channelNumber frequency=${frequency ?: "unknown"}",
                 )
 
@@ -169,11 +165,13 @@ internal class LegacyWifiP2pGroupManager(
                     security = Iap2WirelessSecurity.WPA_WPA2,
                     channel = channelNumber,
                     frequencyMHz = frequency,
-                    bssid = networkInterface?.hardwareAddress
-                        ?.takeIf { it.isNotEmpty() }
+                    bssid = resolvedInterface?.let { name ->
+                        runCatching { NetworkInterface.getByName(name)?.hardwareAddress }
+                            .getOrNull()
+                    }?.takeIf { it.isNotEmpty() }
                         ?.joinToString(":") { "%02x".format(it.toInt() and 0xff) }
                         ?: group.owner?.deviceAddress?.takeIf { it.isNotBlank() },
-                    interfaceName = interfaceName,
+                    interfaceName = resolvedInterface,
                     hostAddress = hostAddress,
                     bandLabel = bandLabel,
                     backend = WirelessHotspotBackend.WIFI_P2P,
@@ -205,6 +203,30 @@ internal class LegacyWifiP2pGroupManager(
         }
         thread?.quitSafely()
         thread = null
+    }
+
+    /**
+     * KitKat's group object has no interface name. Prefer the named interface when the framework
+     * has one, otherwise the first `p2p*` interface that already has a usable IPv4 address.
+     */
+    private fun ipv4OnP2pInterface(preferredName: String?): Pair<String, Inet4Address>? {
+        val interfaces = runCatching { Collections.list(NetworkInterface.getNetworkInterfaces()) }
+            .getOrNull()
+            .orEmpty()
+        val ordered = interfaces.sortedWith(compareByDescending<NetworkInterface> {
+            when {
+                preferredName != null && it.name == preferredName -> 2
+                it.name.startsWith("p2p") -> 1
+                else -> 0
+            }
+        })
+        for (iface in ordered) {
+            val named = preferredName != null && iface.name == preferredName
+            if (!named && !iface.name.startsWith("p2p")) continue
+            val ipv4 = usableIpv4(Collections.list(iface.inetAddresses)) ?: continue
+            return iface.name to ipv4
+        }
+        return null
     }
 
     private fun checkPrerequisites() {
