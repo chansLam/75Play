@@ -30,9 +30,10 @@ enum class SwcWheelOutcome {
     END_CALL,
     SIRI,
     /**
-     * Not a CarPlay key. The framework already swallowed this press; test mode is opened
-     * again only after a short gap so a later press can reach the head unit. Volume and
-     * source (SRC) both take this path so the head unit keeps them.
+     * Not a CarPlay key. Re-broadcast the original KEY_CHANGED notice so the head unit's own
+     * consumers (e.g. WT_MusicKeyManager, which listens only to KEY_CHANGED, not to
+     * KEY_CHANGED_TEST_MODE) act on it and the original function fires without a second press.
+     * Volume, source (SRC) and every other name take this path.
      */
     RELEASE,
 }
@@ -50,23 +51,18 @@ enum class SwcWheelOutcome {
 object SwcCarPlayKeys {
     private const val TAG = "DiPlay-SwcKeys"
     private const val KEY_TEST_ACTION = "com.coagent.intent.action.KEY_CHANGED_TEST_MODE"
+    private const val KEY_CHANGED_ACTION = "com.coagent.intent.action.KEY_CHANGED"
     private const val KEY_TEST_EXTRA = "Key_code"
+    private const val KEY_STATE_EXTRA = "Key_state"
+    private const val KEY_SOURCE_EXTRA = "Key_Source"
     private const val KEY_TEST_SETTING = "coagent_settings_key_test_mode"
 
     /** Same-name presses inside this window are framework repeats; run each mapped key once. */
     private const val REPEAT_WINDOW_MILLIS = 1000L
 
-    /** How long an unmapped key leaves test mode off. */
-    private const val PASS_THROUGH_MILLIS = 400L
-
     private var receiver: Receiver? = null
     private var appContext: Context? = null
     private val handler by lazy { Handler(Looper.getMainLooper()) }
-    private val rearmTestMode = Runnable {
-        val context = appContext ?: return@Runnable
-        if (receiver == null) return@Runnable
-        runCatching { Settings.System.putInt(context.contentResolver, KEY_TEST_SETTING, 1) }
-    }
 
     /** The CarPlay action for [name], or null when the key is not sent to the session. */
     internal fun actionFor(name: String?): SwcCarPlayAction? = when (name?.trim()?.uppercase()) {
@@ -102,7 +98,6 @@ object SwcCarPlayKeys {
     fun forceOff(context: Context) {
         runCatching { Settings.System.putInt(context.contentResolver, KEY_TEST_SETTING, 0) }
             .onFailure { AppLog.w(TAG, "cannot disable key test mode", it) }
-        runCatching { handler.removeCallbacks(rearmTestMode) }
     }
 
     /** Enables key-test interception and starts mapping wheel keys. Call from onStart. */
@@ -127,7 +122,6 @@ object SwcCarPlayKeys {
      * switch at 1, and the next start would otherwise remember that 1 and restore it.
      */
     fun stop(activity: Activity) {
-        handler.removeCallbacks(rearmTestMode)
         val r = receiver
         receiver = null
         appContext = null
@@ -152,15 +146,25 @@ object SwcCarPlayKeys {
     }
 
     /**
-     * Opens the head-unit path. The press already delivered here was swallowed while the
-     * setting was 1, and re-sending the test-mode broadcast does not make the framework
-     * execute it. The setting is armed again after the gap.
+     * For an unmapped key (volume, source, ...), re-broadcast the received test-mode notice as
+     * the original `KEY_CHANGED` broadcast so the head unit's consumers (WT_MusicKeyManager and
+     * similar, which register only for KEY_CHANGED) act on it and the original function fires
+     * without a second press. The key-test switch stays on for mapped keys, so this process
+     * keeps intercepting wheel keys for the CarPlay screen.
      */
-    private fun releaseToHeadUnit() {
+    private fun rebroadcastAsKeyChanged(received: Intent) {
         val context = appContext ?: return
-        runCatching { Settings.System.putInt(context.contentResolver, KEY_TEST_SETTING, 0) }
-        handler.removeCallbacks(rearmTestMode)
-        handler.postDelayed(rearmTestMode, PASS_THROUGH_MILLIS)
+        val fwd = Intent(KEY_CHANGED_ACTION).apply {
+            val code = received.getStringExtra(KEY_TEST_EXTRA)
+            val state = received.getStringExtra(KEY_STATE_EXTRA)
+            val source = received.getIntExtra(KEY_SOURCE_EXTRA, -1)
+            if (code != null) putExtra(KEY_TEST_EXTRA, code)
+            if (state != null) putExtra(KEY_STATE_EXTRA, state)
+            if (source >= 0) putExtra(KEY_SOURCE_EXTRA, source)
+            addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES or Intent.FLAG_RECEIVER_FOREGROUND)
+        }
+        runCatching { context.sendBroadcast(fwd) }
+            .onFailure { AppLog.w(TAG, "rebroadcast KEY_CHANGED failed", it) }
     }
 
     private class Receiver(
@@ -181,7 +185,7 @@ object SwcCarPlayKeys {
                 lastAt = now
             }
             when (outcome) {
-                SwcWheelOutcome.RELEASE -> releaseToHeadUnit()
+                SwcWheelOutcome.RELEASE -> rebroadcastAsKeyChanged(intent)
                 else -> {
                     val c = controller() ?: return
                     when (outcome) {
