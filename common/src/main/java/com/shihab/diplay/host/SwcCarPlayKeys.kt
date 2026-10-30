@@ -30,9 +30,23 @@ enum class SwcWheelOutcome {
     END_CALL,
     SIRI,
     /**
-     * Not a CarPlay key. The framework already swallowed this press; test mode is opened
-     * again only after a short gap so a later press can reach the head unit. Volume and
-     * source (SRC) both take this path so the head unit keeps them.
+     * Volume up. Key-test mode skips the firmware's volume interrupt, so this drives the head
+     * unit's settings service directly (same path as the firmware, one step per press).
+     */
+    VOLUME_UP,
+    /**
+     * Volume down. See [VOLUME_UP].
+     */
+    VOLUME_DOWN,
+    /**
+     * Mute toggle. See [VOLUME_UP].
+     */
+    MUTE,
+    /**
+     * Not a CarPlay key and not a volume key. Re-broadcast the original KEY_CHANGED notice so the
+     * head unit's own consumers (e.g. WT_MusicKeyManager, which listens only to KEY_CHANGED, not
+     * to KEY_CHANGED_TEST_MODE) act on it and the original function fires without a second press.
+     * Source (SRC) and every other unmapped name take this path.
      */
     RELEASE,
 }
@@ -44,29 +58,26 @@ enum class SwcWheelOutcome {
  * the key by the time it arrives, so listening there cannot stop volume, mode or source.
  * Key-test mode (`coagent_settings_key_test_mode`) is the switch that swallows the press and
  * reports it as `KEY_CHANGED_TEST_MODE`. Mapped names, including the voice key, go to the
- * session. Volume and source (SRC) drop test mode so the head unit's own path is open
- * for the next press.
+ * session. Volume keys (VOLUP/VOLDOWN/MUTE) drive the head unit volume directly through its
+ * settings service — key-test mode otherwise skips the firmware's volume interrupt, and there
+ * is no KEY_CHANGED consumer for volume. Source (SRC) and every other name are re-broadcast
+ * as the original KEY_CHANGED so the head unit's own consumers act on them.
  */
 object SwcCarPlayKeys {
     private const val TAG = "DiPlay-SwcKeys"
     private const val KEY_TEST_ACTION = "com.coagent.intent.action.KEY_CHANGED_TEST_MODE"
+    private const val KEY_CHANGED_ACTION = "com.coagent.intent.action.KEY_CHANGED"
     private const val KEY_TEST_EXTRA = "Key_code"
+    private const val KEY_STATE_EXTRA = "Key_state"
+    private const val KEY_SOURCE_EXTRA = "Key_Source"
     private const val KEY_TEST_SETTING = "coagent_settings_key_test_mode"
 
     /** Same-name presses inside this window are framework repeats; run each mapped key once. */
     private const val REPEAT_WINDOW_MILLIS = 1000L
 
-    /** How long an unmapped key leaves test mode off. */
-    private const val PASS_THROUGH_MILLIS = 400L
-
     private var receiver: Receiver? = null
     private var appContext: Context? = null
     private val handler by lazy { Handler(Looper.getMainLooper()) }
-    private val rearmTestMode = Runnable {
-        val context = appContext ?: return@Runnable
-        if (receiver == null) return@Runnable
-        runCatching { Settings.System.putInt(context.contentResolver, KEY_TEST_SETTING, 1) }
-    }
 
     /** The CarPlay action for [name], or null when the key is not sent to the session. */
     internal fun actionFor(name: String?): SwcCarPlayAction? = when (name?.trim()?.uppercase()) {
@@ -78,7 +89,7 @@ object SwcCarPlayKeys {
         else -> null
     }
 
-    /** Mapped keys go to CarPlay. Volume, source and every other name are released. */
+    /** Mapped keys go to CarPlay. Volume keys drive the head unit volume; everything else is released. */
     internal fun outcomeFor(name: String?): SwcWheelOutcome? {
         when (actionFor(name)) {
             SwcCarPlayAction.TRACK_NEXT -> return SwcWheelOutcome.TRACK_NEXT
@@ -87,6 +98,11 @@ object SwcCarPlayKeys {
             SwcCarPlayAction.END_CALL -> return SwcWheelOutcome.END_CALL
             SwcCarPlayAction.SIRI -> return SwcWheelOutcome.SIRI
             null -> Unit
+        }
+        when (name?.trim()?.uppercase()) {
+            "VOLUP", "KEY_SWC_VOL_INC" -> return SwcWheelOutcome.VOLUME_UP
+            "VOLDOWN", "KEY_SWC_VOL_DEC" -> return SwcWheelOutcome.VOLUME_DOWN
+            "MUTE" -> return SwcWheelOutcome.MUTE
         }
         name?.trim()?.takeIf { it.isNotEmpty() } ?: return null
         return SwcWheelOutcome.RELEASE
@@ -102,12 +118,12 @@ object SwcCarPlayKeys {
     fun forceOff(context: Context) {
         runCatching { Settings.System.putInt(context.contentResolver, KEY_TEST_SETTING, 0) }
             .onFailure { AppLog.w(TAG, "cannot disable key test mode", it) }
-        runCatching { handler.removeCallbacks(rearmTestMode) }
     }
 
     /** Enables key-test interception and starts mapping wheel keys. Call from onStart. */
     fun start(activity: Activity, controller: () -> CarPlayController?) {
         if (receiver != null) return
+        HeadUnitVolume.attachDebug(activity.applicationContext)
         runCatching {
             Settings.System.putInt(activity.contentResolver, KEY_TEST_SETTING, 1)
         }.onFailure { AppLog.w(TAG, "cannot enable key test mode", it) }
@@ -127,7 +143,6 @@ object SwcCarPlayKeys {
      * switch at 1, and the next start would otherwise remember that 1 and restore it.
      */
     fun stop(activity: Activity) {
-        handler.removeCallbacks(rearmTestMode)
         val r = receiver
         receiver = null
         appContext = null
@@ -152,15 +167,25 @@ object SwcCarPlayKeys {
     }
 
     /**
-     * Opens the head-unit path. The press already delivered here was swallowed while the
-     * setting was 1, and re-sending the test-mode broadcast does not make the framework
-     * execute it. The setting is armed again after the gap.
+     * For an unmapped key (volume, source, ...), re-broadcast the received test-mode notice as
+     * the original `KEY_CHANGED` broadcast so the head unit's consumers (WT_MusicKeyManager and
+     * similar, which register only for KEY_CHANGED) act on it and the original function fires
+     * without a second press. The key-test switch stays on for mapped keys, so this process
+     * keeps intercepting wheel keys for the CarPlay screen.
      */
-    private fun releaseToHeadUnit() {
+    private fun rebroadcastAsKeyChanged(received: Intent) {
         val context = appContext ?: return
-        runCatching { Settings.System.putInt(context.contentResolver, KEY_TEST_SETTING, 0) }
-        handler.removeCallbacks(rearmTestMode)
-        handler.postDelayed(rearmTestMode, PASS_THROUGH_MILLIS)
+        val fwd = Intent(KEY_CHANGED_ACTION).apply {
+            val code = received.getStringExtra(KEY_TEST_EXTRA)
+            val state = received.getStringExtra(KEY_STATE_EXTRA)
+            val source = received.getIntExtra(KEY_SOURCE_EXTRA, -1)
+            if (code != null) putExtra(KEY_TEST_EXTRA, code)
+            if (state != null) putExtra(KEY_STATE_EXTRA, state)
+            if (source >= 0) putExtra(KEY_SOURCE_EXTRA, source)
+            addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES or Intent.FLAG_RECEIVER_FOREGROUND)
+        }
+        runCatching { context.sendBroadcast(fwd) }
+            .onFailure { AppLog.w(TAG, "rebroadcast KEY_CHANGED failed", it) }
     }
 
     private class Receiver(
@@ -173,15 +198,28 @@ object SwcCarPlayKeys {
             if (intent.action != KEY_TEST_ACTION) return
             val name = intent.getStringExtra(KEY_TEST_EXTRA) ?: return
             val outcome = outcomeFor(name) ?: return
+            val state = intent.getStringExtra(KEY_STATE_EXTRA)
             val now = SystemClock.elapsedRealtime()
-            val once = outcome != SwcWheelOutcome.RELEASE
+            // Volume/mute keys act on the press edge, matching the firmware's volume/mute
+            // interrupts (they handle both NONE and DOWN). The firmware test-mode broadcast maps
+            // mKeystate: 0->NONE, 1->DOWN, 2->UP. Some SWC keys (mute in particular) surface as
+            // NONE on press rather than DOWN, so accept either NONE or DOWN. Dedup by (name, edge)
+            // so the NONE/DOWN/UP/LONG_UP sequence yields exactly one adjustment per press.
+            val isVolume = outcome == SwcWheelOutcome.VOLUME_UP ||
+                outcome == SwcWheelOutcome.VOLUME_DOWN ||
+                outcome == SwcWheelOutcome.MUTE
+            val onDown = isVolume && (state == "DOWN" || state == "NONE")
+            val once = !isVolume || onDown
             if (once && name == lastName && now - lastAt < REPEAT_WINDOW_MILLIS) return
             if (once) {
                 lastName = name
                 lastAt = now
             }
             when (outcome) {
-                SwcWheelOutcome.RELEASE -> releaseToHeadUnit()
+                SwcWheelOutcome.VOLUME_UP -> if (onDown) HeadUnitVolume.volumeUp()
+                SwcWheelOutcome.VOLUME_DOWN -> if (onDown) HeadUnitVolume.volumeDown()
+                SwcWheelOutcome.MUTE -> if (onDown) HeadUnitVolume.toggleMute()
+                SwcWheelOutcome.RELEASE -> rebroadcastAsKeyChanged(intent)
                 else -> {
                     val c = controller() ?: return
                     when (outcome) {
@@ -194,7 +232,10 @@ object SwcCarPlayKeys {
                     }
                 }
             }
-            AppLog.i(TAG, "wheel $name -> $outcome")
+            if (isVolume) {
+                AppLog.i(TAG, "wheel $name/$state -> $outcome")
+            }
+            else AppLog.i(TAG, "wheel $name -> $outcome")
         }
     }
 }

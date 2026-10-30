@@ -107,10 +107,10 @@ object AirPlayPersistence {
     }
 
     /** Show the floating ball (tap=Back via the assist-back accessibility service,
-     * long-press=return to the shell) when leaving CarPlay. Disabled by default. */
+     * long-press=return to the shell) when leaving CarPlay. Enabled by default. */
     fun loadFloatingBallEnabled(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean("floating_ball_enabled", false)
+            .getBoolean("floating_ball_enabled", true)
 
     fun saveFloatingBallEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
@@ -380,7 +380,7 @@ object AirPlayPersistence {
 
     fun loadAutoStartOnBoot(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean(KEY_AUTO_START_ON_BOOT, false)
+            .getBoolean(KEY_AUTO_START_ON_BOOT, true)
 
     fun saveAutoStartOnBoot(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()

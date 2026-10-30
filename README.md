@@ -6,7 +6,7 @@
 
 > 独立实现，**非** Apple 认证，与 Apple / 长安无隶属关系。请在安全停车后操作。
 >
-> 基于 [DiPlay-Legacy-Android](https://github.com/programmerguohuajing/DiPlay-Legacy-Android) 修改优化。当前 **v2.0.3-beta**，见 [CHANGELOG](CHANGELOG.md)。
+> 基于 [DiPlay-Legacy-Android](https://github.com/programmerguohuajing/DiPlay-Legacy-Android) 修改优化。当前 **v2.0.3**，见 [CHANGELOG](CHANGELOG.md)。
 
 [下载 APK](https://github.com/chansLam/75Play/releases) · [项目主页](https://chansLam.github.io/75Play/) · [English](README.en.md)
 
