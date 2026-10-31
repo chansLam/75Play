@@ -28,14 +28,14 @@ class HeadlightThemeTest {
         assertNull(HeadlightTheme.nightOrNull("other"))
     }
 
-    @Test fun followSystemUsesHeadlightThemeAheadOfUiMode() {
+    @Test fun followSystemReadsUiModeRegardlessOfHeadlightTheme() {
         setUiMode(Configuration.UI_MODE_NIGHT_NO)
         Settings.System.putString(context.contentResolver, HeadlightTheme.SETTING, HeadlightTheme.NIGHT)
-        assertEquals(true, context.followSystemNight())
+        assertEquals(false, context.followSystemNight())
 
         setUiMode(Configuration.UI_MODE_NIGHT_YES)
         Settings.System.putString(context.contentResolver, HeadlightTheme.SETTING, HeadlightTheme.DAY)
-        assertEquals(false, context.followSystemNight())
+        assertEquals(true, context.followSystemNight())
     }
 
     @Test fun missingOrUnknownHeadlightThemeFallsBackToUiMode() {
