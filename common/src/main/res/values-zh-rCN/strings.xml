@@ -341,6 +341,7 @@
     <string name="setting_channel_value">声道 %1$d</string>
     <string name="setting_display_scale">显示缩放</string>
     <string name="setting_display_size">显示尺寸</string>
+    <string name="settings_temperature_bar">顶部温度栏</string>
     <string name="setting_edge_bottom">下 %1$d</string>
     <string name="setting_edge_left">左 %1$d</string>
     <string name="setting_edge_right">右 %1$d</string>
@@ -374,6 +375,7 @@
     <string name="reconnect_required_message">部分设置需重新连接 CarPlay 才能生效。是否保存并重新连接？</string>
     <!-- 无障碍内容描述（cd_ 前缀） -->
     <string name="cd_floating_ball">悬浮球：点按模拟返回键，长按回到 75Play 主页</string>
+    <string name="cd_temp_bar">温度栏：显示室外、车内与空调设定温度</string>
     <string name="session_notification_text">CarPlay 连接已运行</string>
     <string name="session_notification_disconnect">断开连接</string>
 </resources>

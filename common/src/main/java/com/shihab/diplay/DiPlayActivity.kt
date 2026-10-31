@@ -160,6 +160,12 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
             applyShell()
             ImmersiveBars.installAutoHide(this)
             showPage(page)
+            // 全局顶部温度栏：读取长安车机 coagent.ac 空调服务，主页 + CarPlay 宿主上方常驻显示
+            // 室外/车内/设定温度。用 Application 上下文，系统浮层（TYPE_PHONE）在所有界面之上。
+            // 设置 → 显示 里的开关可关闭（默认开启）。
+            if (DiPlayPreferences.temperatureBarEnabled(applicationContext)) {
+                com.shihab.diplay.host.TemperatureBar.show(applicationContext)
+            }
             consumeConnectFailure()
             // Diagnostic probe walks Bluetooth/USB; keep it off the first-paint critical path.
             if (savedInstanceState == null) {

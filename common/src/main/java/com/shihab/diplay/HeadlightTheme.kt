@@ -33,13 +33,13 @@ internal object HeadlightTheme {
 }
 
 /**
- * Night state for "follow system": the headlight theme when the head unit has
- * written one, otherwise the explicit `uiMode` night bit. Undefined `uiMode`
- * with no headlight theme stays null so callers can keep the previous state.
+ * Night state for "follow system": read directly from the system `uiMode` night bit.
+ * The explicit night flag when set, otherwise null so callers can keep the previous
+ * state instead of flipping to light. (Headlight-theme priority was removed.)
  */
 internal fun Context.followSystemNight(
     uiMode: Int = resources.configuration.uiMode,
-): Boolean? = HeadlightTheme.nightOrNull(HeadlightTheme.read(this)) ?: nightModeOrNull(uiMode)
+): Boolean? = nightModeOrNull(uiMode)
 
 /**
  * Re-reads the headlight theme when the head unit writes the setting or broadcasts

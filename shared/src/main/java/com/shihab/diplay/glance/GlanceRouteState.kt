@@ -15,6 +15,8 @@ internal data class GlanceAppleManeuver(
     val type: Int,
     val drivingSide: Int,
     val road: String = "",
+    /** Road currently being driven on (0x5201 currentRoad); distinct from [road] = the one ahead. */
+    val currentRoad: String = "",
     val remainingSeconds: Long? = null,
     val remainingMeters: Long? = null,
     val arrivalEpochSeconds: Long? = null,
@@ -77,7 +79,7 @@ internal class GlanceRouteState(
         val maneuver = activeManeuver() ?: return null
         return GlanceAppleManeuver(
             distanceMeters, maneuver.type, maneuver.drivingSide,
-            roadFor(maneuver), remainingSeconds, remainingMeters, arrivalEpochSeconds,
+            roadFor(maneuver), currentRoad, remainingSeconds, remainingMeters, arrivalEpochSeconds,
         )
     }
 

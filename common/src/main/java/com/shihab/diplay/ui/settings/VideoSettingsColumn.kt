@@ -25,7 +25,7 @@ internal class VideoSettingsColumn(page: Fragment) : SettingsColumnKit(page) {
                 host.rebuildTheme()
             }
         }))
-        card.addView(settingRow(ctx, ctx.getString(R.string.setting_ambient_light_threshold), capPick(ctx, "${AirPlayPersistence.loadAmbientLightThreshold(ctx).lux} lux") { promptAmbientLightThreshold(ctx) }))
+        card.addView(settingRow(ctx, ctx.getString(R.string.setting_ambient_light_threshold), capPick(ctx, "${AirPlayPersistence.loadAmbientLightThreshold(ctx).lux}") { promptAmbientLightThreshold(ctx) }))
         card.addView(settingRow(ctx, ctx.getString(R.string.setting_ambient_delay), capPick(ctx, ctx.getString(R.string.setting_seconds_value, AirPlayPersistence.loadAmbientDelaySeconds(ctx))) { cap -> showAmbientDelayPicker(cap) }))
         card.addView(reconnectSwitchRow(ctx, ctx.getString(R.string.setting_smooth_video), AirPlayPersistence.loadSmoothVideo(ctx)) { on ->
             AirPlayPersistence.saveSmoothVideo(ctx, on); host.reconnectIfRunning()
@@ -45,7 +45,7 @@ internal class VideoSettingsColumn(page: Fragment) : SettingsColumnKit(page) {
         DiPlayDialog.showInput(
             ctx,
             ctx.getString(R.string.setting_ambient_light_threshold),
-            "${AmbientLightThreshold.MIN_LUX}-${AmbientLightThreshold.MAX_LUX} lux",
+            "${AmbientLightThreshold.MIN_LUX}-${AmbientLightThreshold.MAX_LUX}",
             cur.toString(),
             save = ctx.getString(R.string.set),
             cancel = ctx.getString(R.string.cancel),

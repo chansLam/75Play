@@ -319,6 +319,7 @@
     <string name="setting_channel_value">Canal %1$d</string>
     <string name="setting_display_scale">Escala de pantalla</string>
     <string name="setting_display_size">Tamaño de pantalla</string>
+    <string name="settings_temperature_bar">Barra de temperatura</string>
     <string name="setting_edge_bottom">Abajo %1$d</string>
     <string name="setting_edge_left">Izquierda %1$d</string>
     <string name="setting_edge_right">Derecha %1$d</string>

@@ -35,14 +35,6 @@ internal object LegacyHotspotRadio {
         }
     }
 
-    class Settled {
-        private var frequency: Int? = null
-        private var since = 0L
-        fun observe(value: Int?, nowMs: Long): Int? {
-            if (value != frequency) { frequency = value; since = nowMs }
-            return value?.takeIf { nowMs - since >= 2_000 }
-        }
-    }
 }
 
 private object LegacyHotspotNative {

@@ -14,6 +14,8 @@ object CarPlayGlance {
         val drivingSide: Int = 0,
         val distanceMeters: Int = 0,
         val road: String = "",
+        /** Road currently being driven on; [road] is the one the next maneuver turns onto. */
+        val currentRoad: String = "",
         val arrivalEpochSeconds: Long? = null,
         val remainingSeconds: Long? = null,
         val remainingMeters: Long? = null,
@@ -71,6 +73,7 @@ object CarPlayGlance {
             drivingSide = maneuver?.drivingSide ?: 0,
             distanceMeters = maneuver?.distanceMeters ?: 0,
             road = maneuver?.road.orEmpty(),
+            currentRoad = maneuver?.currentRoad.orEmpty(),
             arrivalEpochSeconds = maneuver?.arrivalEpochSeconds,
             remainingSeconds = maneuver?.remainingSeconds,
             remainingMeters = maneuver?.remainingMeters,

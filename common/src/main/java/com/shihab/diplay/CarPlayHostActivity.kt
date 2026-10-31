@@ -436,6 +436,8 @@ class CarPlayHostActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         NavigationWidgetUpdater.attach(applicationContext)
+        // Forward next-turn guidance to the instrument cluster (Tencent-navigation compatible).
+        NaviClusterBroadcast.attach(applicationContext)
         languagePreferenceAtCreate = AppLocale.preference(this)
         if (runCatching { DiPlayBootstrap.ensure(this, AirPlayPersistence.loadMfiTarget(this)) }.isFailure) {
             startActivity(Intent(this, DiPlayActivity::class.java))
@@ -876,6 +878,7 @@ class CarPlayHostActivity : ComponentActivity() {
 
     override fun onDestroy() {
         SwcCarPlayKeys.stop(this)
+        NaviClusterBroadcast.detach()
         notePicture(false)
         // Returning to the shell keeps the session. A destroy that is not sessionShutdown must
         // drop this Activity as owner so it cannot reconnect on a dead context.

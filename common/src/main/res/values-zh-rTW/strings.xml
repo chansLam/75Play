@@ -336,6 +336,7 @@
     <string name="setting_channel_value">聲道 %1$d</string>
     <string name="setting_display_scale">顯示縮放</string>
     <string name="setting_display_size">顯示尺寸</string>
+    <string name="settings_temperature_bar">頂部溫度欄</string>
     <string name="setting_edge_bottom">下 %1$d</string>
     <string name="setting_edge_left">左 %1$d</string>
     <string name="setting_edge_right">右 %1$d</string>

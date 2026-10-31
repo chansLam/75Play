@@ -341,6 +341,7 @@
     <string name="setting_channel_value">Channel %1$d</string>
     <string name="setting_display_scale">Display scale</string>
     <string name="setting_display_size">Display size</string>
+    <string name="settings_temperature_bar">Temperature bar</string>
     <string name="setting_edge_bottom">Bottom %1$d</string>
     <string name="setting_edge_left">Left %1$d</string>
     <string name="setting_edge_right">Right %1$d</string>
@@ -363,7 +364,7 @@
     <string name="setting_seconds_value">%1$d s</string>
     <string name="setting_smooth_video">Smooth video</string>
     <string name="setting_theme_mode">Theme mode</string>
-    <string name="setting_threshold_range_error">Must be between %1$d and %2$d lux</string>
+    <string name="setting_threshold_range_error">Must be between %1$d and %2$d</string>
     <string name="terminal_execute">Run</string>
     <string name="terminal_input_hint">Enter a command, e.g. echo ok</string>
     <string name="terminal_no_details">(no details)</string>
@@ -374,6 +375,7 @@
     <string name="reconnect_required_message">Some settings need a CarPlay reconnect to take effect. Save and reconnect now?</string>
     <!-- Accessibility content descriptions (cd_ prefix) -->
     <string name="cd_floating_ball">Floating ball: tap for Back, long-press to return to the DiPlay home</string>
+    <string name="cd_temp_bar">Temperature bar showing outside, inside and set AC temperature</string>
     <!-- Foreground session notification (DiPlaySessionService) -->
     <string name="session_notification_text">CarPlay connection running</string>
     <string name="session_notification_disconnect">Disconnect</string>

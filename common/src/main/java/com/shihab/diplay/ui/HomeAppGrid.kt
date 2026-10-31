@@ -146,6 +146,15 @@ internal class HomeAppGrid(
         }.apply { isDaemon = true }.start()
     }
 
+    /**
+     * 系统应用安装 / 卸载 / 更新后由 [FragmentHome] 调用：先失效枚举缓存（否则旧列表会
+     * 被 CACHE_TTL 继续命中），再重新枚举并重绘网格。
+     */
+    fun refreshAfterPackageChange() {
+        CarAppCatalog.invalidate()
+        reloadAppGrid()
+    }
+
     private fun renderAppGrid(grid: LinearLayout, apps: List<CarAppCatalog.App>) {
         grid.removeAllViews()
         val ctx = grid.context

@@ -6,6 +6,28 @@
 
 ---
 
+## 2.0.4
+
+相对 2.0.3。新增导航投仪表盘、全局顶部温度栏；主题与主页应用列表改进；并清理一批生产环境零引用的死代码。
+
+### 新增
+
+- **导航投仪表盘**：新增 `NaviClusterBroadcast`，订阅 CarPlay 导航快照，把导航启停（2000）与转向（2002）广播发给系统 `RunService.TencentNaviReceiver`，经 CAN 转发到仪表盘 MCU，渲染转向箭头 / 限速 / 道路名。抛弃 BYD 中间层，`rg_on_direction` 由 Apple `RouteGuidanceManeuverType` 直连腾讯 `turnType` 值域；环岛增强（苹果 6/7/28–46 → 腾讯环路 93 右出口）；导航开始清 MCU 限速、路由结束清箭头残留；修正 `currentRoad` 与下一转弯道路名语义。配套把 `BydManeuverCodes` 改为公开对象并在 CarPlay 宿主接入。
+- **顶部温度栏**：新增 `CoagentAcBridge` 反射绑定车机 `coagent.ac` 空调服务（注册回调 tx19、回调推送 tx7、开机拉快照 tx27）+ `TemperatureBar` 全局顶部浮层，显示室外 / 车内 / 设定温度；设置 → 显示 新增「顶部温度栏」开关（默认开启）。
+
+### 修复
+
+- **顶部温度栏「设定」无值**：固件只在温度变化时推送 `onACTempChanged`，启动时没有拉取初始快照，导致驾驶员 / 副驾「设定」温度一直是 `--`。现在注册回调后调用 `refreshSnapshot()` 一次性拉取 `AirConditionInfo`；因固件字段序列化方式（writeInt/writeString/布尔字节数）未公开，改为自动解码多种候选布局并应用首个四温度均合理且非全零的结果，原始回复字节与各候选解析结果均写入诊断日志，避免错误布局覆盖回调实时值。
+- **仪表盘导航方向 / 残留**：修正 `rg_on_direction` 值域导致的转向方向反、路由结束箭头残留、当前与下一道路名混淆。
+
+### 变更
+
+- **应用列表自动刷新**：装 / 卸 / 升级 APK 后主页车机应用网格不再停留旧状态。新增 `AppInstallWatcher` 监听系统包变更广播（`ACTION_PACKAGE_ADDED / REMOVED / REPLACED`，含外部存储事件），收到后失效枚举缓存并立即重绘网格；`HomeAppGrid` 新增 `refreshAfterPackageChange()`，由 `FragmentHome` 生命周期接入，跟随页面可见性启停避免接收器泄漏。
+- **主题**：跟随系统改回读取系统 `uiMode` 夜间位；环境光改用 `coagent.settings` 亮度传感器（MCU 上报屏幕亮度 0..255），夜间阈值改为亮度 0..255、默认 80。
+- **死代码清理**：删除一批生产代码零引用、仅测试引用的类及其对应测试（MFI 诊断、P2P 启动/归属/诊断、热点策略、Wi‑Fi Direct 遗留通道、SafeArea 编辑器、连接设置分区等）；`LegacyHotspotRadio` 精简内部仅测试引用的 `Settled`；恢复被误判为死代码的 `SidePanelSettings` 与 `P2pResetRequiredException`。
+
+---
+
 ## 2.0.3
 
 相对 2.0.2。方控改走车机按键测试，画面和连接按 KitKat 收了一版；实车验证 CarPlay 前台方控音量 / 静音已修复。

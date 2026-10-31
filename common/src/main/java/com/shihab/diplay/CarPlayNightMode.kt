@@ -53,7 +53,7 @@ internal fun bindCarPlayNightMode(
     onNightChanged: (Boolean) -> Unit,
     scheduler: CarPlayNightModeController.Scheduler = MainThreadNightModeScheduler(),
 ): CarPlayNightModeController = CarPlayNightModeController(
-    light = AndroidAmbientLight(context),
+    light = CoagentSettingsLight(),
     scheduler = scheduler,
     initialNight = initialNight,
     onNightChanged = onNightChanged,

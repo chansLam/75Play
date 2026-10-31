@@ -96,16 +96,6 @@ object AirPlayPersistence {
     fun defaultOemLabel(context: Context): String =
         context.getString(R.string.oem_car_apps_label)
 
-    /** Root-level: hide the system navigation bar globally (needs su). */
-    fun loadRootHideNavbar(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean("root_hide_navbar", false)
-
-    fun saveRootHideNavbar(context: Context, hidden: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putBoolean("root_hide_navbar", hidden).apply()
-    }
-
     /** Show the floating ball (tap=Back via the assist-back accessibility service,
      * long-press=return to the shell) when leaving CarPlay. Enabled by default. */
     fun loadFloatingBallEnabled(context: Context): Boolean =

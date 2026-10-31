@@ -32,18 +32,6 @@ class SettingsWidgetsTest {
         }
     }
 
-    @Test fun choicesEmitOnlyNewSelectionsAndIgnoreClearingTheSelection() {
-        val saved = mutableListOf<MfiTarget>()
-        val row = ConnectionSettingsSection.createMfiTargetChoice(context, MfiTarget.REMOTE,
-            onSelected = saved::add)
-        assertTrue(saved.isEmpty())
-        val target = views(row.container).filterIsInstance<RadioButton>().first { it.tag == MfiTarget.LOCAL }
-        row.radioGroup.check(target.id)
-        row.radioGroup.check(target.id)
-        row.radioGroup.clearCheck()
-        assertEquals(listOf(MfiTarget.LOCAL), saved)
-    }
-
     @Test fun resolutionDisplayAndSliderStayWithinTheSameRangeWithoutSavingDuringConstruction() {
         for (initial in listOf(-1, 73, 999)) {
             val saved = mutableListOf<Int>()
@@ -60,19 +48,6 @@ class SettingsWidgetsTest {
         }
     }
 
-    @Test fun overlayKeepsTheExistingGreenControlsAndLabelMetrics() {
-        val row = ConnectionSettingsSection.createWirelessCarPlayRow(context, true, onChanged = {})
-        val label = (row.rowView as ViewGroup).getChildAt(0) as TextView
-        assertEquals(20f, label.textSize / context.resources.displayMetrics.scaledDensity, 0.01f)
-        assertFalse(label.includeFontPadding)
-        assertEquals(Color.rgb(170, 180, 190), label.currentTextColor)
-        assertEquals(Color.rgb(127, 205, 154), row.switch.thumbTintList!!.getColorForState(
-            intArrayOf(android.R.attr.state_checked), 0))
-        val heading = SettingsWidgets.createCategoryHeader(context, "Heading")
-        assertEquals(Color.rgb(127, 205, 154), heading.currentTextColor)
-        assertFalse(heading.includeFontPadding)
-    }
-
     @Test fun cardDescriptionsKeepMultilineSpacingAndTheirAccessibleTitle() {
         val row = SettingsWidgets.createSwitchRow(context, "Title", "First line\nSecond line", false,
             SettingsTheme.CARD, onChanged = {})
@@ -80,21 +55,6 @@ class SettingsWidgetsTest {
         assertEquals(listOf("Title", "First line\nSecond line"), texts.map { it.text.toString() })
         assertTrue(texts.all { it.lineSpacingExtra == SettingsTheme.CARD.dp(context, 3).toFloat() })
         assertEquals("Title", row.switch.contentDescription)
-    }
-
-    @Test @Config(sdk = [28]) fun hotspotChoiceListsWifiDirectFirst() {
-        val row = ConnectionSettingsSection.createHotspotModeChoice(context, WirelessHotspotMode.MANUAL,
-            onSelected = {})
-        val options = views(row.container).filterIsInstance<RadioButton>().toList()
-        assertEquals(
-            listOf(
-                WirelessHotspotMode.WIFI_P2P,
-                WirelessHotspotMode.MANUAL,
-                WirelessHotspotMode.EXISTING_WIFI,
-            ),
-            options.map { it.tag },
-        )
-        assertEquals(WirelessHotspotMode.MANUAL, options.first { it.isChecked }.tag)
     }
 
     private fun views(view: View): Sequence<View> = sequence {

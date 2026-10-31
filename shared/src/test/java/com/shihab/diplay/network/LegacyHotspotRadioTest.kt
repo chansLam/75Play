@@ -20,14 +20,4 @@ class LegacyHotspotRadioTest {
         for ((m,e) in listOf(0 to 0, -1 to 0, 5180 to -1, Int.MAX_VALUE to 9, 574500001 to 1, 5180 to 10))
             assertNull(LegacyHotspotRadio.decodeFrequency(m,e,null))
     }
-    @Test fun channelChangesAndMissingReadsRestartSettling() {
-        val tracker = LegacyHotspotRadio.Settled()
-        assertNull(tracker.observe(5180, 0))
-        assertNull(tracker.observe(5745, 1500))
-        assertNull(tracker.observe(5745, 3000))
-        assertEquals(5745, tracker.observe(5745, 3500))
-        assertNull(tracker.observe(null, 4000))
-        assertNull(tracker.observe(5745, 4500))
-        assertEquals(5745, tracker.observe(5745, 6500))
-    }
 }

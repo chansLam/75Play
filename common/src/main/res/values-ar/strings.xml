@@ -319,6 +319,7 @@
     <string name="setting_channel_value">القناة %1$d</string>
     <string name="setting_display_scale">مقياس العرض</string>
     <string name="setting_display_size">حجم العرض</string>
+    <string name="settings_temperature_bar">شريط درجة الحرارة</string>
     <string name="setting_edge_bottom">الأسفل %1$d</string>
     <string name="setting_edge_left">اليسار %1$d</string>
     <string name="setting_edge_right">اليمين %1$d</string>

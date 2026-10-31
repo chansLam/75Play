@@ -164,6 +164,10 @@ internal object DiPlayPreferences {
     fun saveAutoConnect(context: Context, value: Boolean) {
         prefs(context).edit().putBoolean("auto_connect", value).apply()
     }
+    fun temperatureBarEnabled(context: Context) = prefs(context).getBoolean("temp_bar_enabled", true)
+    fun saveTemperatureBarEnabled(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean("temp_bar_enabled", value).apply()
+    }
 
     /** Home app grid + CarPlay app panel share this file (not the session prefs). */
     private fun homeApps(context: Context) =

@@ -2,6 +2,9 @@ package com.shihab.diplay.glance
 
 /**
  * Apple iAP2 RouteGuidanceManeuverType -> Gaode maneuver code used by the BYD HUD protocol.
+ * Consumed only within this module (GlanceRouteState builds the HUD gaode / arrow). The
+ * instrument-cluster forwarder maps Apple straight to Tencent turnType and does NOT go through
+ * these Gaode codes, so this stays internal.
  */
 internal object BydManeuverCodes {
     const val NONE = 0

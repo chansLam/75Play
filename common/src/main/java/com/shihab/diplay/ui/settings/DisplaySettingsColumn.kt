@@ -7,9 +7,11 @@ import android.widget.TextView
 import androidx.fragment.app.Fragment
 import com.shihab.diplay.AirPlayPersistence
 import com.shihab.diplay.CarPlayDock
+import com.shihab.diplay.DiPlayPreferences
 import com.shihab.diplay.airplay.CarPlaySize
 import com.shihab.diplay.airplay.SafeAreaRect
 import com.shihab.diplay.host.R
+import com.shihab.diplay.host.TemperatureBar
 import com.shihab.diplay.localizedLabel
 import com.shihab.diplay.ui.DiPlayDialog
 
@@ -46,6 +48,16 @@ internal class DisplaySettingsColumn(page: Fragment) : SettingsColumnKit(page) {
             host.reconnectIfRunning()
         })
         card.addView(settingRow(ctx, ctx.getString(R.string.carplay_dock), capPick(ctx, dockLabel(ctx, CarPlayDock.load(ctx))) { cap -> showDockPicker(cap) }))
+        // 全局顶部温度栏（室外/车内/设定）。即时显隐，无需重连。
+        card.addView(glassSwitchRow(
+            ctx,
+            ctx.getString(R.string.settings_temperature_bar),
+            DiPlayPreferences.temperatureBarEnabled(ctx),
+        ) { on ->
+            DiPlayPreferences.saveTemperatureBarEnabled(ctx, on)
+            val app = ctx.applicationContext
+            if (on) TemperatureBar.show(app) else TemperatureBar.hide(app)
+        })
     }
 
     private fun dockLabel(ctx: android.content.Context, dock: CarPlayDock): String = when (dock) {

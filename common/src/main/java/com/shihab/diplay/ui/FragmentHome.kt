@@ -56,6 +56,8 @@ class FragmentHome : Fragment() {
     internal var pendingLanSsid: String = ""
     private val appGridUi = HomeAppGrid(this, handler)
     private val connectionTabs = HomeConnectionTabs(this)
+    /** 车机应用安装 / 卸载 / 更新时重绘应用网格。跟随可见性启停；惰性创建避免成员初始化时 requireContext 崩溃。 */
+    private var appInstallWatcher: AppInstallWatcher? = null
 
     private fun dp(v: Int) = GlassColors.dp(requireContext(), v)
 
@@ -96,6 +98,7 @@ class FragmentHome : Fragment() {
 
     override fun onResume() {
         super.onResume()
+        startAppInstallWatcher()
         when {
             tabSnapshot == null -> refresh()
             wifiListLive || connectionSnapshot() == tabSnapshot -> refreshChrome()
@@ -109,13 +112,15 @@ class FragmentHome : Fragment() {
     override fun onHiddenChanged(hidden: Boolean) {
         super.onHiddenChanged(hidden)
         if (hidden) {
-            // 页被 hide（切到其它 tab）时 show/hide 路径不触发 onPause：停掉 tick 与 Wi-Fi
-            // 扫描监听，避免隐藏页仍每秒刷新、仍每 10 秒请求一次系统扫描。
+            // 页被 hide（切到其它 tab）时 show/hide 路径不触发 onPause：停掉 tick、Wi‑Fi
+            // 扫描监听与应用安装监听，避免隐藏页仍每秒刷新、仍每 10 秒请求一次系统扫描。
             handler.removeCallbacks(tick)
             connectionTabs.stopWifiWatchers()
+            stopAppInstallWatcher()
         } else if (isResumed) {
             // removeCallbacks 先于 post，保证 show 来回切换不会叠出多个 tick。
             handler.removeCallbacks(tick)
+            startAppInstallWatcher()
             refresh()
             handler.postDelayed(tick, 1000)
             connectionTabs.restartAttachedWifiWatchers()
@@ -136,13 +141,30 @@ class FragmentHome : Fragment() {
         // P1 leak兜底：onPause/onDestroyView 路径不经过 onHiddenChanged(true)，广播接收器
         // 不会注销。stopWifiWatchers 幂等（每个 watcher.stop() 有 started 守卫 + runCatching）。
         connectionTabs.stopWifiWatchers()
+        stopAppInstallWatcher()
         super.onPause()
     }
 
     override fun onDestroyView() {
         // Fragment 视图销毁时也要停掉扫描监听，避免 ViewModel/视图销毁后 receiver 仍存活。
         connectionTabs.stopWifiWatchers()
+        stopAppInstallWatcher()
         super.onDestroyView()
+    }
+
+    /** 车机应用安装 / 卸载 / 更新监听：仅在页面可见时挂载。start 幂等。 */
+    private fun startAppInstallWatcher() {
+        val activity = activity ?: return
+        val watcher = appInstallWatcher ?: AppInstallWatcher(
+            activity.applicationContext,
+            onPackageChanged = { appGridUi.refreshAfterPackageChange() },
+        ).also { appInstallWatcher = it }
+        watcher.start()
+    }
+
+    /** 停掉应用安装监听；stop 幂等，重复调用安全。 */
+    private fun stopAppInstallWatcher() {
+        appInstallWatcher?.stop()
     }
 
 

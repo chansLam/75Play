@@ -327,6 +327,7 @@
     <string name="setting_channel_value">Канал %1$d</string>
     <string name="setting_display_scale">Масштаб дисплея</string>
     <string name="setting_display_size">Розмір дисплея</string>
+    <string name="settings_temperature_bar">Панель температури</string>
     <string name="setting_edge_bottom">Знизу %1$d</string>
     <string name="setting_edge_left">Зліва %1$d</string>
     <string name="setting_edge_right">Справа %1$d</string>

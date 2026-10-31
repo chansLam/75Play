@@ -47,19 +47,6 @@ class DiPlayApplication : MultiDexApplication() {
         // A killed CarPlay session can leave coagent key-test mode on, which swallows the wheel.
         com.shihab.diplay.host.SwcCarPlayKeys.forceOff(this)
         bootLog("handler-registered")
-        // Older builds could hide the system navigation bar with root. Clear that request and
-        // put the property back without restarting surfaceflinger (this process is the launcher).
-        if (RootNavbar.hiddenRequested(this)) {
-            AirPlayPersistence.saveRootHideNavbar(this, false)
-            bootLog("rootnavbar-clear")
-            Thread(
-                {
-                    runCatching { RootNavbar.applyHidden(false) }
-                    bootLog("rootnavbar-cleared")
-                },
-                "root-navbar",
-            ).apply { isDaemon = true }.start()
-        }
         bootLog("oncreate-done")
     }
 
