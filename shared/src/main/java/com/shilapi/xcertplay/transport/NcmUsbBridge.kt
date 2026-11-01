@@ -14,6 +14,7 @@ import java.nio.ByteBuffer
 import java.util.ArrayDeque
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * A blocking NCM data pipe that moves Ethernet frames as NTB16 blocks over bulk endpoints.
@@ -56,6 +57,10 @@ class NcmUsbBridge internal constructor(
     private val writeWatchdogStarted = AtomicBoolean(false)
     private val writeWatchdogFired = AtomicBoolean(false)
     private var inboundFrameSeen = false
+    private val readWatchdogStarted = AtomicBoolean(false)
+    private val readWatchdogFired = AtomicBoolean(false)
+    /** Monotonic time of the last inbound NCM frame; the read-stall watchdog keys off it. */
+    private val lastFrameReceivedNs = AtomicLong(0L)
     private var consecutiveWriteFailures = 0
     /** Issue #352-Q4: bulk-OUT queue-vs-wire split (frames in, chunks out, bytes out). */
     private var ncmWriteEnqueuedFrames = 0
@@ -240,6 +245,31 @@ class NcmUsbBridge internal constructor(
                 break
             }
         }, "ncm-write-watchdog").apply { isDaemon = true; start() }
+        // Issue #352-Q4 (this i.MX6 unit): once the data path is live, an inbound stall
+        // (video 21.6fps -> ~3fps, then frozen frame with no error) means bulk-IN is gone
+        // while bulk-OUT only fails intermittently, so the write-side counters never reach
+        // their teardown threshold. Watch the last-frame timestamp from a side thread and
+        // fail the session so the stack reconnects instead of leaving the user a frozen screen.
+        Thread({
+            try {
+                while (!closed) {
+                    Thread.sleep(READ_WATCHDOG_POLL_MILLIS)
+                    val last = lastFrameReceivedNs.get()
+                    if (last == 0L || closed || !inboundFrameSeen) continue
+                    if (System.nanoTime() - last < READ_STALL_NANOS) continue
+                    if (!readWatchdogFired.compareAndSet(false, true)) break
+                    if (closed) break
+                    val stalledForMillis = (System.nanoTime() - last) / NANOS_PER_MILLISECOND
+                    onDiagnostic("ncm bulk-in stalled: no frame for ${stalledForMillis}ms while data path live")
+                    failSession("NCM read stalled: no inbound frame for ${stalledForMillis}ms")
+                    markAborted()
+                    runCatching { sharedConnection.frameworkConnection?.close() }
+                    break
+                }
+            } catch (_: InterruptedException) {
+                // shutdown; teardown is already running
+            }
+        }, "ncm-read-watchdog").apply { isDaemon = true; start() }
     }
 
     /**
@@ -447,6 +477,7 @@ class NcmUsbBridge internal constructor(
     private fun enqueueFrame(frame: ByteArray) {
         // Marks the point the phone's data path is up; the write side keys its failure policy off it.
         inboundFrameSeen = true
+        lastFrameReceivedNs.set(System.nanoTime())
         if (frames.size >= MAX_QUEUED_FRAMES || queuedBytes + frame.size > MAX_QUEUED_BYTES) {
             throw failSession("NCM frame queue exceeded its bounds")
         }
@@ -734,6 +765,9 @@ class NcmUsbBridge internal constructor(
         /** Issue #137: one send may legitimately run to its 2 s deadline; 10 s in flight means wedged. */
         private const val WRITE_WEDGE_NANOS = 10_000_000_000L
         private const val WATCHDOG_POLL_MILLIS = 500L
+        /** Issue #352-Q4: once the data path is live, silence on bulk-IN for 8 s means it is gone. */
+        private const val READ_STALL_NANOS = 8_000_000_000L
+        private const val READ_WATCHDOG_POLL_MILLIS = 500L
         /** Issue #279: consecutive failures at which the one-shot interface reset runs. */
         private const val INTERFACE_RESET_AT_FAILURE = 5
         private const val ENDPOINT_STATUS_TIMEOUT_MILLIS = 500
