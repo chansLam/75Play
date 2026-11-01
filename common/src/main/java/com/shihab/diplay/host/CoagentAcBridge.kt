@@ -20,8 +20,10 @@ import com.shihab.diplay.util.AppLog
  *
  * We register an [IAirConditionCallback] implementation (itself a binder) via transaction 19 so the
  * firmware pushes temperature updates to us — no polling. The callback carries the values we need
- * as plain `int`/`float` arguments, which avoids parsing the whole Parcelable `AirConditionInfo`
- * (whose field offsets depend on serializable headers).
+ * as plain `int`/`float` arguments. On startup we additionally pull `getAirConditionInfo()`
+ * (transaction 27) once and parse `AirConditionInfo` with the exact `writeToParcel` layout from the
+ * head unit's own AIDL classes (decompiled from `S311WT_SystemUI`), so the three temps render even
+ * before the firmware emits its first change.
  *
  * Callback seat (type) values confirmed in firmware `AirConditionReport`:
  *   0 = leftTemperature  1 = rightTemperature  3 = outsideTemperature  4 = insideTemperature
@@ -129,16 +131,13 @@ object CoagentAcBridge {
      * on startup. The firmware only pushes onACTempChanged when a value *changes*, so without this
      * the driver/passenger set temperature stays `--` until the user actually adjusts the HVAC.
      *
-     * The service serves `getAirCondition()` over `reply.writeParcelable(AirConditionInfo, 0)`
-     * (confirmed in decompiled `AirConditionService`), so the reply body is an optional leading
-     * Parcelable class-name string followed by `AirConditionInfo.writeToParcel`'s flat fields.
-     * The field *order* is known (from firmware `AirConditionReport`'s constructor): 4 enum-ish
-     * fields, boolean, 3 enum-ish fields, float outside, float inside, 3 enum-ish fields, float
-     * left, float right — but the per-field *serialization* (writeInt vs writeString vs
-     * writeSerializable; boolean as 1 or 4 bytes) is not documented. Instead of trusting one
-     * layout, we decode the reply under every plausible combination and apply the first one whose
-     * four temperatures are all plausible and not all-zero; every attempt and the raw bytes are
-     * logged to the session log so a wrong guess is fully diagnosable.
+     * The reply format is taken verbatim from the head unit's own AIDL stub
+     * (`getAirConditionInfo` in decompiled `S311WT_SystemUI`):
+     * `reply.writeNoException(); reply.writeInt(1); info.writeToParcel(reply, 1)` (writeInt(0) if
+     * the service holds no snapshot yet). So after `readException()` we must first consume the
+     * 4-byte non-null flag, then read `AirConditionInfo` with the exact field layout of its
+     * `writeToParcel` — enum fields are Java-serialization streams (`writeSerializable`, not
+     * fixed ints), so [parseInfoExact] uses the matching readers in the documented order.
      */
     fun refreshSnapshot() {
         val target = serviceBinderLocked() ?: return
@@ -153,15 +152,21 @@ object CoagentAcBridge {
             val hex = if (base < raw.size) raw.copyOfRange(base, raw.size).joinToString(" ") { "%02x".format(it) } else "empty"
             val hexHead = if (hex.length > 240) hex.substring(0, 240) + "…" else hex
             log("CoagentAc snapshot reply ${raw.size - base}B: $hexHead")
-            val hit = decodeCandidates(reply, base)
-            if (hit != null) {
-                log("CoagentAc snapshot OK ${hit.layout}: outside=${hit.outside} inside=${hit.inside} left=${hit.left} right=${hit.right}")
-                applyTemp(SEAT_OUTSIDE, hit.outside)
-                applyTemp(SEAT_INSIDE, hit.inside)
-                applyTemp(SEAT_LEFT, hit.left)
-                applyTemp(SEAT_RIGHT, hit.right)
+            // getAirConditionInfo() serves: [writeNoException status][writeInt(1) non-null flag][AirConditionInfo.writeToParcel].
+            val present = reply.readInt() == 1
+            if (!present) {
+                log("CoagentAc snapshot: null AirConditionInfo (firmware reports no data)")
+                return
+            }
+            val parsed = parseInfoExact(reply)
+            if (parsed != null) {
+                log("CoagentAc snapshot OK ${parsed.layout}: outside=${parsed.outside} inside=${parsed.inside} left=${parsed.left} right=${parsed.right}")
+                applyTemp(SEAT_OUTSIDE, parsed.outside)
+                applyTemp(SEAT_INSIDE, parsed.inside)
+                applyTemp(SEAT_LEFT, parsed.left)
+                applyTemp(SEAT_RIGHT, parsed.right)
             } else {
-                log("CoagentAc snapshot: no plausible layout; keeping live values")
+                log("CoagentAc snapshot: AirConditionInfo layout mismatch")
             }
         } catch (e: Exception) {
             AppLog.w(TAG, "refreshSnapshot failed", e)
@@ -174,66 +179,49 @@ object CoagentAcBridge {
 
     private data class Parsed(val layout: String, val outside: Float, val inside: Float, val left: Float, val right: Float)
 
-    private const val ENUM_INT = 0
-    private const val ENUM_VAR = 1 // length-prefixed (writeString / writeSerializable both skip as 4+len)
-
-    /** Tries every plausible AirConditionInfo layout and returns the first whose temps are sane. */
-    private fun decodeCandidates(reply: Parcel, base: Int): Parsed? {
-        // Leading writeParcelable class-name prefix (if the AIDL stub wrote writeParcelable).
-        reply.setDataPosition(base)
-        val prefix = try { reply.readString() } catch (e: Exception) { null }
-        val looksLikeClass = !prefix.isNullOrEmpty() && prefix.length in 4..128 && (prefix.contains('.') || prefix.contains('/'))
-        if (looksLikeClass) log("CoagentAc leading string: \"$prefix\" (treated as classname prefix)")
-        val prefixStart = if (looksLikeClass) reply.dataPosition() else base
-        val startLabels = listOf(
-            "noprefix" to base,
-            "prefix" to prefixStart,
-        ).distinctBy { it.second }
-        for ((prefixLabel, start) in startLabels) {
-            for (enumMode in listOf(ENUM_INT, ENUM_VAR)) {
-                for (boolBytes in listOf(1, 4)) {
-                    val name = "$prefixLabel enum=${if (enumMode == ENUM_INT) "int" else "var"} bool=${boolBytes}B"
-                    val p0 = start
-                    val p1 = skipEnums(reply, p0, 4, enumMode) ?: continue
-                    val p2 = p1 + boolBytes
-                    val p3 = skipEnums(reply, p2, 3, enumMode) ?: continue
-                    val outside = readFloatAt(reply, p3) ?: continue
-                    val inside = readFloatAt(reply, p3 + 4) ?: continue
-                    val p4 = skipEnums(reply, p3 + 8, 3, enumMode) ?: continue
-                    val left = readFloatAt(reply, p4) ?: continue
-                    val right = readFloatAt(reply, p4 + 4) ?: continue
-                    val sane = outside in -45f..30f && inside in -45f..30f &&
-                        left in -5f..40f && right in -5f..40f
-                    val allZero = outside == 0f && inside == 0f && left == 0f && right == 0f
-                    log("CoagentAc try $name -> o=$outside i=$inside l=$left r=$right ${if (sane && !allZero) "[PASS]" else "[skip]"}")
-                    if (sane && !allZero) return Parsed(name, outside, inside, left, right)
-                }
-            }
+    /**
+     * Parses AirConditionInfo with the exact field layout its AIDL `writeToParcel` emits
+     * (confirmed against the head unit's SystemUI: `com.incall.proxy.can.AirConditionInfo`):
+     *
+     *   4 serializable enums (frontMain/refrigeration/circleStatus/subregion)
+     *   + 1 byte flag (isCompressorActive)
+     *   + 3 serializable enums (frontSwitch/tempRegionMode/windMode)
+     *   + 2 floats (outsideTemperature, insideTemperature)
+     *   + 3 serializable enums (frontDefrost/rearDefrost/autoMode)
+     *   + 2 floats (leftTemperature, rightTemperature)
+     *   + remaining fields we do not need.
+     *
+     * Enum fields are written with `Parcel.writeSerializable`, whose body is a length-prefixed
+     * Java serialization stream — not a fixed 4-byte int — so the earlier heuristic decoder never
+     * matched. Using `readSerializable()`/`readByte()`/`readFloat()` in the documented order reads
+     * exactly what the firmware writes.
+     */
+    private fun parseInfoExact(reply: Parcel): Parsed? {
+        try {
+            if (!skipSerializables(reply, 4)) return null      // frontMain, refrigeration, circleStatus, subregion
+            reply.readByte()                                    // isCompressorActive
+            if (!skipSerializables(reply, 3)) return null       // frontSwitch, tempRegionMode, windMode
+            val outside = reply.readFloat()
+            val inside = reply.readFloat()
+            if (!skipSerializables(reply, 3)) return null       // frontDefrost, rearDefrost, autoMode
+            val left = reply.readFloat()
+            val right = reply.readFloat()
+            return Parsed("exact", outside, inside, left, right)
+        } catch (e: Exception) {
+            return null
         }
-        return null
     }
 
-    /** Advances past [count] enum-ish fields, returning the new position or null on overflow. */
-    private fun skipEnums(reply: Parcel, from: Int, count: Int, mode: Int): Int? {
-        var pos = from
+    /** Skips [count] `writeSerializable` fields by consuming them via the matching reader. */
+    private fun skipSerializables(reply: Parcel, count: Int): Boolean {
         repeat(count) {
-            if (mode == ENUM_INT) {
-                pos += 4
-            } else {
-                if (pos + 4 > reply.dataSize()) return null
-                reply.setDataPosition(pos)
-                val len = try { reply.readInt() } catch (e: Exception) { return null }
-                if (len < 0 || pos + 4 + len > reply.dataSize()) return null
-                pos += 4 + len
+            try {
+                reply.readSerializable()
+            } catch (e: Exception) {
+                return false
             }
         }
-        return pos
-    }
-
-    private fun readFloatAt(reply: Parcel, pos: Int): Float? {
-        if (pos + 4 > reply.dataSize()) return null
-        reply.setDataPosition(pos)
-        return try { reply.readFloat() } catch (e: Exception) { null }
+        return true
     }
 
     private fun log(message: String) {
