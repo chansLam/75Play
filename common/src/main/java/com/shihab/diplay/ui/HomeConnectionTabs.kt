@@ -19,6 +19,7 @@ import com.shihab.diplay.host.R
 import com.shihab.diplay.network.WifiP2pChannels
 import com.shihab.diplay.orchestration.WirelessHotspotMode
 import com.shihab.diplay.ui.settings.GlassSettingsRows
+import com.shihab.diplay.util.AppLog
 
 /**
  * 主页连接中心三 Tab（Wi‑Fi Direct / 车机热点 / 局域网）的内容区。
@@ -170,6 +171,7 @@ internal class HomeConnectionTabs(
             onSave = { value ->
                 AirPlayPersistence.saveManualHotspotSsid(ctx, value.trim())
                 refresh()
+                reapplyHotspot(ctx)
             },
         )
     }
@@ -193,8 +195,35 @@ internal class HomeConnectionTabs(
             onSave = { value ->
                 AirPlayPersistence.saveManualHotspotPassphrase(ctx, value.trim())
                 refresh()
+                reapplyHotspot(ctx)
             },
         )
+    }
+
+    /**
+     * Reapplies the car hotspot with the just-saved name/password: the firmware's SoftAP enable
+     * reports "already on" when the hotspot is running, so we must close it first, then reopen it
+     * with the new credentials (openCarHotspot persists them itself). Both steps are blocking
+     * (shell + readiness poll), so they run on a background daemon thread; the outcome is shown
+     * with a toast so a failed reapply is always visible.
+     */
+    private fun reapplyHotspot(ctx: android.content.Context) {
+        host.showGlassToast(ctx.getString(R.string.hotspot_reapplying), DiPlayToast.Type.INFO)
+        Thread({
+            val closed = host.closeCarHotspot()
+            val opened = host.openCarHotspot()
+            val ok = opened
+            AppLog.d("DiPlay-Hotspot", "reapply close=$closed open=$opened ok=$ok")
+            home.view?.post {
+                if (!home.isAdded) return@post
+                if (ok) {
+                    host.showGlassToast(ctx.getString(R.string.hotspot_reapplied), DiPlayToast.Type.SUCCESS)
+                } else {
+                    host.showGlassToast(ctx.getString(R.string.hotspot_reapply_failed), DiPlayToast.Type.ERROR)
+                }
+                refresh()
+            }
+        }, "diplay-hotspot-reapply").apply { isDaemon = true }.start()
     }
 
     private fun buildLanTab(ctx: android.content.Context): View {
