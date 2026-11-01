@@ -13,11 +13,13 @@ import android.os.IBinder
 import android.os.PowerManager
 import com.shihab.diplay.airplay.AirPlaySession
 import com.shihab.diplay.airplay.AirPlaySessionListener
+import com.shihab.diplay.SessionLogFile
 import com.shihab.diplay.compat.realSdkInt
 import com.shihab.diplay.connect.ConnectBroadcasts
 import com.shihab.diplay.host.CarPlayBackgroundSession
 import com.shihab.diplay.host.R
 import com.shihab.diplay.util.AppLog
+import java.io.File
 
 /**
  * Drives the wireless CarPlay handshake in the background (replacing the old connect-only
@@ -40,6 +42,7 @@ class CarPlayConnectService : Service() {
     private var controller: com.shihab.diplay.orchestration.CarPlayController? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var controlReceiver: BroadcastReceiver? = null
+    private var connectLog: SessionLogFile? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -67,6 +70,14 @@ class CarPlayConnectService : Service() {
                     addAction(ACTION_CANCEL)
                 },
             )
+        }
+        // The handshake (wired or wireless) happens before CarPlayHostActivity is created, so the
+        // host's diplay.log does not exist yet. Keep our own connect.log so the controller's
+        // debug lines (WIRED-CHAIN etc.) are still captured in the exported diagnostic report.
+        connectLog = SessionLogFile(File(filesDir, "logs/connect.log"), "connect-prev").also {
+            it.reset("DiPlay connect service log started ${System.currentTimeMillis()}")
+            // Let the diagnostic exporter flush our pending lines before reading connect.log.
+            if (ActiveSessionLog.current == null) ActiveSessionLog.current = it
         }
     }
 
@@ -189,6 +200,7 @@ class CarPlayConnectService : Service() {
 
         override fun onDebugLog(message: String) {
             AppLog.i(TAG, message)
+            connectLog?.append(message)
         }
     }
 
@@ -269,6 +281,9 @@ class CarPlayConnectService : Service() {
         controlReceiver = null
         runCatching { wakeLock?.let { if (it.isHeld) it.release() } }
         wakeLock = null
+        connectLog?.close()
+        if (ActiveSessionLog.current === connectLog) ActiveSessionLog.current = null
+        connectLog = null
         connecting = false
         started = false
         super.onDestroy()
