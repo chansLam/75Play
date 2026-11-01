@@ -1315,6 +1315,7 @@ class CarPlayController(
                     mfi = mfi,
                     listener = sessionListener,
                     media = media,
+                    registerPort = { port, isTcp -> wiredLwip?.registerPort(port, isTcp) },
                 )
                 wiredAirPlaySession = session
                 wiredTcpArrived.set(true)

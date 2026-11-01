@@ -73,7 +73,17 @@ class AirPlaySession(
     private val mfi: MfiAuthenticator?,
     private val listener: AirPlaySessionListener,
     private val media: AirPlayMediaHandler,
+    /**
+     * Registers an ephemeral TCP server port with the transport bridge (e.g. the wired NCM
+     * userspace lwIP) so an inbound SYN from the iPhone reaches a live listener instead of being
+     * dropped as stale traffic. Null on transports that need no registration (system network).
+     */
+    private val registerPort: ((Int, Boolean) -> Unit)? = null,
 ) : Closeable {
+    /** Registers one ephemeral TCP listener with the transport bridge, if one is wired up. */
+    internal fun registerTcpPort(port: Int) {
+        registerPort?.invoke(port, true)
+    }
     internal val pairSetup = PairSetup(identity, pairings)
     internal val pairVerify = PairVerify(identity, pairings)
     internal var cipher: ControlCipher? = null
@@ -809,6 +819,7 @@ class AirPlaySession(
     private fun openEvent(): Int {
         val server = AirPlaySocketBinder.server(localAddress, "AirPlay event")
         eventServer = server
+        registerTcpPort(server.localPort)
         spawnEvent("airplay-event-accept") { acceptEvent(server) }
         return server.localPort
     }

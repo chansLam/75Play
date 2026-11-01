@@ -415,6 +415,7 @@ class CarPlayMediaEngine(
         val port = try {
             if (handler != null) {
                 val boundPort = bridge.listen()
+                session.registerTcpPort(boundPort)
                 session.logDebug(
                     "AirPlay iAP tunnel listening address=" +
                         "${session.localAddress?.hostAddress ?: "wildcard"} port=$boundPort",
@@ -468,6 +469,7 @@ class CarPlayMediaEngine(
         )
         val channel = VideoSettingsChannel(key(DATASTREAM_OUTPUT_KEY), key(DATASTREAM_INPUT_KEY), peer) { session.logDebug(it) }
         val port = channel.listen(session.localAddress ?: InetAddress.getByName("::"))
+        session.registerTcpPort(port)
         videoSettingsChannels.put(session, channel)?.close()
         session.logTrace("video settings stream listening port=$port")
         return linkedMapOf<String, Any?>("type" to STREAM_TYPE_DATA, "streamID" to VIDEO_SETTINGS_STREAM_ID, "dataPort" to port)
