@@ -179,6 +179,7 @@ class CarPlayMediaEngine(
                 }
             },
         )
+        session.registerTcpPort(port)
         cancelScreenReap(session)
         streams.put(streamKey, screen)?.close()
         sink.onScreenStreamActive(type, true)
@@ -275,6 +276,8 @@ class CarPlayMediaEngine(
         )
         streams[streamKey] = audio
         audioMeta[streamKey] = meta
+        session.registerTcpPort(dataPort)
+        session.registerTcpPort(controlPort)
         return linkedMapOf(
             "type" to type,
             "dataPort" to dataPort,
@@ -351,6 +354,7 @@ class CarPlayMediaEngine(
         buffered.start()
         if (bufferedStreams[session] !== candidate) return null
         AppLog.i(TAG, "buffered audio stream client=${stream["clientID"]} rate=${format.sampleRate} port=${buffered.port}")
+        session.registerTcpPort(buffered.port)
         return linkedMapOf(
             "type" to type,
             "dataPort" to buffered.port,
