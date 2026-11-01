@@ -80,6 +80,8 @@
     <string name="hotspot_ssid_contains_u_0000">Hotspot SSID contains U+0000</string>
     <string name="hotspot_ssid_is_required">Hotspot SSID is required</string>
     <string name="hotspot_ssid_must_be_at_most_32_utf_8_bytes">Hotspot SSID must be at most 32 UTF-8 bytes</string>
+    <string name="hotspot_ssid_edit_hint">Leave empty to use the default name (75Play). Renaming avoids SSID conflicts with nearby hotspots.</string>
+    <string name="hotspot_password_edit_hint">Leave empty to use the default password. Some head units reject all-numeric Wi-Fi passwords, so use letters + numbers (e.g. Play2026).</string>
     <string name="hotspot_status">Hotspot status</string>
     <string name="i2c" tools:ignore="MissingTranslation">I2C</string>
     <string name="later">Later</string>

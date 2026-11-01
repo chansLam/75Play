@@ -141,14 +141,60 @@ internal class HomeConnectionTabs(
         val ssRow = GlassSettingsRows.rowWrap(ctx)
         ssRow.addView(statusLabel(ctx.getString(R.string.hotspot_ssid)),
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        ssRow.addView(GlassSettingsRows.capVal(ctx, ssid.ifBlank { ctx.getString(R.string.home_not_set) }))
+        ssRow.addView(GlassSettingsRows.capPick(ctx, ssid.ifBlank { ctx.getString(R.string.home_not_set) }) { promptHotspotSsid(ctx) })
         col.addView(ssRow)
         val pwRow = GlassSettingsRows.rowWrap(ctx)
         pwRow.addView(statusLabel(ctx.getString(R.string.hotspot_password)),
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        pwRow.addView(GlassSettingsRows.capVal(ctx, pass.ifBlank { ctx.getString(R.string.home_not_set) }))
+        pwRow.addView(GlassSettingsRows.capPick(ctx, pass.ifBlank { ctx.getString(R.string.home_not_set) }) { promptHotspotPassword(ctx) })
         col.addView(pwRow)
         return col
+    }
+
+    /** Editable default hotspot name (SSID); blank resets to the built-in default 75Play. */
+    private fun promptHotspotSsid(ctx: android.content.Context) {
+        DiPlayDialog.showInput(
+            ctx,
+            title = ctx.getString(R.string.hotspot_ssid),
+            hint = ctx.getString(R.string.hotspot_ssid),
+            initial = host.carHotspotSsid(),
+            assist = ctx.getString(R.string.hotspot_ssid_edit_hint),
+            validator = { input ->
+                when {
+                    input.isBlank() -> null // blank = fall back to the built-in default
+                    input.encodeToByteArray().size > 32 -> ctx.getString(R.string.hotspot_ssid_must_be_at_most_32_utf_8_bytes)
+                    '\u0000' in input -> ctx.getString(R.string.hotspot_ssid_contains_u_0000)
+                    else -> null
+                }
+            },
+            onSave = { value ->
+                AirPlayPersistence.saveManualHotspotSsid(ctx, value.trim())
+                refresh()
+            },
+        )
+    }
+
+    /** Editable default hotspot password; blank resets to the built-in default. */
+    private fun promptHotspotPassword(ctx: android.content.Context) {
+        DiPlayDialog.showInput(
+            ctx,
+            title = ctx.getString(R.string.hotspot_password),
+            hint = ctx.getString(R.string.hotspot_password),
+            initial = host.carHotspotPassphrase(),
+            assist = ctx.getString(R.string.hotspot_password_edit_hint),
+            validator = { input ->
+                when {
+                    input.isBlank() -> null // blank = fall back to the built-in default
+                    '\u0000' in input -> ctx.getString(R.string.hotspot_password_contains_u_0000)
+                    input.length !in 8..63 -> ctx.getString(R.string.wpa2_wpa3_password_must_be_8_63_characters)
+                    else -> null
+                }
+            },
+            onSave = { value ->
+                AirPlayPersistence.saveManualHotspotPassphrase(ctx, value.trim())
+                refresh()
+            },
+        )
     }
 
     private fun buildLanTab(ctx: android.content.Context): View {
