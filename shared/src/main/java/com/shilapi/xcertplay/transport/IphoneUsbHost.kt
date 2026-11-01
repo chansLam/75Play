@@ -117,6 +117,38 @@ class IphoneUsbHost(
         }
     }
 
+    /**
+     * Selects the CarPlay configuration and retries while the iPhone is still switching into it.
+     * After the vendor transition the phone changes configuration lazily: the first
+     * setConfiguration(6) can fail with activeConfig=1 (or usbfs EBUSY) until the switch lands,
+     * so give it a short budget instead of failing on the first attempt.
+     */
+    private fun selectCarPlayConfiguration(
+        sharedConnection: SharedUsbConnection,
+        configuration: CarPlayUsbConfiguration,
+    ): LegacyUsbHostCompat.ConfigurationResult {
+        var selected = LegacyUsbHostCompat.selectConfiguration(
+            sharedConnection, configuration, onDiagnostic = ::diagnosticLog,
+        )
+        var attempt = 0
+        while (!selected.selected && attempt < WIRED_SET_CONFIG_RETRIES) {
+            diagnosticLog(
+                "setConfiguration target=${configuration.id} not selected " +
+                    "(attempt ${attempt + 1}/$WIRED_SET_CONFIG_RETRIES); waiting for switch",
+            )
+            android.os.SystemClock.sleep(WIRED_SET_CONFIG_RETRY_MILLIS)
+            selected = LegacyUsbHostCompat.selectConfiguration(
+                sharedConnection, configuration, onDiagnostic = ::diagnosticLog,
+            )
+            attempt++
+        }
+        diagnosticLog(
+            "setConfiguration target=${configuration.id} ok=${selected.selected} " +
+                "active=${selected.activeConfiguration ?: "unknown"} errno=${selected.errno}",
+        )
+        return selected
+    }
+
     @Throws(IphoneUsbException::class)
     fun requestPermission(device: UsbDevice): PermissionRequest {
         requireConfiguredDevice(device)
@@ -337,13 +369,7 @@ class IphoneUsbHost(
                 "usb open sdk=${Build.VERSION.SDK_INT} vid=${device.vendorId} pid=${device.productId} " +
                     "target=${configuration.id} interfaces=${IphoneCarPlayConfiguration.describe(configuration)}",
             )
-            val selected = LegacyUsbHostCompat.selectConfiguration(
-                sharedConnection, configuration, onDiagnostic = ::diagnosticLog,
-            )
-            diagnosticLog(
-                "setConfiguration target=${configuration.id} ok=${selected.selected} " +
-                    "active=${selected.activeConfiguration ?: "unknown"} errno=${selected.errno}",
-            )
+            val selected = selectCarPlayConfiguration(sharedConnection, configuration)
             if (!selected.selected) {
                 throw IphoneUsbException.DeviceUnavailable(
                     "USB CarPlay configuration ${configuration.id} could not be selected; " +
@@ -533,6 +559,10 @@ class IphoneUsbHost(
          */
         private const val REENUMERATION_REAPPEAR_TIMEOUT_MILLIS = 5_000L
         private const val REENUMERATION_POLL_INTERVAL_MILLIS = 250L
+        // After the vendor transition the iPhone switches into the CarPlay configuration
+        // slowly; setConfiguration(6) can read activeConfig=1 until the switch lands.
+        private const val WIRED_SET_CONFIG_RETRIES = 3
+        private const val WIRED_SET_CONFIG_RETRY_MILLIS = 500L
     }
 
 }

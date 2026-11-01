@@ -264,6 +264,17 @@ object CoagentAcBridge {
     }
 
     private fun applyTemp(seat: Int, temp: Float) {
+        // The firmware may push a placeholder 0.0 on startup before real values arrive (or
+        // whenever it re-broadcasts without valid sensor data). Never let an uninitialized 0.0
+        // replace a "--" state; keep NaN until a real value or the snapshot provides one.
+        val current = when (seat) {
+            SEAT_LEFT -> leftTemperature
+            SEAT_RIGHT -> rightTemperature
+            SEAT_OUTSIDE -> outsideTemperature
+            SEAT_INSIDE -> insideTemperature
+            else -> Float.NaN
+        }
+        if (temp == 0f && current.isNaN()) return
         val changed = when (seat) {
             SEAT_LEFT -> if (leftTemperature != temp) { leftTemperature = temp; true } else false
             SEAT_RIGHT -> if (rightTemperature != temp) { rightTemperature = temp; true } else false
