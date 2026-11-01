@@ -84,6 +84,10 @@ class AirPlaySession(
     internal fun registerTcpPort(port: Int) {
         registerPort?.invoke(port, true)
     }
+    /** Registers one ephemeral UDP listener (NTP timing / keep-alive) with the transport bridge. */
+    internal fun registerUdpPort(port: Int) {
+        registerPort?.invoke(port, false)
+    }
     internal val pairSetup = PairSetup(identity, pairings)
     internal val pairVerify = PairVerify(identity, pairings)
     internal var cipher: ControlCipher? = null
@@ -791,6 +795,7 @@ class AirPlaySession(
 
     private fun openTiming(peerPort: Int): Int {
         val port = ntp.listen()
+        registerUdpPort(port)
         if (peerPort > 0) peerAddress?.let { ntp.start(it, peerPort) }
         return port
     }
@@ -798,6 +803,7 @@ class AirPlaySession(
     private fun openKeepAlive(): Int {
         val socket = AirPlaySocketBinder.datagram(localAddress, "AirPlay keepalive")
         keepAliveSocket = socket
+        registerUdpPort(socket.localPort)
         keepAliveThread = Thread({ runKeepAlive(socket) }, "airplay-keepalive").apply {
             isDaemon = true
             start()

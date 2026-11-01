@@ -276,8 +276,9 @@ class CarPlayMediaEngine(
         )
         streams[streamKey] = audio
         audioMeta[streamKey] = meta
-        session.registerTcpPort(dataPort)
-        session.registerTcpPort(controlPort)
+        // AirPlay audio (and its RTCP control) is carried over UDP, not TCP.
+        session.registerUdpPort(dataPort)
+        session.registerUdpPort(controlPort)
         return linkedMapOf(
             "type" to type,
             "dataPort" to dataPort,
@@ -419,7 +420,6 @@ class CarPlayMediaEngine(
         val port = try {
             if (handler != null) {
                 val boundPort = bridge.listen()
-                session.registerTcpPort(boundPort)
                 session.logDebug(
                     "AirPlay iAP tunnel listening address=" +
                         "${session.localAddress?.hostAddress ?: "wildcard"} port=$boundPort",
@@ -446,6 +446,9 @@ class CarPlayMediaEngine(
             throw error
         }
         streams[StreamKey(session, STREAM_TYPE_DATA)] = if (handler != null) bridge else tunnel
+        // Register regardless of which tunnel branch produced the port: the handler==null
+        // IapTunnel path must be reachable from the wired NCM bridge too, not just the relay path.
+        session.registerTcpPort(port)
         return linkedMapOf<String, Any?>("type" to STREAM_TYPE_DATA, "streamID" to 1L, "dataPort" to port)
             .apply {
                 stream["streamConnectionID"]?.let { connectionId ->
