@@ -2,9 +2,10 @@
 package com.shihab.diplay.host
 
 import android.os.Binder
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.Parcel
-import android.util.Log
 import com.shihab.diplay.ActiveSessionLog
 import com.shihab.diplay.AsyncDiagnosticLog
 import com.shihab.diplay.util.AppLog
@@ -63,32 +64,59 @@ object CoagentAcBridge {
     private var callbackBinder: IBinder? = null
     private var registered = false
 
+    /** True once [refreshSnapshot] has parsed a real AirConditionInfo layout. */
+    @Volatile private var snapshotReady = false
+
+    // The firmware service can register with ServiceManager well after this app's process starts
+    // (head-unit boot sequence), so a single startup attempt misses it permanently. Retry on a
+    // fixed cadence until the service appears, then stop.
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var retryRunnable: Runnable? = null
+    private var attempts = 0
+    private val seenSeats = HashSet<Int>()
+
+    private const val RETRY_INTERVAL_MS = 2000L
+    private const val MAX_ATTEMPTS = 30 // ~60s of retries after first show()
+
     /**
      * Resolves (lazily, via reflection) and caches the Coagent AC service binder.
      */
     private fun serviceBinderLocked(): IBinder? {
-        serviceBinder?.let { return it }
+        serviceBinder?.let { cached ->
+            val alive = runCatching { cached.pingBinder() }.getOrDefault(false)
+            if (alive) return cached
+            diag("coagent.ac cached binder died; re-resolving")
+            serviceBinder = null
+        }
         val resolved = try {
             val serviceManager = Class.forName("android.os.ServiceManager")
             val getService = serviceManager.getMethod("getService", String::class.java)
             getService.invoke(null, SERVICE_NAME) as? IBinder
         } catch (e: Exception) {
-            AppLog.w(TAG, "getService failed", e)
+            diag("coagent.ac getService reflection failed: ${e.javaClass.simpleName}: ${e.message}")
             null
         }
         if (resolved == null) {
-            AppLog.w(TAG, "service $SERVICE_NAME not bound")
+            diag("coagent.ac getService returned null (service not registered yet / not visible)")
             return null
         }
+        // Verify the binder is alive and expose its interface descriptor so a wrong service name
+        // or a dead handle shows up in the diagnostic report instead of failing silently in
+        // transact().
+        val alive = runCatching { resolved.pingBinder() }.getOrDefault(false)
+        val descriptor = runCatching { resolved.interfaceDescriptor }.getOrNull() ?: "unknown"
+        diag("coagent.ac binder resolved alive=$alive descriptor=$descriptor")
         serviceBinder = resolved
-        AppLog.i(TAG, "service $SERVICE_NAME bound")
         return resolved
     }
 
     /** Registers our callback binder with the firmware (transaction 19). Safe to call more than once. */
     fun register() {
         if (registered) return
-        val target = serviceBinderLocked() ?: return
+        val target = serviceBinderLocked() ?: run {
+            diag("coagent.ac register skipped: binder unavailable (retry pending)")
+            return
+        }
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
         try {
@@ -98,18 +126,61 @@ object CoagentAcBridge {
             target.transact(TX_REGISTER_CALLBACK, data, reply, 0)
             reply.readException()
             registered = true
-            AppLog.i(TAG, "registerCallback ok")
+            diag("coagent.ac registerCallback tx19 OK")
         } catch (e: Exception) {
-            AppLog.w(TAG, "registerCallback failed", e)
+            diag("coagent.ac registerCallback tx19 FAILED: ${e.javaClass.simpleName}: ${e.message}")
         } finally {
             reply.recycle()
             data.recycle()
         }
     }
 
+    /**
+     * Starts the late-ready polling loop: register() + refreshSnapshot() every [RETRY_INTERVAL_MS]
+     * until both succeed or [MAX_ATTEMPTS] is reached. Idempotent.
+     */
+    fun startRetries() {
+        if (retryRunnable != null) return
+        attempts = 0
+        scheduleNext(0L)
+    }
+
+    /** One-shot register + refresh attempt (called from Activity onResume/onStart); does not cancel the loop. */
+    fun nudge() {
+        register()
+        refreshSnapshot()
+    }
+
+    private fun scheduleNext(delayMs: Long) {
+        val r = object : Runnable {
+            override fun run() {
+                retryRunnable = this
+                attempts++
+                register()
+                refreshSnapshot()
+                val done = registered && snapshotReady
+                if (!done && attempts < MAX_ATTEMPTS) {
+                    mainHandler.postDelayed(this, RETRY_INTERVAL_MS)
+                } else {
+                    retryRunnable = null
+                    if (attempts >= MAX_ATTEMPTS && !done) {
+                        diag("coagent.ac retry gave up after $attempts attempts: registered=$registered snapshotReady=$snapshotReady")
+                    } else {
+                        diag("coagent.ac retry settled after $attempts attempts: registered=$registered snapshotReady=$snapshotReady")
+                    }
+                }
+            }
+        }
+        retryRunnable = r
+        mainHandler.postDelayed(r, delayMs)
+    }
+
     /** Reads current AC type via transaction 1 (fuel vs electric). */
     fun getAcType(): Int {
-        val target = serviceBinderLocked() ?: return 0
+        val target = serviceBinderLocked() ?: run {
+            diag("coagent.ac getAcType tx1 skipped: binder unavailable")
+            return 0
+        }
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
         return try {
@@ -118,7 +189,7 @@ object CoagentAcBridge {
             reply.readException()
             reply.readInt()
         } catch (e: Exception) {
-            AppLog.w(TAG, "getAcType failed", e)
+            diag("coagent.ac getAcType tx1 FAILED: ${e.javaClass.simpleName}: ${e.message}")
             0
         } finally {
             reply.recycle()
@@ -140,7 +211,10 @@ object CoagentAcBridge {
      * fixed ints), so [parseInfoExact] uses the matching readers in the documented order.
      */
     fun refreshSnapshot() {
-        val target = serviceBinderLocked() ?: return
+        val target = serviceBinderLocked() ?: run {
+            diag("coagent.ac refreshSnapshot skipped: binder unavailable (retry pending)")
+            return
+        }
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
         try {
@@ -151,26 +225,26 @@ object CoagentAcBridge {
             val raw = reply.marshall()
             val hex = if (base < raw.size) raw.copyOfRange(base, raw.size).joinToString(" ") { "%02x".format(it) } else "empty"
             val hexHead = if (hex.length > 240) hex.substring(0, 240) + "…" else hex
-            log("CoagentAc snapshot reply ${raw.size - base}B: $hexHead")
+            diag("coagent.ac snapshot tx27 reply ${raw.size - base}B: $hexHead")
             // getAirConditionInfo() serves: [writeNoException status][writeInt(1) non-null flag][AirConditionInfo.writeToParcel].
             val present = reply.readInt() == 1
             if (!present) {
-                log("CoagentAc snapshot: null AirConditionInfo (firmware reports no data)")
+                diag("coagent.ac snapshot tx27: null AirConditionInfo (firmware reports no data yet)")
                 return
             }
             val parsed = parseInfoExact(reply)
             if (parsed != null) {
-                log("CoagentAc snapshot OK ${parsed.layout}: outside=${parsed.outside} inside=${parsed.inside} left=${parsed.left} right=${parsed.right}")
+                snapshotReady = true
+                diag("coagent.ac snapshot OK ${parsed.layout}: outside=${parsed.outside} inside=${parsed.inside} left=${parsed.left} right=${parsed.right}")
                 applyTemp(SEAT_OUTSIDE, parsed.outside)
                 applyTemp(SEAT_INSIDE, parsed.inside)
                 applyTemp(SEAT_LEFT, parsed.left)
                 applyTemp(SEAT_RIGHT, parsed.right)
             } else {
-                log("CoagentAc snapshot: AirConditionInfo layout mismatch")
+                diag("coagent.ac snapshot tx27: AirConditionInfo layout mismatch (parseInfoExact returned null)")
             }
         } catch (e: Exception) {
-            AppLog.w(TAG, "refreshSnapshot failed", e)
-            log("CoagentAc refreshSnapshot failed: $e")
+            diag("coagent.ac refreshSnapshot tx27 FAILED: ${e.javaClass.simpleName}: ${e.message}")
         } finally {
             reply.recycle()
             data.recycle()
@@ -224,7 +298,8 @@ object CoagentAcBridge {
         return true
     }
 
-    private fun log(message: String) {
+    /** Every temperature-chain branch goes through here: on-disk diagnostic report + logcat. */
+    private fun diag(message: String) {
         AsyncDiagnosticLog.append(ActiveSessionLog.current, message)
         AppLog.w(TAG, message)
     }
@@ -238,11 +313,18 @@ object CoagentAcBridge {
         return object : Binder() {
             override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
                 if (code == 7) {
-                    data.enforceInterface(CALLBACK_DESCRIPTOR)
-                    val seat = data.readInt()
-                    val temp = data.readFloat()
-                    data.readInt() // displayFloatWindow (unused)
-                    applyTemp(seat, temp)
+                    try {
+                        data.enforceInterface(CALLBACK_DESCRIPTOR)
+                        val seat = data.readInt()
+                        val temp = data.readFloat()
+                        val displayFloatWindow = data.readInt() // unused
+                        if (seenSeats.add(seat)) {
+                            diag("coagent.ac callback onACTempChanged tx7 first receipt seat=$seat temp=$temp display=$displayFloatWindow")
+                        }
+                        applyTemp(seat, temp)
+                    } catch (e: Exception) {
+                        diag("coagent.ac callback tx7 read FAILED: ${e.javaClass.simpleName}: ${e.message}")
+                    }
                     reply?.writeNoException()
                     return true
                 }
@@ -263,17 +345,24 @@ object CoagentAcBridge {
             SEAT_RIGHT -> if (rightTemperature != temp) { rightTemperature = temp; true } else false
             SEAT_OUTSIDE -> if (outsideTemperature != temp) { outsideTemperature = temp; true } else false
             SEAT_INSIDE -> if (insideTemperature != temp) { insideTemperature = temp; true } else false
-            else -> false
+            else -> {
+                diag("coagent.ac callback: unknown seat=$seat temp=$temp ignored")
+                false
+            }
         }
         if (changed) {
-            AppLog.i(TAG, "temp seat=$seat value=$temp")
+            diag("coagent.ac temp applied seat=$seat value=$temp")
             onTemperatureChanged?.invoke()
         }
     }
 
     /** Drops the cached binder so the next call re-resolves (useful after service restart). */
     fun reset() {
+        retryRunnable?.let { mainHandler.removeCallbacks(it) }
+        retryRunnable = null
         serviceBinder = null
         registered = false
+        snapshotReady = false
+        seenSeats.clear()
     }
 }

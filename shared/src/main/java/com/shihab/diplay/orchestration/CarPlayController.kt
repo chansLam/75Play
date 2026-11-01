@@ -1103,6 +1103,21 @@ class CarPlayController(
                 " data=${function.data.id}/${com.shilapi.xcertplay.transport.IphoneCarPlayConfiguration.alternateSetting(function.data)}" +
                 " in=0x${function.bulkIn.address.toString(16)} out=0x${function.bulkOut.address.toString(16)}",
         )
+        // Re-entry guard: a previous NCM bridge whose kernel endpoints died after a UI/surface
+        // destroy must never be reused (previous.log: surface recreate -> instant raw(1) EPERM on
+        // the old bridge while counters still read completed=591). Close any stale bridge before
+        // opening a fresh one; normal first entry sees wiredNcm == null and skips this.
+        wiredNcm?.let { stale ->
+            debugLog(
+                "wired re-entry: closing stale NCM bridge " +
+                    "identity=${System.identityHashCode(stale)} before fresh open",
+            )
+            closeBestEffort("stale wired NCM (re-entry)") {
+                stale.markAborted()
+                stale.close()
+            }
+        }
+        wiredNcm = null
         val ncm = com.shilapi.xcertplay.transport.NcmUsbBridge.open(
             sharedConnection = usbSession.retainConnectionForNcm(),
             function = function,
@@ -1111,6 +1126,7 @@ class CarPlayController(
             useAsyncRead = com.shilapi.xcertplay.compat.realSdkInt() >= 21,
             onDiagnostic = ::connectionDiagnostic,
         )
+        debugLog("wired NCM bridge FRESH open identity=${System.identityHashCode(ncm)}")
         wiredChain(5, "NCM bridge opened (bulk endpoints claimed)")
         return ncm
     }
@@ -1134,6 +1150,17 @@ class CarPlayController(
             wiredNcm?.close()
         }
         wiredNcm = null
+        // Best-effort iAP2 CarPlay session end on the CSM channel while the USBMUX pipe is still
+        // open. Gated by default because the 0xE001 EndSession opcode/body is not catalogued here;
+        // send failure or a dead channel is swallowed and never blocks teardown.
+        if (com.shilapi.xcertplay.transport.WiredNcmTuning.endSessionOnClose) {
+            closeBestEffort("wired iAP2 EndSession 0xE001") {
+                val session = csm?.takeIf { !it.isClosed } ?: return@closeBestEffort
+                debugLog("wired sending iAP2 EndSession 0xE001 before USBMUX close")
+                session.sendRaw(0xE001, 2_000L) {}
+                debugLog("wired iAP2 EndSession 0xE001 sent")
+            }
+        }
         closeBestEffort("wired USBMUX session") {
             wiredUsbSession?.markAborted()
             wiredUsbSession?.close()
@@ -2441,7 +2468,9 @@ class CarPlayController(
         private const val ADAPTER_ADDRESS_PLACEHOLDER = "02:00:00:00:00:00"
         private const val WIRED_PERMISSION_POLL_TIMEOUT_MILLIS = 10_000L
         private const val WIRED_PERMISSION_POLL_INTERVAL_MILLIS = 400L
-        private const val WIRED_PAIR_TIMEOUT_MILLIS = 15_000L
+        // 60s: the iPhone trust dialog appears only when unlocked/awake; a locked or slow-unlock
+        // phone misses the old 15s budget. Per-step wait lives in LockdownPairingClient (10s).
+        private const val WIRED_PAIR_TIMEOUT_MILLIS = 60_000L
         private const val WIRED_CONTROL_TIMEOUT_MILLIS = 60_000L
         private const val MAX_WIRED_REENUMERATION_ATTEMPTS = 3
         private const val WIRED_REENUMERATION_RETRY_MILLIS = 250L

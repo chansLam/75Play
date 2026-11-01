@@ -39,11 +39,17 @@ class LockdownPairingClient(
         }
 
         val deadline = Deadline(totalTimeoutMillis)
+        val startedNs = System.nanoTime()
         var pairRecord: LockdownPairRecord? = null
         var attempt = 0
         while (true) {
             checkCancelled(isCancelled)
             attempt += 1
+            Log.i(
+                TAG,
+                "lockdown pair attempt=$attempt elapsedMs=${elapsedMs(startedNs)} " +
+                    "remainingMs=${deadline.remainingMillis()}",
+            )
             val connection = host.connect(
                 destinationPort = Iap2UsbMuxHost.LOCKDOWN_PORT,
                 timeoutMillis = stepTimeoutMillis(deadline),
@@ -51,6 +57,7 @@ class LockdownPairingClient(
             var pending = false
             LockdownPlistChannel(connection).use { channel ->
                 setUntrustedHostBuid(channel, label, systemBuid, deadline, isCancelled)
+                Log.i(TAG, "lockdown SetValue ok attempt=$attempt elapsedMs=${elapsedMs(startedNs)}")
                 val record = pairRecord ?: generatePairRecord(
                     channel = channel,
                     label = label,
@@ -67,8 +74,14 @@ class LockdownPairingClient(
                             "hostCert=${it.hostCertificatePem.size} rootCert=${it.rootCertificatePem.size}",
                     )
                 }
+                val pairWait = minOf(WiredNcmTuning.pairDialogStepTimeoutMillis, deadline.remainingMillis())
+                Log.i(
+                    TAG,
+                    "lockdown Pair request sent attempt=$attempt awaiting trust dialog " +
+                        "stepTimeoutMs=$pairWait remainingMs=${deadline.remainingMillis()}",
+                )
                 val response = try {
-                    channel.request(pairRequest(label, record), minOf(PAIR_STEP_TIMEOUT_MILLIS, deadline.remainingMillis()))
+                    channel.request(pairRequest(label, record), pairWait)
                 } catch (_: IphoneUsbException.TimedOut) {
                     pending = true
                     null
@@ -76,7 +89,13 @@ class LockdownPairingClient(
                 checkCancelled(isCancelled)
                 if (response != null) {
                     when (val error = response.errorCodeOrNull()) {
-                        null -> return PairedRecord(record, response.entries["EscrowBag"].asOptionalData())
+                        null -> {
+                            Log.i(
+                                TAG,
+                                "lockdown pairing ok attempt=$attempt elapsedMs=${elapsedMs(startedNs)}",
+                            )
+                            return PairedRecord(record, response.entries["EscrowBag"].asOptionalData())
+                        }
                         "PairingDialogResponsePending" -> pending = true
                         "UserDeniedPairing" -> throw LockdownPairingException.UserDeniedPairing
                         "PasswordProtected" -> throw LockdownPairingException.PasswordProtected
@@ -85,7 +104,12 @@ class LockdownPairingClient(
                 }
             }
             if (pending) {
-                Log.i(TAG, "lockdown trust pending; reconnecting before retry")
+                Log.i(
+                    TAG,
+                    "lockdown trust dialog pending/timeout attempt=$attempt " +
+                        "remainingMs=${runCatching { deadline.remainingMillis() }.getOrDefault(0)}; " +
+                        "reconnecting before retry (iPhone must be unlocked and showing the trust prompt)",
+                )
                 waitForRetry(deadline, isCancelled)
             }
         }
@@ -172,6 +196,7 @@ class LockdownPairingClient(
         )
         checkCancelled(isCancelled)
         response.errorCodeOrNull()?.let { throw LockdownPairingException.RemoteError(it) }
+        Log.i(TAG, "lockdown GetValue $key ok")
         return response.entries["Value"]
             ?: throw LockdownPairingException.InvalidResponse("GetValue response omitted Value")
     }
@@ -197,6 +222,9 @@ class LockdownPairingClient(
 
     private fun stepTimeoutMillis(deadline: Deadline): Long =
         minOf(MAXIMUM_STEP_TIMEOUT_MILLIS, deadline.remainingMillis())
+
+    private fun elapsedMs(startedNs: Long): Long =
+        (System.nanoTime() - startedNs) / NANOS_PER_MILLISECOND
 
     private fun waitForRetry(deadline: Deadline, isCancelled: () -> Boolean) {
         var remaining = RETRY_INTERVAL_MILLIS
@@ -229,7 +257,6 @@ class LockdownPairingClient(
         const val RETRY_CHECK_MILLIS = 100L
         const val NANOS_PER_MILLISECOND = 1_000_000L
         const val MAXIMUM_STEP_TIMEOUT_MILLIS = 10_000L
-        const val PAIR_STEP_TIMEOUT_MILLIS = 3_000L
         const val MAXIMUM_TOTAL_TIMEOUT_MILLIS = 5 * 60_000L
     }
 }

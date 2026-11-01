@@ -11,6 +11,8 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.shihab.diplay.ActiveSessionLog
+import com.shihab.diplay.AsyncDiagnosticLog
 import com.shihab.diplay.ui.GlassColors
 import com.shihab.diplay.util.AppLog
 
@@ -35,10 +37,23 @@ object TemperatureBar {
     private var setText: TextView? = null
     private val main = Handler(Looper.getMainLooper())
 
+    private fun diag(message: String) {
+        AsyncDiagnosticLog.append(ActiveSessionLog.current, message)
+        AppLog.w(TAG, message)
+    }
+
     /** Shows the temperature bar (idempotent). Returns true when added. */
     fun show(context: Context): Boolean {
-        if (root != null) return true
-        val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return false
+        diag("TemperatureBar.show invoked rootExisting=${root != null} thread=${Thread.currentThread().name}")
+        if (root != null) {
+            // Already displayed: still re-probe the (possibly late-ready) AC service.
+            CoagentAcBridge.nudge()
+            return true
+        }
+        val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: run {
+            diag("TemperatureBar.show FAILED: WindowManager unavailable")
+            return false
+        }
         val density = context.resources.displayMetrics.density
 
         val bar = LinearLayout(context).apply {
@@ -100,18 +115,26 @@ object TemperatureBar {
         }
 
         runCatching { windowManager.addView(bar, params) }.onFailure { e ->
-            AppLog.w(TAG, "addView failed", e)
+            // API 19: TYPE_PHONE requires SYSTEM_ALERT_WINDOW (declared in the common manifest);
+            // a SecurityException here means the permission was not granted, any other exception
+            // (BadTokenException / IllegalStateException) means a window-manager conflict.
+            diag("TemperatureBar addView FAILED type=${e.javaClass.simpleName} msg=${e.message}")
+            // Still probe coagent.ac so binding/parse failures are diagnosable even when the
+            // overlay itself cannot be shown.
+            CoagentAcBridge.onTemperatureChanged = { main.post { render() } }
+            CoagentAcBridge.startRetries()
             return false
         }
         root = bar
+        diag("TemperatureBar addView OK TYPE_PHONE")
 
         // Register for firmware temperature updates (idempotent) and draw current snapshot.
-        // refreshSnapshot() pulls the full AirConditionInfo once on startup: the firmware only
-        // pushes onACTempChanged when a value *changes*, so without it the set (left/right)
-        // temperature would stay "--" until the user actually adjusts the HVAC.
+        // startRetries() polls register(tx19) + refreshSnapshot(tx27) because coagent.ac can be
+        // late-ready after head-unit boot; refreshSnapshot() pulls the full AirConditionInfo once:
+        // the firmware only pushes onACTempChanged when a value *changes*, so without it the set
+        // (left/right) temperature would stay "--" until the user actually adjusts the HVAC.
         CoagentAcBridge.onTemperatureChanged = { main.post { render() } }
-        CoagentAcBridge.register()
-        CoagentAcBridge.refreshSnapshot()
+        CoagentAcBridge.startRetries()
         render()
         return true
     }
@@ -122,6 +145,8 @@ object TemperatureBar {
         root = null
         val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
         runCatching { windowManager?.removeViewImmediate(bar) }
+            .onFailure { e -> diag("TemperatureBar hide removeView FAILED type=${e.javaClass.simpleName} msg=${e.message}") }
+        diag("TemperatureBar hidden by settings switch")
     }
 
     private fun render() {

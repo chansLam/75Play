@@ -41,6 +41,12 @@ class NcmUsbBridge internal constructor(
     private val stateLock = Any()
     private val readLock = Any()
     private val writeLock = Any()
+    /** Monotonic open time, used by the early-grace window and elapsedMs in failure lines. */
+    private val openNanos = System.nanoTime()
+    /** Early pre-ready NAKs tolerated before the failure budget starts counting. */
+    private var earlyNakCount = 0
+    /** First outbound NTB block already hex-dumped once (success or failure). */
+    private var firstOutboundLogged = false
     private var closed = false
     @Volatile
     private var isAbortedOrDetached = false
@@ -149,11 +155,37 @@ class NcmUsbBridge internal constructor(
         }
         // Before StartCarPlaySession the phone keeps the NCM data path NAKed. Android reports the
         // resulting timeout as -1; it is not a detach and later packets must be allowed to retry.
+        // inboundFrameSeen alone closes the window too early: unsolicited mDNS/ICMPv6 flow on IN
+        // before the phone arms OUT, so also tolerate a bounded early-grace count/elapsed window.
         if (transferred <= 0) {
-            if (!inboundFrameSeen) {
+            val inEarlyGrace = WiredNcmTuning.earlyGraceEnabled && (
+                ncmWriteEnqueuedFrames <= WiredNcmTuning.earlyGraceFrames ||
+                    System.nanoTime() - openNanos < WiredNcmTuning.earlyGraceMillis * NANOS_PER_MILLISECOND
+            )
+            if (inEarlyGrace || !inboundFrameSeen) {
+                earlyNakCount += 1
+                logFirstOutbound(block, sequence, failed = true)
+                if (WiredNcmTuning.reselectAltOnEarlyNak && earlyNakCount == 1) {
+                    dataInterface?.let { iface ->
+                        val reselected = runCatching { LegacyUsbHostCompat.select(sharedConnection, iface) }
+                            .getOrNull()
+                        Log.i(
+                            IphoneCarPlayConfiguration.TAG,
+                            "ncm early-grace alt reselect iface=${iface.id}/" +
+                                "${IphoneCarPlayConfiguration.alternateSetting(iface)} " +
+                                "ok=${reselected?.selected} errno=${reselected?.errno ?: "none"}",
+                        )
+                    }
+                }
                 if (!loggedWriteTimeout) {
                     loggedWriteTimeout = true
-                    Log.i(IphoneCarPlayConfiguration.TAG, "ncm bulk-out not ready; retaining bridge for retry")
+                    Log.i(
+                        IphoneCarPlayConfiguration.TAG,
+                        "ncm bulk-out not ready; retaining bridge for retry " +
+                            "(earlyGrace=$inEarlyGrace inboundSeen=$inboundFrameSeen " +
+                            "earlyNak=$earlyNakCount enqueued=$ncmWriteEnqueuedFrames " +
+                            "elapsedMs=${elapsedSinceOpenMillis()})",
+                    )
                 }
                 return@synchronized
             }
@@ -164,10 +196,12 @@ class NcmUsbBridge internal constructor(
             // latched, so try to release one before counting this as a fault.
             clearOutEndpointHalt()
             consecutiveWriteFailures += 1
+            logFirstOutbound(block, sequence, failed = true)
             val failureLine = "ncm bulk-out failed $consecutiveWriteFailures/$MAX_CONSECUTIVE_WRITE_FAILURES " +
                 "while the data path was live: endpoint=0x${outEndpoint.address.toString(16)} " +
                 "requested=${block.size} transferred=$transferred errno=${errnoLabel(errno)} " +
-                "elapsedMs=${failedAfterNanos / NANOS_PER_MILLISECOND} timeoutMs=$timeoutMillis " +
+                "elapsedMs=${failedAfterNanos / NANOS_PER_MILLISECOND} sinceOpenMs=${elapsedSinceOpenMillis()} " +
+                "timeoutMs=$timeoutMillis inboundSeen=$inboundFrameSeen " +
                 "ncmCounts=enqueued=$ncmWriteEnqueuedFrames submitted=$ncmWriteSubmittedChunks " +
                 "completed=$ncmWriteCompletedChunks successBytes=$ncmWriteSuccessBytes"
             Log.i(IphoneCarPlayConfiguration.TAG, failureLine)
@@ -208,10 +242,45 @@ class NcmUsbBridge internal constructor(
         consecutiveWriteFailures = 0
         interfaceResetAttempted = false
         interfaceReclaimAttempted = false
+        logFirstOutbound(block, sequence, failed = false)
         if (loggedWriteTimeout) {
             loggedWriteTimeout = false
-            Log.i(IphoneCarPlayConfiguration.TAG, "ncm bulk-out became ready")
+            Log.i(
+                IphoneCarPlayConfiguration.TAG,
+                "ncm bulk-out became ready after $earlyNakCount early NAK(s) " +
+                    "elapsedMs=${elapsedSinceOpenMillis()}",
+            )
         }
+        earlyNakCount = 0
+    }
+
+    private fun elapsedSinceOpenMillis(): Long =
+        (System.nanoTime() - openNanos) / NANOS_PER_MILLISECOND
+
+    /**
+     * Hex-dump the very first outbound NTB16 block once: NTH16 (12 B) + NDP16 (16 B) + the
+     * Ethernet header (14 B) = 42 bytes, enough to verify signature/sequence/blockLength/NDPIndex
+     * and the Ethernet dst/src MAC + ethertype without leaking payload.
+     */
+    private fun logFirstOutbound(block: ByteArray, sequence: Int, failed: Boolean) {
+        if (!WiredNcmTuning.logFirstOutboundHex || firstOutboundLogged) return
+        firstOutboundLogged = true
+        val dump = hexPrefix(block, 42)
+        Log.i(
+            IphoneCarPlayConfiguration.TAG,
+            "ncm first outbound NTB seq=$sequence failed=$failed bytes=${block.size} hex=$dump",
+        )
+        onDiagnostic("ncm first outbound NTB seq=$sequence failed=$failed bytes=${block.size} hex=$dump")
+    }
+
+    private fun hexPrefix(block: ByteArray, maxBytes: Int): String {
+        val end = minOf(maxBytes, block.size)
+        val out = StringBuilder(end * 3)
+        for (i in 0 until end) {
+            if (i > 0) out.append(' ')
+            out.append("%02x".format(block[i].toInt() and 0xff))
+        }
+        return out.toString()
     }
 
     /**
@@ -310,6 +379,16 @@ class NcmUsbBridge internal constructor(
             closed = true
             readRequest
         }
+        // Teardown counters distinguish "never armed OUT" (re-entry black screen) from
+        // "worked then wedged": enqueued frames queued but completed=0 on close means the phone
+        // never accepted a single OUT block this session.
+        Log.i(
+            IphoneCarPlayConfiguration.TAG,
+            "ncm close counters enqueued=$ncmWriteEnqueuedFrames submitted=$ncmWriteSubmittedChunks " +
+                "completed=$ncmWriteCompletedChunks successBytes=$ncmWriteSuccessBytes " +
+                "consecutiveFailures=$consecutiveWriteFailures inboundSeen=$inboundFrameSeen " +
+                "earlyNak=$earlyNakCount sinceOpenMs=${elapsedSinceOpenMillis()}",
+        )
         // Wakes a reader blocked in requestWait(); it then observes the closed state.
         val cancelled = runCatching { requestToClose?.cancel() }.getOrNull() == true
         statusThread?.let { thread ->
@@ -826,6 +905,12 @@ class NcmUsbBridge internal constructor(
         private const val CDC_CONTROL_CLASS = 0x02
         private const val INTERFACE_RECIPIENT = 0x01
         private const val GET_NTB_PARAMETERS = 0x80
+        private const val SET_NTB_FORMAT = 0x84
+        private const val SET_CRC_MODE = 0x8a
+        private const val NTB16_FORMAT = 0x00
+        private const val CRC_NOT_APPENDED = 0x00
+        private const val CONTROL_OUT_CLASS_INTERFACE =
+            UsbConstants.USB_DIR_OUT or UsbConstants.USB_TYPE_CLASS or INTERFACE_RECIPIENT
         private const val NTB_PARAMETERS_LENGTH = 28
         /** Phones advertise NTB sizes in the KB range; anything past 1 MB is a parse/peer error. */
         private const val MAX_PLAUSIBLE_NTB_BYTES = 1_048_576L
@@ -851,6 +936,63 @@ class NcmUsbBridge internal constructor(
             }
             return last
         }
+
+        /**
+         * Spec-correct CDC NCM control-plane bring-up on the control interface (data iface still
+         * alt=0): GET_NTB_PARAMETERS readback, SET_NTB_FORMAT=NTB16, SET_CRC_MODE=off. Every call
+         * is best-effort and logged; failures never abort open() because the phone defaults to
+         * NTB16/no-CRC after a bus reset.
+         */
+        private fun negotiateNcmControlPlane(
+            connection: SharedUsbConnection,
+            controlInterface: Int,
+            log: (String) -> Unit,
+        ) {
+            val paramsBuffer = ByteArray(NTB_PARAMETERS_LENGTH)
+            val paramsRead = runCatching {
+                connection.controlTransfer(
+                    UsbConstants.USB_DIR_IN or UsbConstants.USB_TYPE_CLASS or INTERFACE_RECIPIENT,
+                    GET_NTB_PARAMETERS,
+                    0,
+                    controlInterface,
+                    paramsBuffer,
+                    paramsBuffer.size,
+                    ENDPOINT_STATUS_TIMEOUT_MILLIS,
+                )
+            }.getOrDefault(-1)
+            log("ncm GET_NTB_PARAMETERS iface=$controlInterface read=$paramsRead " +
+                describeNtbParameters(paramsBuffer, paramsRead))
+
+            if (WiredNcmTuning.negotiateNtbFormat) {
+                val setFormat = runCatching {
+                    connection.controlTransfer(
+                        CONTROL_OUT_CLASS_INTERFACE,
+                        SET_NTB_FORMAT,
+                        NTB16_FORMAT,
+                        controlInterface,
+                        null,
+                        0,
+                        ENDPOINT_STATUS_TIMEOUT_MILLIS,
+                    )
+                }.getOrDefault(-1)
+                log("ncm SET_NTB_FORMAT=NTB16(0) iface=$controlInterface result=$setFormat")
+            }
+            if (WiredNcmTuning.negotiateCrcMode) {
+                val setCrc = runCatching {
+                    connection.controlTransfer(
+                        CONTROL_OUT_CLASS_INTERFACE,
+                        SET_CRC_MODE,
+                        CRC_NOT_APPENDED,
+                        controlInterface,
+                        null,
+                        0,
+                        ENDPOINT_STATUS_TIMEOUT_MILLIS,
+                    )
+                }.getOrDefault(-1)
+                log("ncm SET_CRC_MODE=off(0) iface=$controlInterface result=$setCrc")
+            }
+        }
+
         /** Claims NCM while retaining the caller's shared USB connection. */
         internal fun open(
             sharedConnection: SharedUsbConnection,
@@ -946,6 +1088,15 @@ class NcmUsbBridge internal constructor(
                         )
                     }
                 }
+                // CDC NCM control-plane negotiation on the control interface while the data
+                // interface is still at alt=0 (kernel cdc_ncm_init ordering: SET_NTB_FORMAT /
+                // SET_CRC_MODE must precede alt=1). Best-effort; a phone that ignores the request
+                // keeps its default NTB16/no-CRC, which matches the blocks we encode anyway.
+                negotiateNcmControlPlane(connection, function.control.id, ::log)
+
+                if (WiredNcmTuning.settleAfterSetInterfaceMillis > 0) {
+                    runCatching { Thread.sleep(WiredNcmTuning.settleAfterSetInterfaceMillis) }
+                }
                 val altSelection = retryAlternateSelection(
                     select = { LegacyUsbHostCompat.select(connection, function.data) },
                     onAttempt = { attempt, result ->
@@ -963,6 +1114,16 @@ class NcmUsbBridge internal constructor(
                 Log.i(
                     IphoneCarPlayConfiguration.TAG,
                     "ncm status endpoint=${function.statusIn?.address?.let { "0x${it.toString(16)}" } ?: "none"}",
+                )
+                // Endpoint geometry: wMaxPacketSize/type on the chosen alt=1 pipes, so a mismatch
+                // between what the descriptor advertised and what the kernel armed is visible in
+                // the log instead of inferred from a NAK timeout.
+                log(
+                    "ncm endpoint geometry data=${describe(function.data)} " +
+                        "in=0x${function.bulkIn.address.toString(16)}@${function.bulkIn.maxPacketSize}" +
+                        "/type=${function.bulkIn.type} " +
+                        "out=0x${function.bulkOut.address.toString(16)}@${function.bulkOut.maxPacketSize}" +
+                        "/type=${function.bulkOut.type}",
                 )
                 return NcmUsbBridge(
                     sharedConnection = sharedConnection,

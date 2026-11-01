@@ -164,8 +164,16 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
             // 全局顶部温度栏：读取长安车机 coagent.ac 空调服务，主页 + CarPlay 宿主上方常驻显示
             // 室外/车内/设定温度。用 Application 上下文，系统浮层（TYPE_PHONE）在所有界面之上。
             // 设置 → 显示 里的开关可关闭（默认开启）。
-            if (DiPlayPreferences.temperatureBarEnabled(applicationContext)) {
-                com.shihab.diplay.host.TemperatureBar.show(applicationContext)
+            val tempBarOn = DiPlayPreferences.temperatureBarEnabled(applicationContext)
+            AsyncDiagnosticLog.append(ActiveSessionLog.current, "TemperatureBar: switch enabled=$tempBarOn")
+            if (tempBarOn) {
+                runCatching { com.shihab.diplay.host.TemperatureBar.show(applicationContext) }
+                    .onFailure {
+                        AsyncDiagnosticLog.append(
+                            ActiveSessionLog.current,
+                            "TemperatureBar.show threw ${it.javaClass.simpleName}: ${it.message}",
+                        )
+                    }
             }
             consumeConnectFailure()
             // Diagnostic probe walks Bluetooth/USB; keep it off the first-paint critical path.
@@ -637,6 +645,11 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
 
     override fun onResume() {
         super.onResume()
+        // coagent.ac may finish starting after the first show(); re-probe register + snapshot
+        // every time the home page resumes.
+        if (DiPlayPreferences.temperatureBarEnabled(applicationContext)) {
+            com.shihab.diplay.host.CoagentAcBridge.nudge()
+        }
         if (AirPlayPersistence.loadFloatingBallEnabled(this)) {
             FloatingBall.show(
                 applicationContext,
