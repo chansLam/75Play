@@ -95,3 +95,19 @@ LOCAL_C_INCLUDES := $(LOCAL_PATH)/lwip_port \
 LOCAL_CFLAGS := -O2 -Wno-unused-parameter -Wno-sign-compare
 LOCAL_LDLIBS := -llog
 include $(BUILD_SHARED_LIBRARY)
+
+# usbfs fallbacks for Android 9 and older head units (API 19: no framework
+# setConfiguration, and a vendor driver can hold the NCM interface). Loaded by
+# LegacyUsbHostNative / LegacyNcmNative; without these two .so files every wired
+# CarPlay connection fails with setConfiguration errno=null, activeConfig stays 1.
+include $(CLEAR_VARS)
+LOCAL_MODULE := usb_host_compat
+LOCAL_SRC_FILES := usb_host_compat.c
+LOCAL_CFLAGS := -Wall -Wextra
+include $(BUILD_SHARED_LIBRARY)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := legacy_ncm_claim
+LOCAL_SRC_FILES := legacy_ncm_claim.c
+LOCAL_CFLAGS := -Wall -Wextra
+include $(BUILD_SHARED_LIBRARY)
