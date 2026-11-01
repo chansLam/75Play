@@ -75,6 +75,12 @@ object CoagentAcBridge {
     private var attempts = 0
     private val seenSeats = HashSet<Int>()
 
+    // SystemUI's ServiceConnectionManager links a death recipient to the coagent.ac binder and
+    // restarts polling when it dies, so an AC-service restart (or a service that re-registers) is
+    // reconnected automatically instead of leaving the bar frozen. Mirror that here: we only need
+    // the recipient registered on the live binder; the latch re-opens the polling loop on death.
+    private val binderDeathRecipient = android.os.IBinder.DeathRecipient { onServiceBinderDied() }
+
     private const val RETRY_INTERVAL_MS = 2000L
     private const val MAX_ATTEMPTS = 30 // ~60s of retries after first show()
 
@@ -107,7 +113,22 @@ object CoagentAcBridge {
         val descriptor = runCatching { resolved.interfaceDescriptor }.getOrNull() ?: "unknown"
         diag("coagent.ac binder resolved alive=$alive descriptor=$descriptor")
         serviceBinder = resolved
+        runCatching { resolved.linkToDeath(binderDeathRecipient, 0) }
+            .onFailure { diag("coagent.ac linkToDeath failed: ${it.javaClass.simpleName}: ${it.message}") }
         return resolved
+    }
+
+    /** Called on a background binder thread when the coagent.ac service process dies or restarts. */
+    private fun onServiceBinderDied() {
+        diag("coagent.ac binder died; dropping cached handles and reconnecting")
+        serviceBinder = null
+        registered = false
+        callbackBinder = null
+        snapshotReady = false
+        seenSeats.clear()
+        // Re-open the polling loop from scratch (it is closed once we settled, so startRetries
+        // schedules a fresh attempt immediately; if one is already running it simply continues).
+        startRetries()
     }
 
     /** Registers our callback binder with the firmware (transaction 19). Safe to call more than once. */
