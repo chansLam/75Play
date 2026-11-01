@@ -942,7 +942,105 @@ class CarPlayController(
     private fun onWiredIphonePermission(device: android.hardware.usb.UsbDevice) {
         if (closed || phase != Phase.WIRED || wiredAborted.get()) return
         wiredPermissionPollGeneration.incrementAndGet()
-        openWiredDataPaths(device)
+        // A freshly attached iPhone first enumerates as an ordinary USB device; only after the
+        // vendor 0x51 transition request does it re-enumerate into the CarPlay (USBMUX+NCM)
+        // configuration. Opening data paths before that fails with "exposes no USBMUX CarPlay
+        // configuration", so confirm the configuration is ready first and re-enumerate if not.
+        if (wiredCarPlayConfigurationReady(device)) {
+            openWiredDataPaths(device)
+        } else {
+            debugLog("wired iPhone has no CarPlay configuration yet; requesting re-enumeration")
+            beginWiredReenumeration(device, attempts = 0)
+        }
+    }
+
+    private fun wiredCarPlayConfigurationReady(device: android.hardware.usb.UsbDevice): Boolean =
+        runCatching { com.shilapi.xcertplay.transport.IphoneCarPlayConfiguration.find(device) != null }
+            .getOrDefault(false)
+
+    /**
+     * Requests the Apple vendor 0x51 transition so the iPhone re-enumerates into the CarPlay
+     * configuration, then waits for it. Mirrors the upstream re-enumeration state machine
+     * (beginReenumeration -> requestCarPlayReenumerationAsync -> pollReenumeration).
+     */
+    private fun beginWiredReenumeration(
+        device: android.hardware.usb.UsbDevice,
+        attempts: Int,
+    ) {
+        if (closed || phase != Phase.WIRED || wiredAborted.get()) return
+        onStatus(CarPlayStatus.SelectingConfiguration)
+        val host = wiredIphoneHost ?: return
+        host.requestCarPlayReenumerationAsync(device, executor) { transition ->
+            when (transition) {
+                is com.shilapi.xcertplay.transport.IphoneUsbHost.TransitionResult.ReenumerationRequested -> {
+                    if (closed || phase != Phase.WIRED || wiredAborted.get()) return@requestCarPlayReenumerationAsync
+                    onStatus(CarPlayStatus.WaitingForReenumeration)
+                    wiredPollReenumeration(device, attempts)
+                }
+                is com.shilapi.xcertplay.transport.IphoneUsbHost.TransitionResult.Failed -> {
+                    // The 0x51 request may STALL when the device is already transitioning or already
+                    // in CarPlay mode; fall back to a configuration inspection before counting a failure.
+                    if (wiredCarPlayConfigurationReady(device)) {
+                        onWiredIphonePermission(device)
+                    } else if (attempts < MAX_WIRED_REENUMERATION_ATTEMPTS) {
+                        mainHandler.postDelayed(
+                            { beginWiredReenumeration(device, attempts + 1) },
+                            WIRED_REENUMERATION_RETRY_MILLIS,
+                        )
+                    } else {
+                        fail(transition.error)
+                    }
+                }
+            }
+        }
+    }
+
+    /** Polls for the re-enumerated iPhone that now exposes the CarPlay configuration. */
+    private fun wiredPollReenumeration(
+        previous: android.hardware.usb.UsbDevice,
+        attempts: Int,
+    ) {
+        val started = System.nanoTime()
+        val poll = object : Runnable {
+            override fun run() {
+                try {
+                    if (closed || phase != Phase.WIRED || wiredAborted.get()) return
+                    val elapsed = (System.nanoTime() - started) / 1_000_000
+                    val host = wiredIphoneHost ?: return
+                    val found = runCatching { host.discover().firstOrNull() }.getOrNull()
+                    val ready = found != null && wiredCarPlayConfigurationReady(found)
+                    val isNewDevice = found != null &&
+                        (found.deviceId != previous.deviceId || found.deviceName != previous.deviceName)
+                    if (found != null && (ready || isNewDevice || elapsed >= WIRED_REENUMERATION_READY_EARLY_MILLIS)) {
+                        debugLog(
+                            "wired re-enumeration settled after ${elapsed}ms " +
+                                "ready=$ready newDevice=$isNewDevice",
+                        )
+                        // The device object changed during re-enumeration; re-acquire permission
+                        // (it may need a fresh grant on Android 4.x) then re-check the configuration.
+                        requestWiredIphonePermission(found)
+                        return
+                    }
+                    if (elapsed >= WIRED_REENUMERATION_TIMEOUT_MILLIS) {
+                        if (attempts < MAX_WIRED_REENUMERATION_ATTEMPTS) {
+                            beginWiredReenumeration(previous, attempts + 1)
+                        } else {
+                            fail(
+                                com.shilapi.xcertplay.transport.IphoneUsbException.DeviceUnavailable(
+                                    "iPhone did not expose the CarPlay USB configuration after " +
+                                        "re-enumeration; replug and retry",
+                                ),
+                            )
+                        }
+                        return
+                    }
+                    mainHandler.postDelayed(this, WIRED_REENUMERATION_POLL_MILLIS)
+                } catch (error: Throwable) {
+                    fail(error)
+                }
+            }
+        }
+        mainHandler.postDelayed(poll, WIRED_REENUMERATION_POLL_MILLIS)
     }
 
     private fun openWiredDataPaths(device: android.hardware.usb.UsbDevice) {
@@ -2344,5 +2442,11 @@ class CarPlayController(
         private const val WIRED_PERMISSION_POLL_INTERVAL_MILLIS = 400L
         private const val WIRED_PAIR_TIMEOUT_MILLIS = 15_000L
         private const val WIRED_CONTROL_TIMEOUT_MILLIS = 60_000L
+        private const val MAX_WIRED_REENUMERATION_ATTEMPTS = 3
+        private const val WIRED_REENUMERATION_RETRY_MILLIS = 250L
+        private const val WIRED_REENUMERATION_POLL_MILLIS = 250L
+        /** Poll once considered settled: a fresh device id or a ready config (or after 800ms). */
+        private const val WIRED_REENUMERATION_READY_EARLY_MILLIS = 800L
+        private const val WIRED_REENUMERATION_TIMEOUT_MILLIS = 15_000L
     }
 }
