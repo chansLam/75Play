@@ -61,8 +61,12 @@ def prepareOpusSources = tasks.register('prepareOpusSources', Exec) {
     workingDir rootProject.projectDir
     commandLine 'python3', 'scripts/prepare-libopus.py'
 }
+def prepareLwipSources = tasks.register('prepareLwipSources', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'python3', 'scripts/prepare-lwip.py'
+}
 tasks.configureEach { task ->
     if (task.name.startsWith('generateJsonModel') || task.name.startsWith('externalNativeBuild')) {
-        task.dependsOn(prepareOpusSources)
+        task.dependsOn(prepareOpusSources, prepareLwipSources)
     }
 }
