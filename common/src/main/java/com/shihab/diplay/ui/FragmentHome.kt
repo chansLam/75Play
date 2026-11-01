@@ -219,7 +219,7 @@ class FragmentHome : Fragment() {
             ))
         }
         content.addView(topHalf, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f,
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 0.75f,
         ))
         topHalf.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ -> fitConnectOrb(v) }
         val bottomHalf = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
@@ -295,7 +295,7 @@ class FragmentHome : Fragment() {
         disconnectBtn.visibility = View.GONE
         bottomHalf.addView(disconnectBtn, lpFull(ctx, LayoutMetrics.disconnectBtnH(ctx)))
         content.addView(bottomHalf, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f,
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.25f,
         ))
 
         val startTab = when (AirPlayPersistence.loadWirelessHotspotMode(requireContext())) {
