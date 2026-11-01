@@ -809,9 +809,32 @@ class CarPlayController(
         }
         if (config.transport == CarPlayTransport.WIRED) {
             startWired()
+        } else if (detectIphoneOnUsb()) {
+            // Auto-detect: an iPhone attached on USB means the user wants the wired path even
+            // when the configured transport is WIRELESS. USB enumeration needs no permission.
+            debugLog("startPhone auto-detect: iPhone present on USB host; using wired path")
+            startWired()
         } else {
             startWireless()
         }
+    }
+
+    /**
+     * True when a CarPlay iPhone is currently enumerated on the USB host. Purely enumerates the
+     * device list (no permission, no open), so it is safe to call synchronously from [startPhone].
+     */
+    private fun detectIphoneOnUsb(): Boolean {
+        val usbManager = appContext.getSystemService(android.content.Context.USB_SERVICE)
+            as? android.hardware.usb.UsbManager
+            ?: return false
+        return runCatching {
+            com.shilapi.xcertplay.transport.IphoneUsbHost(
+                appContext,
+                usbManager,
+                com.shilapi.xcertplay.transport.IphoneUsbMatcher.appleVendor(),
+                onDiagnostic = ::connectionDiagnostic,
+            ).discover().isNotEmpty()
+        }.getOrDefault(false)
     }
 
     /**
