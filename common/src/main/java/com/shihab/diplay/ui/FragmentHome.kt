@@ -74,7 +74,7 @@ class FragmentHome : Fragment() {
             orientation = if (LayoutMetrics.isWide(ctx)) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
         }
         val modeLp = if (LayoutMetrics.isWide(ctx)) {
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, LayoutMetrics.homeConnectWeight(ctx))
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
         } else {
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
         }
@@ -85,9 +85,13 @@ class FragmentHome : Fragment() {
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, gap)
         })
         val appsLp = if (LayoutMetrics.isWide(ctx)) {
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, LayoutMetrics.homeAppsWeight(ctx))
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                gravity = Gravity.CENTER_VERTICAL
+            }
         } else {
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, LayoutMetrics.homeAppsStripH(ctx))
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+            }
         }
         below.addView(appGridUi.buildAppListCard(ctx), appsLp)
         root.addView(below, LinearLayout.LayoutParams(
@@ -174,7 +178,11 @@ class FragmentHome : Fragment() {
 
     /** 左侧连接舱：标题、主按钮、蓝牙，然后才是连接方式。宽屏在左，竖屏在应用格上面。 */
     private fun buildModeCard(ctx: android.content.Context): View {
-        val content = glassCard(ctx)
+        val content = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            clipChildren = true
+            clipToPadding = true
+        }
         GlassSettingsRows.cardTitle(content, ctx.getString(R.string.home_connection_center))
         val heroGap = LayoutMetrics.heroGap(ctx)
         val heroBlock = LinearLayout(ctx).apply {
@@ -481,20 +489,21 @@ class FragmentHome : Fragment() {
         (heroBtn.parent?.parent as? View)?.let { top -> top.post { fitConnectOrb(top) } }
     }
 
-    /** 连接钮放大时给五步说明和当前阶段句留出高度，避免被卡片裁掉。 */
+    /** 连接钮放大时给五步说明和当前阶段句留出高度，避免被下半区盖住。上下权重不动。 */
     private fun fitConnectOrb(top: View) {
         if (!isAdded || top.width <= 0 || top.height <= 0 || !::heroBtn.isInitialized) return
         val ctx = top.context
         fun px(v: Int) = GlassColors.dp(ctx, v)
-        val flowH = if (flowView.visibility == View.GONE) {
-            0
-        } else {
-            flowView.height.coerceAtLeast(LayoutMetrics.connectFlowH(ctx))
-        }
-        val heroH = heroMain.height.coerceAtLeast(heroMain.minimumHeight)
+        val showingFlow = flowView.visibility != View.GONE
+        val pinned = if (showingFlow) Gravity.TOP or Gravity.CENTER_HORIZONTAL else Gravity.CENTER
+        if (top is LinearLayout && top.gravity != pinned) top.gravity = pinned
         val gap = LayoutMetrics.heroGap(ctx)
-        val reserve = heroH + flowH + gap * 3 + px(8)
-        val side = (minOf(top.width, top.height - reserve) - px(4)).coerceAtLeast(px(72))
+        val flowH = if (!showingFlow) 0 else flowView.height.coerceAtLeast(LayoutMetrics.connectFlowH(ctx))
+        val heroH = if (heroMain.visibility == View.GONE) 0 else heroMain.height.coerceAtLeast(heroMain.minimumHeight)
+        val reserve = heroH + flowH + gap * 3
+        val available = (top.height - reserve).coerceAtLeast(0)
+        val floor = if (available >= px(36)) px(36) else available
+        val side = minOf(top.width, available).coerceAtLeast(floor)
         val lp = heroBtn.layoutParams as? LinearLayout.LayoutParams ?: return
         if (lp.width == side && lp.height == side) return
         lp.width = side
@@ -509,17 +518,6 @@ class FragmentHome : Fragment() {
     }
 
     // ---- glass helpers ----
-    private fun glassCard(ctx: android.content.Context): LinearLayout = LinearLayout(ctx).apply {
-        orientation = LinearLayout.VERTICAL
-        clipChildren = true
-        clipToPadding = true
-        background = HudPanelDrawable(ctx)
-        setPadding(
-            LayoutMetrics.cardPadH(ctx), LayoutMetrics.cardPadV(ctx),
-            LayoutMetrics.cardPadH(ctx), LayoutMetrics.cardPadV(ctx),
-        )
-    }
-
     private fun label(ctx: android.content.Context, text: String, size: Float, color: Int, bold: Boolean = false): TextView =
         TextView(ctx).apply {
             this.text = text
