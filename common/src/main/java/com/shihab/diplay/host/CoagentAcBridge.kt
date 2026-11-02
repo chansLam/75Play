@@ -302,17 +302,18 @@ object CoagentAcBridge {
      * matched. Using `readSerializable()`/`readByte()`/`readFloat()` in the documented order reads
      * exactly what the firmware writes.
      *
-     * The firmware additionally writes the Parcelable class name (UTF-16, 37 chars + 2-byte
-     * terminator = 76 bytes) ahead of the payload, but its length prefix is unreliable (0x2c = 44
-     * observed for a 76-byte span on S401AUTO), so `readString()` would consume the wrong amount
-     * and desync the serializable layout below. Skip the exact known span instead; the parse is
-     * still guarded: a mismatch simply returns null and the snapshot is retried on the next tick.
+     * The firmware additionally writes the Parcelable class name (UTF-16LE) ahead of the payload.
+     * On S401AUTO the observed span is exactly 37 chars = 74 bytes with NO extra terminator (the
+     * hex on-device ends at the 74th byte: ...49 00 6e 00 66 00 6f 00), while the length prefix it
+     * writes is wrong (0x2c = 44) — so neither `readString()` nor trusting the prefix works. Skip
+     * the exact known span = class name length * 2 (74); the parse stays guarded, a mismatch simply
+     * returns null and the snapshot is retried on the next tick.
      */
     internal fun parseInfoExact(reply: Parcel): Parsed? {
         try {
             val classLen = reply.readInt() // present in every real tx27 reply; value unreliable on this ROM
             if (classLen < 0 || classLen > 512) return null
-            reply.setDataPosition(reply.dataPosition() + (AIR_CONDITION_INFO_CLASS_NAME.length + 1) * 2)
+            reply.setDataPosition(reply.dataPosition() + AIR_CONDITION_INFO_CLASS_NAME.length * 2)
             if (!skipSerializables(reply, 4)) return null      // frontMain, refrigeration, circleStatus, subregion
             reply.readByte()                                    // isCompressorActive
             if (!skipSerializables(reply, 3)) return null       // frontSwitch, tempRegionMode, windMode

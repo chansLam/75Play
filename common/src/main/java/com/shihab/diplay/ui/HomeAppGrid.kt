@@ -267,9 +267,11 @@ internal class HomeAppGrid(
             contentDescription = app.label
         }
         val icon = ImageView(ctx).apply {
+            // Keep the icon square: fix the ImageView to a square and do NOT let adjustViewBounds
+            // re-flow it to the drawable's own (possibly non-square) bounds. FIT_CENTER scales any
+            // launcher icon proportionally inside the square, so it never gets squashed or stretched.
             layoutParams = LinearLayout.LayoutParams(dp(iconDp), dp(iconDp))
             scaleType = ImageView.ScaleType.FIT_CENTER
-            adjustViewBounds = true
         }
         val drawable = CarAppCatalog.icon(ctx, app, dp(iconDp - 4))
         if (drawable != null) icon.setImageDrawable(drawable)
