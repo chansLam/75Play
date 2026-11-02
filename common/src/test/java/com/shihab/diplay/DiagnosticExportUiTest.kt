@@ -44,14 +44,16 @@ class DiagnosticExportUiTest {
         ReflectionHelpers.setField(activity, "export", missingPicker)
         try {
             ReflectionHelpers.callInstanceMethod<Unit>(activity, "chooseReportDestination")
+            shadowOf(Looper.getMainLooper()).idle()
             val deadline = System.nanoTime() + 5_000_000_000L
-            while (ShadowDialog.getLatestDialog() == null && System.nanoTime() < deadline) {
+            var reports = reportDirectory(context)
+            while ((reports == null || reports.listFiles().isNullOrEmpty()) && System.nanoTime() < deadline) {
                 Thread.sleep(20)
                 shadowOf(Looper.getMainLooper()).idle()
+                reports = reportDirectory(context)
             }
             val saved = requireNotNull(ShadowDialog.getLatestDialog())
-            val reports = File(context.getExternalFilesDir(null)!!, "diagnostic-reports")
-            val file = reports.listFiles()!!.single()
+            val file = requireNotNull(reports?.listFiles()?.singleOrNull()) { "diagnostic report was not saved" }
             assertTrue(file.name.endsWith(".txt"))
             assertTrue(file.readText().contains("Android 9 / API 28"))
             assertTrue(descendants(saved.window!!.decorView).filterIsInstance<TextView>()
@@ -67,6 +69,12 @@ class DiagnosticExportUiTest {
         } finally {
             controller.pause().stop().destroy()
         }
+    }
+
+    private fun reportDirectory(context: android.content.Context): File? {
+        val external = context.getExternalFilesDir(null)?.let { File(it, "diagnostic-reports") }
+        val privateDir = File(context.filesDir, "diagnostic-reports")
+        return listOfNotNull(external, privateDir).firstOrNull { it.isDirectory && it.listFiles()?.isNotEmpty() == true }
     }
 
     private fun descendants(view: View): Sequence<View> = sequence {

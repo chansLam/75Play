@@ -105,8 +105,7 @@ class SidePanelLayoutTest {
     }
 
     private fun place(width: Int, height: Int) {
-        activity.javaClass.getDeclaredMethod("placeSidePanel", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
-            .apply { isAccessible = true }.invoke(activity, width, height)
+        activity.placeSidePanel(width, height)
     }
 
     private fun exact(size: Int) = View.MeasureSpec.makeMeasureSpec(size, View.MeasureSpec.EXACTLY)

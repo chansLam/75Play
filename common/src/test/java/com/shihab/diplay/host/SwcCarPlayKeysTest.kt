@@ -17,10 +17,14 @@ class SwcCarPlayKeysTest {
     }
 
     @Test
-    fun `volume is released to the head unit like source`() {
+    fun `volume keys drive the head unit because key test mode swallows them`() {
         assertNull(SwcCarPlayKeys.actionFor("KEY_SWC_VOL_INC"))
         assertNull(SwcCarPlayKeys.actionFor("VOL_DEC"))
-        for (name in listOf("KEY_SWC_VOL_INC", "VOLUME_UP", "KEY_SWC_VOL_DEC", "VOL_DEC", "SRC")) {
+        assertEquals(SwcWheelOutcome.VOLUME_UP, SwcCarPlayKeys.outcomeFor("KEY_SWC_VOL_INC"))
+        assertEquals(SwcWheelOutcome.VOLUME_UP, SwcCarPlayKeys.outcomeFor("VOLUP"))
+        assertEquals(SwcWheelOutcome.VOLUME_DOWN, SwcCarPlayKeys.outcomeFor("KEY_SWC_VOL_DEC"))
+        assertEquals(SwcWheelOutcome.VOLUME_DOWN, SwcCarPlayKeys.outcomeFor("VOLDOWN"))
+        for (name in listOf("VOLUME_UP", "VOL_DEC", "SRC")) {
             assertEquals(SwcWheelOutcome.RELEASE, SwcCarPlayKeys.outcomeFor(name))
         }
     }

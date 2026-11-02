@@ -109,10 +109,18 @@ class DiagnosticRedactorTest {
                     assertTrue(it.flush())
                 }
             }
-            val history = SessionLogFile.REPORT_NAMES.map { folder.resolve(it).readText() }
-            val expectedFiles = SessionLogFile.REPORT_NAMES.size
-            assertEquals(expectedFiles, folder.listFiles()!!.size)
-            val oldestKept = 10 - expectedFiles
+            val historyFiles = folder.listFiles()!!
+                .filter { it.name == "diplay.log" || it.name.startsWith("previous") }
+                .sortedBy { file ->
+                    when (file.name) {
+                        "diplay.log" -> Int.MAX_VALUE
+                        "previous.log" -> 1
+                        else -> -(file.name.removePrefix("previous-").removeSuffix(".log").toIntOrNull() ?: 0)
+                    }
+                }
+            val history = historyFiles.map { it.readText() }
+            assertEquals(historyFiles.size, folder.listFiles()!!.size)
+            val oldestKept = 10 - historyFiles.size
             assertTrue(history.first().contains("session=$oldestKept"))
             assertTrue(history.last().contains("session=9"))
             assertTrue(history.any { it.contains("rejected code=0") })

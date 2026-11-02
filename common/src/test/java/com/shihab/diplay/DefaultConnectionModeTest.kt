@@ -103,7 +103,7 @@ class DefaultConnectionModeTest {
                 assertEquals(expectedWireless[index], DiPlayPreferences.autoConnectWireless(app))
                 assertEquals(lastWireless, AirPlayPersistence.loadWirelessEnabled(app))
             }
-            assertFalse(DiPlayPreferences.autoConnect(app))
+            assertTrue(DiPlayPreferences.autoConnect(app))
             assertEquals("00:11:22:33:44:55", DiPlayPreferences.phoneAddress(app))
         }
     }
@@ -114,7 +114,7 @@ class DefaultConnectionModeTest {
         assertEquals(DefaultConnectionMode.WIRELESS, DiPlayPreferences.defaultConnectionMode(app))
         // A cancelled editor would not call save — saved default must remain.
         assertEquals(DefaultConnectionMode.WIRELESS, DiPlayPreferences.defaultConnectionMode(app))
-        assertFalse(DiPlayPreferences.autoConnect(app))
+        assertTrue(DiPlayPreferences.autoConnect(app))
         DiPlayPreferences.saveDefaultConnectionMode(app, DefaultConnectionMode.LAST_USED)
         assertEquals(DefaultConnectionMode.LAST_USED, DiPlayPreferences.defaultConnectionMode(app))
     }

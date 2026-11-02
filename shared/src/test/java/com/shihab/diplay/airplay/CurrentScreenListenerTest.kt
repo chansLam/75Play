@@ -1,6 +1,9 @@
 package com.shihab.diplay.airplay
 
 import java.io.Closeable
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.ServerSocket
 import java.net.Socket
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
@@ -139,6 +142,7 @@ class CurrentScreenListenerTest {
         } finally {
             engine.onSessionClosed(session)
             session.close()
+            peer?.close()
         }
     }
 
@@ -158,8 +162,21 @@ class CurrentScreenListenerTest {
         ScreenStream::class.java.getDeclaredField("listener").apply { isAccessible = true }
             .get(screen) as ScreenStream.Listener
 
-    private fun testSession(): AirPlaySession = AirPlaySession(
-        socket = Socket(),
+    private var peer: Socket? = null
+
+    /** onScreen refuses a socket with no peer; the listener checks happen after that. */
+    private fun testSession(): AirPlaySession {
+        val server = ServerSocket(0)
+        val client = Socket()
+        client.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), server.localPort))
+        val accepted = server.accept()
+        server.close()
+        peer = client
+        return sessionOn(accepted)
+    }
+
+    private fun sessionOn(socket: Socket): AirPlaySession = AirPlaySession(
+        socket = socket,
         config = AirPlayConfig(
             deviceName = "test",
             deviceId = "02:00:00:00:00:02",
