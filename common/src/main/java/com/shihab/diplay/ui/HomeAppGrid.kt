@@ -566,72 +566,81 @@ internal class HomeAppGrid(
             if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
 
-    /** 按图标本身的大小从左往右排，一行放不下就换行。 */
+    /**
+     * 等距网格：固定列数（[LayoutMetrics.appColumns]），列宽均分可用宽度，行高取所有格子的统一高度；
+     * 每格内部由 tile 自己把图标与文字水平垂直居中。行列严格对齐，不再按内容宽度流式换行。
+     */
     private class AppFlow(ctx: android.content.Context) : ViewGroup(ctx) {
+        private var columns = LayoutMetrics.appColumns(ctx)
+        /** 一格（含左右 margin）的外宽；列步长。 */
+        private var stride = 0
+        /** tile 自身宽（已扣左右 margin）。 */
+        private var cellW = 0
+        /** 一行（含上下 margin）的统一外高。 */
+        private var rowH = 0
+
         override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
             val widthMode = MeasureSpec.getMode(widthMeasureSpec)
             val widthSize = MeasureSpec.getSize(widthMeasureSpec)
-            val maxWidth = if (widthMode == MeasureSpec.UNSPECIFIED) Int.MAX_VALUE / 4 else widthSize
-            val childWidth = MeasureSpec.makeMeasureSpec(maxWidth.coerceAtLeast(0), MeasureSpec.AT_MOST)
-            val childHeight = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
-            var lineW = 0
-            var lineH = 0
-            var usedW = 0
-            var usedH = 0
+            val m = LayoutMetrics.appTileMargin(context)
+            columns = LayoutMetrics.appColumns(context)
+            // 网格宽度：有可用宽度就吃满它，列均分才整齐；未约束时按列数估一个舒适宽。
+            val gridW = when (widthMode) {
+                MeasureSpec.EXACTLY -> widthSize
+                MeasureSpec.AT_MOST -> widthSize.coerceAtMost(Int.MAX_VALUE / 4)
+                else -> {
+                    val icon = LayoutMetrics.appIconDp(context)
+                    (columns * (icon + LayoutMetrics.dp(context, 20) + 2 * m)).coerceAtMost(Int.MAX_VALUE / 4)
+                }
+            }
+            stride = gridW / columns
+            cellW = (stride - 2 * m).coerceAtLeast(0)
+            val wSpec = MeasureSpec.makeMeasureSpec(cellW, MeasureSpec.EXACTLY)
+            // 第一遍：高度不约束，量出每格自然高，取最大值作为统一行高。
+            var maxRow = 0
             for (i in 0 until childCount) {
                 val child = getChildAt(i)
                 if (child.visibility == GONE) continue
-                measureChildWithMargins(child, childWidth, 0, childHeight, 0)
+                measureChild(child, wSpec, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
                 val lp = child.layoutParams as MarginLayoutParams
-                val cw = child.measuredWidth + lp.leftMargin + lp.rightMargin
-                val ch = child.measuredHeight + lp.topMargin + lp.bottomMargin
-                if (lineW > 0 && lineW + cw > maxWidth) {
-                    usedW = maxOf(usedW, lineW)
-                    usedH += lineH
-                    lineW = 0
-                    lineH = 0
-                }
-                lineW += cw
-                lineH = maxOf(lineH, ch)
+                maxRow = maxOf(maxRow, child.measuredHeight + lp.topMargin + lp.bottomMargin)
             }
-            usedW = maxOf(usedW, lineW)
-            usedH += lineH
+            rowH = maxRow
+            // 第二遍：把每格高撑到统一行高，格子底与文字基线逐行对齐。
+            val hSpec = MeasureSpec.makeMeasureSpec((rowH - 2 * m).coerceAtLeast(0), MeasureSpec.EXACTLY)
+            for (i in 0 until childCount) {
+                val child = getChildAt(i)
+                if (child.visibility == GONE) continue
+                measureChild(child, wSpec, hSpec)
+            }
+            val rows = if (childCount == 0) 0 else (childCount + columns - 1) / columns
+            val wantH = rows * rowH
             val measuredW = when (widthMode) {
                 MeasureSpec.EXACTLY -> widthSize
-                MeasureSpec.AT_MOST -> usedW.coerceAtMost(widthSize)
-                else -> usedW
+                else -> gridW
             }
             val heightMode = MeasureSpec.getMode(heightMeasureSpec)
-            val heightSize = MeasureSpec.getSize(heightMeasureSpec)
             val measuredH = when (heightMode) {
-                MeasureSpec.EXACTLY -> heightSize
-                MeasureSpec.AT_MOST -> usedH.coerceAtMost(heightSize)
-                else -> usedH
+                MeasureSpec.EXACTLY -> MeasureSpec.getSize(heightMeasureSpec)
+                MeasureSpec.AT_MOST -> wantH.coerceAtMost(MeasureSpec.getSize(heightMeasureSpec))
+                else -> wantH
             }
             setMeasuredDimension(measuredW, measuredH)
         }
 
         override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-            val maxWidth = (r - l).coerceAtLeast(0)
-            var x = 0
-            var y = 0
-            var lineH = 0
+            if (columns <= 0 || rowH <= 0 || stride <= 0) return
+            val m = LayoutMetrics.appTileMargin(context)
+            var index = 0
             for (i in 0 until childCount) {
                 val child = getChildAt(i)
                 if (child.visibility == GONE) continue
-                val lp = child.layoutParams as MarginLayoutParams
-                val cw = child.measuredWidth + lp.leftMargin + lp.rightMargin
-                val ch = child.measuredHeight + lp.topMargin + lp.bottomMargin
-                if (x > 0 && x + cw > maxWidth) {
-                    x = 0
-                    y += lineH
-                    lineH = 0
-                }
-                val left = x + lp.leftMargin
-                val top = y + lp.topMargin
-                child.layout(left, top, left + child.measuredWidth, top + child.measuredHeight)
-                x += cw
-                lineH = maxOf(lineH, ch)
+                val col = index % columns
+                val row = index / columns
+                val left = col * stride + m
+                val top = row * rowH + m
+                child.layout(left, top, left + cellW, top + rowH - 2 * m)
+                index++
             }
         }
 

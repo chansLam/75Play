@@ -189,6 +189,30 @@ internal object LegacyUsbHostCompat {
         return SelectResult(errno == 0, errno)
     }
 
+    /**
+     * Issue #279 follow-up: bounce the data interface through alt=0 then back to its current
+     * alternate setting. Re-selecting the alt already in effect is a usbfs no-op, so a wedged
+     * bulk-OUT (URB rejected immediately, no halt bit) never recovers; toggling through alt=0
+     * tears the endpoints down and re-arms them on both host and phone, resetting the data toggle.
+     * Returns the native errno (0 = success), or null when the raw fd was unavailable.
+     */
+    fun bounce(connection: SharedUsbConnection, usbInterface: UsbInterface): Int? {
+        val fd = runCatching { connection.fileDescriptor }.getOrDefault(-1)
+        if (fd < 0) {
+            Log.w(TAG, "usbfs bounce unavailable: invalid fd for iface=${usbInterface.id}")
+            return null
+        }
+        val alt = IphoneCarPlayConfiguration.alternateSetting(usbInterface)
+        val errno = try {
+            LegacyUsbHostNative.bounceInterface(fd, usbInterface.id, alt)
+        } catch (error: LinkageError) {
+            Log.w(TAG, "usbfs bounce unavailable for iface=${usbInterface.id}/$alt", error)
+            return null
+        }
+        Log.i(TAG, "usbfs bounce iface=${usbInterface.id}/0->$alt errno=$errno")
+        return errno
+    }
+
     private const val TAG = "xcertplay-usb"
     private const val USB_REQUEST_GET_CONFIGURATION = 8
     private const val USB_CONTROL_TIMEOUT_MILLIS = 2_000
@@ -201,4 +225,5 @@ private object LegacyUsbHostNative {
     external fun forceClaim(fileDescriptor: Int, interfaceId: Int): Int
     external fun setInterface(fileDescriptor: Int, interfaceId: Int, alternateSetting: Int): Int
     external fun resetDevice(fileDescriptor: Int): Int
+    external fun bounceInterface(fileDescriptor: Int, interfaceId: Int, alternateSetting: Int): Int
 }

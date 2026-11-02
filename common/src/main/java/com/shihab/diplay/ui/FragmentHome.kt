@@ -177,14 +177,19 @@ class FragmentHome : Fragment() {
     private fun bluetoothDeviceLabel(): String =
         host.connectedBluetoothDeviceName().ifBlank { host.chooseIphoneTitle() }
 
-    /** 左侧连接舱：标题、主按钮、蓝牙，然后才是连接方式。宽屏在左，竖屏在应用格上面。 */
+    /** 左侧连接舱：主按钮、蓝牙，然后才是连接方式。宽屏在左，竖屏在应用格上面。 */
     private fun buildModeCard(ctx: android.content.Context): View {
+        // 还原 fe916d7 去掉的连接中心玻璃外框（圆角玻璃底 + 统一卡片内边距）；区内大标题「连接中心」按要求去掉。
         val content = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             clipChildren = true
             clipToPadding = true
+            background = HudPanelDrawable(ctx)
+            setPadding(
+                LayoutMetrics.cardPadH(ctx), LayoutMetrics.cardPadV(ctx),
+                LayoutMetrics.cardPadH(ctx), LayoutMetrics.cardPadV(ctx),
+            )
         }
-        GlassSettingsRows.cardTitle(content, ctx.getString(R.string.home_connection_center))
         val heroGap = LayoutMetrics.heroGap(ctx)
         val heroBlock = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL

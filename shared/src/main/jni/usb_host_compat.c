@@ -92,6 +92,39 @@ Java_com_shilapi_xcertplay_transport_LegacyUsbHostNative_resetDevice(
     return errno != 0 ? errno : EIO;
 }
 
+/* Issue #279 follow-up: bounce a data interface through alt=0 then back to targetAlt.
+ *
+ * Re-selecting the alternate setting the kernel is already on is a no-op on usbfs:
+ * the ioctl short-circuits, so the host controller and the phone's NCM function never
+ * rebuild the bulk pipe and a wedged OUT endpoint (bulk URB rejected immediately with
+ * no halt bit set) stays dead. Toggling through alt=0 tears the endpoints down on both
+ * sides and re-arms them at targetAlt, which resets the DATA0/DATA1 data toggle on the
+ * pipe without a port reset (issue #243: port resets wedge these i.MX6 kernels).
+ * Returns 0 when both SETINTERFACE calls succeeded, otherwise the first failing errno. */
+JNIEXPORT jint JNICALL
+Java_com_shilapi_xcertplay_transport_LegacyUsbHostNative_bounceInterface(
+        JNIEnv *env, jobject self, jint file_descriptor, jint interface_id, jint target_alt) {
+    (void) env;
+    (void) self;
+
+    if (file_descriptor < 0 || interface_id < 0 || interface_id > 255) return EINVAL;
+    if (target_alt < 0 || target_alt > 255) return EINVAL;
+
+    struct usbdevfs_setinterface bounce;
+    memset(&bounce, 0, sizeof(bounce));
+    bounce.interface = (unsigned int) interface_id;
+    bounce.altsetting = 0;
+    if (ioctl(file_descriptor, USBDEVFS_SETINTERFACE, &bounce) != 0) {
+        return errno != 0 ? errno : EIO;
+    }
+
+    bounce.altsetting = (unsigned int) target_alt;
+    if (ioctl(file_descriptor, USBDEVFS_SETINTERFACE, &bounce) != 0) {
+        return errno != 0 ? errno : EIO;
+    }
+    return 0;
+}
+
 JNIEXPORT jint JNICALL
 Java_com_shilapi_xcertplay_transport_LegacyUsbHostNative_setConfiguration(
         JNIEnv *env, jobject self, jint file_descriptor, jint configuration_id) {

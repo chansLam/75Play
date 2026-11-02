@@ -36,6 +36,16 @@ object CoagentAcBridge {
     private const val IFACE_DESCRIPTOR = "com.incall.proxy.ac.IAirConditionInterface"
     private const val CALLBACK_DESCRIPTOR = "com.incall.proxy.ac.IAirConditionCallback"
 
+    /**
+     * The firmware serves the `getAirConditionInfo()` (tx27) reply as
+     * [writeNoException][int 1 present][className string][AirConditionInfo.writeToParcel payload]
+     * where the className string is the UTF-16 `Parcelable` class name. The reply bytes captured
+     * on the S401AUTO head unit show the firmware writes this name with an unreliable length
+     * prefix (0x2c = 44 for the 37-char name), so a plain `Parcel.readString()` desyncs the
+     * serializable layout that follows. We skip the exact known span instead (see [parseInfoExact]).
+     */
+    private const val AIR_CONDITION_INFO_CLASS_NAME = "com.incall.proxy.can.AirConditionInfo"
+
     // IAirConditionInterface.Stub transaction codes.
     private const val TX_GET_AC_TYPE = 1
     private const val TX_GET_AC_INFO = 27
@@ -69,8 +79,9 @@ object CoagentAcBridge {
 
     // The firmware service can register with ServiceManager well after this app's process starts
     // (head-unit boot sequence), so a single startup attempt misses it permanently. Retry on a
-    // fixed cadence until the service appears, then stop.
-    private val mainHandler = Handler(Looper.getMainLooper())
+    // fixed cadence until the service appears, then stop. (Lazy so the bridge object loads in
+    // plain-JVM unit tests; the main looper is only needed at runtime.)
+    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
     private var retryRunnable: Runnable? = null
     private var attempts = 0
     private val seenSeats = HashSet<Int>()
@@ -272,7 +283,7 @@ object CoagentAcBridge {
         }
     }
 
-    private data class Parsed(val layout: String, val outside: Float, val inside: Float, val left: Float, val right: Float)
+    internal data class Parsed(val layout: String, val outside: Float, val inside: Float, val left: Float, val right: Float)
 
     /**
      * Parses AirConditionInfo with the exact field layout its AIDL `writeToParcel` emits
@@ -290,9 +301,18 @@ object CoagentAcBridge {
      * Java serialization stream — not a fixed 4-byte int — so the earlier heuristic decoder never
      * matched. Using `readSerializable()`/`readByte()`/`readFloat()` in the documented order reads
      * exactly what the firmware writes.
+     *
+     * The firmware additionally writes the Parcelable class name (UTF-16, 37 chars + 2-byte
+     * terminator = 76 bytes) ahead of the payload, but its length prefix is unreliable (0x2c = 44
+     * observed for a 76-byte span on S401AUTO), so `readString()` would consume the wrong amount
+     * and desync the serializable layout below. Skip the exact known span instead; the parse is
+     * still guarded: a mismatch simply returns null and the snapshot is retried on the next tick.
      */
-    private fun parseInfoExact(reply: Parcel): Parsed? {
+    internal fun parseInfoExact(reply: Parcel): Parsed? {
         try {
+            val classLen = reply.readInt() // present in every real tx27 reply; value unreliable on this ROM
+            if (classLen < 0 || classLen > 512) return null
+            reply.setDataPosition(reply.dataPosition() + (AIR_CONDITION_INFO_CLASS_NAME.length + 1) * 2)
             if (!skipSerializables(reply, 4)) return null      // frontMain, refrigeration, circleStatus, subregion
             reply.readByte()                                    // isCompressorActive
             if (!skipSerializables(reply, 3)) return null       // frontSwitch, tempRegionMode, windMode

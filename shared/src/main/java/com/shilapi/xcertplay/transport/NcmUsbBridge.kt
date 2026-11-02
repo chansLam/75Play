@@ -77,6 +77,11 @@ class NcmUsbBridge internal constructor(
     private var interfaceResetAttempted = false
     /** Issue #75: the data-interface re-claim (release+re-claim+re-select) runs once per failure run. */
     private var interfaceReclaimAttempted = false
+    /** Issue #279: a bulk URB rejected in <50ms (elapsedMs≈0, halt=0) is a host-side endpoint
+     *  wedge, not a phone NAK (which consumes the full timeout) and not a latched stall (halt=1).
+     *  clear-halt cannot fix a non-halted endpoint; the correct in-place recovery is an alt bounce. */
+    private var lastWriteFailedImmediately = false
+    private val immediateFailureCutoffNanos = 50_000_000L
     private val frames = ArrayDeque<ByteArray>()
     private var queuedBytes = 0
     private var buffered = ByteArray(0)
@@ -146,7 +151,11 @@ class NcmUsbBridge internal constructor(
                         ncmWriteSuccessBytes += probed
                         return@writeUsbChunks probed
                     }
-                    errno = if (probed < 0) -probed else 0
+                    // The framework transport collapses every failure to -1 (no errno); only a raw
+                    // usbfs probe returns a genuine negative errno (<= -2). A bare -1 must NOT be
+                    // re-interpreted as errno 1 (EPERM) — that produced the misleading "raw(1)"
+                    // lines that blamed permissions/claim for a host-side endpoint wedge.
+                    errno = if (probed < -1) -probed else 0
                 }
                 written
             }
@@ -158,6 +167,7 @@ class NcmUsbBridge internal constructor(
         // inboundFrameSeen alone closes the window too early: unsolicited mDNS/ICMPv6 flow on IN
         // before the phone arms OUT, so also tolerate a bounded early-grace count/elapsed window.
         if (transferred <= 0) {
+            lastWriteFailedImmediately = failedAfterNanos < immediateFailureCutoffNanos
             val inEarlyGrace = WiredNcmTuning.earlyGraceEnabled && (
                 ncmWriteEnqueuedFrames <= WiredNcmTuning.earlyGraceFrames ||
                     System.nanoTime() - openNanos < WiredNcmTuning.earlyGraceMillis * NANOS_PER_MILLISECOND
@@ -218,7 +228,12 @@ class NcmUsbBridge internal constructor(
                 Log.i(IphoneCarPlayConfiguration.TAG, statusLine)
                 onDiagnostic(statusLine)
             }
-            if (consecutiveWriteFailures == INTERFACE_RESET_AT_FAILURE && !interfaceResetAttempted) {
+            // A wedged host-side OUT (elapsedMs≈0, halt=0) cannot be cleared by CLEAR_FEATURE:
+            // the endpoint is not halted. Bounce the data alt (alt=0 -> alt=1) on the FIRST such
+            // failure instead of waiting for the 5th; a NAK-style failure (consumed the timeout)
+            // still waits for the original rung so healthy bring-up delays are not disrupted.
+            val resetAtFailure = if (lastWriteFailedImmediately) 1 else INTERFACE_RESET_AT_FAILURE
+            if (consecutiveWriteFailures == resetAtFailure && !interfaceResetAttempted) {
                 interfaceResetAttempted = true
                 resetDataInterface()
             }
@@ -696,27 +711,29 @@ class NcmUsbBridge internal constructor(
     }
 
     /**
-     * Issue #279: when clear-halt does not revive the OUT endpoint, re-select the data
-     * interface's alternate setting — the same SET_INTERFACE the open path performs,
-     * which resets the endpoint data toggles on both sides — then clear the halt once
-     * more. Runs at most once per failure run, inside the write lock.
+     * Issue #279: when clear-halt does not revive the OUT endpoint (halt=0, so there is nothing
+     * to clear), bounce the data interface through alt=0 then back to its current alternate.
+     * Re-selecting the alt already in effect short-circuits in usbfs and never rebuilds the
+     * bulk pipe; toggling through alt=0 re-arms the endpoints on both host and phone and resets
+     * the data toggle. This is the in-place recovery that matches an immediate (elapsedMs≈0)
+     * host-side rejection. One shot per failure run, inside the write lock.
      */
     private fun resetDataInterface() {
         val usbInterface = dataInterface
         if (usbInterface == null) {
-            Log.i(IphoneCarPlayConfiguration.TAG, "ncm bulk-out recovery: no data interface recorded; skipping reset")
+            Log.i(IphoneCarPlayConfiguration.TAG, "ncm bulk-out recovery: no data interface recorded; skipping bounce")
             return
         }
-        val result = runCatching { LegacyUsbHostCompat.select(sharedConnection, usbInterface) }.getOrNull()
-        // The target alt setting is logged because usbfs may short-circuit SET_INTERFACE to the
-        // setting the interface is already on: ok=true then proves the call was accepted, not
-        // that the phone rebuilt its data pipes.
         val targetAlternate = runCatching { IphoneCarPlayConfiguration.alternateSetting(usbInterface) }.getOrNull()
+        val bounced = runCatching { LegacyUsbHostCompat.bounce(sharedConnection, usbInterface) }.getOrNull()
         Log.i(
             IphoneCarPlayConfiguration.TAG,
-            "ncm bulk-out recovery: re-selected data interface ${usbInterface.id} " +
-                "targetAlt=${targetAlternate ?: "unknown"} " +
-                "ok=${result?.selected} errno=${result?.errno ?: "none"}; endpoint status: ${probeOutEndpointStatus()}",
+            "ncm bulk-out recovery: bounced data interface ${usbInterface.id} " +
+                "0->alt=${targetAlternate ?: "unknown"} errno=$bounced; endpoint status: ${probeOutEndpointStatus()}",
+        )
+        onDiagnostic(
+            "ncm bulk-out recovery: bounced data interface ${usbInterface.id} " +
+                "0->alt=$targetAlternate errno=$bounced; status: ${probeOutEndpointStatus()}",
         )
         clearOutEndpointHalt()
     }
