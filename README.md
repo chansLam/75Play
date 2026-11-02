@@ -1,12 +1,12 @@
 # 75Play
 
-**把 iPhone 的 CarPlay，无线投到长安 CS75 Plus 2020 车机。**
+**把 iPhone 的 CarPlay，投到长安 CS75 Plus 2020 车机。**
 
-面向原厂车机（`OS_S311-WT` · Android 4.4.2 / API 19 · `armeabi-v7a`）的开源无线 CarPlay 接收端。三种连接方式：Wi‑Fi Direct（默认）、车机热点（SoftAP）、局域网（Existing Wi‑Fi）；内置 MFi 认证材料，无需越狱、转接盒或账号。
+面向原厂车机（`OS_S311-WT` · Android 4.4.2 / API 19 · `armeabi-v7a`）的开源 CarPlay 接收端。默认无线：Wi‑Fi Direct、车机热点（SoftAP）、局域网（Existing Wi‑Fi）。**v2.0.5-beta** 另支持有线 USB。内置 MFi 认证材料，无需越狱、转接盒或账号。
 
 > 独立实现，**非** Apple 认证，与 Apple / 长安无隶属关系。请在安全停车后操作。
 >
-> 基于 [DiPlay-Legacy-Android](https://github.com/programmerguohuajing/DiPlay-Legacy-Android) 修改优化。当前 **v2.0.3**，见 [CHANGELOG](CHANGELOG.md)。
+> 基于 [DiPlay-Legacy-Android](https://github.com/programmerguohuajing/DiPlay-Legacy-Android) 修改优化。当前 **v2.0.5-beta**，见 [CHANGELOG](CHANGELOG.md)。应用内更新不推送测试版。
 
 [下载 APK](https://github.com/chansLam/75Play/releases) · [项目主页](https://chansLam.github.io/75Play/) · [English](README.en.md)
 
@@ -14,16 +14,18 @@
 
 ## 亮点
 
-- **三种无线** — Wi‑Fi Direct 默认且只用 IPv4；车机热点与局域网仍可选。直连失败先自动重置一次。本车无 TUN，没有 USB 有线
+- **三种无线** — Wi‑Fi Direct 默认且只用 IPv4；车机热点与局域网仍可选。直连失败先自动重置一次
+- **有线 USB（beta）** — 数据线接到车机数据口后点连接。若 USB 上已有 iPhone，会自动改走有线，不依赖车机 TUN
 - **方向盘按键** — 语音唤醒 Siri，上一曲 / 下一曲，接听 / 挂断。音量和 SRC 留给车机
 - **全屏画面** — 固定全屏，SurfaceView，H.264。帧率 15 / 30 / 45 / 60，默认 30。中、小尺寸可在 iPhone 上看到智能缩放
+- **仪表与温度** — CarPlay 导航转向发到原厂仪表。顶部温度栏显示室外、车内和设定温度，可在显示设置里关闭
 - **设置在壳层** — 显示与音频、关于都是三列，不在投屏画面里改
 - **多语言** — 简 / 繁中文、英文、阿拉伯语、西班牙语、俄语、乌克兰语
 - **安卓终端**（实验性）
 
 ## 实机截图
 
-下面四张来自 v2.0.2 实机。2.0.3 的设置和关于已改成三列，那两张的版面与现在不同：
+下面四张来自较早实机。2.0.3 起设置和关于是三列；2.0.4 起有顶部温度栏；2.0.5-beta 去掉了连接中心外框，应用列表也更贴内容。图中版面与现在不同：
 
 <div align="center">
   <img src="site/assets/screenshots/carplay-home.png" width="280" alt="已连接 CarPlay 主页"/>
@@ -39,6 +41,7 @@
 3. 打开 75Play，iPhone 保持蓝牙开启；在主页选连接方式：
    - **Wi‑Fi Direct** / **车机热点**：切换后会自动开 Wi‑Fi 或配置热点，再点 **连接 CarPlay**
    - **局域网**：选网并输入密码，连上 Wi‑Fi 后会**自动**连 CarPlay
+   - **有线 USB（beta）**：用数据线接到车机数据口，再点 **连接 CarPlay**，并允许 USB 权限
 4. 在 iPhone 上允许 CarPlay。
 
 完整步骤与三种方式说明：[docs/INSTALL.md](docs/INSTALL.md)
@@ -59,7 +62,7 @@
 | 支持 | 不支持 |
 | --- | --- |
 | CS75 Plus **2020** · `OS_S311-WT` | 其他车机 / 年款 |
-| 无线（Wi‑Fi Direct、车机热点 SoftAP、局域网） | USB 有线 CarPlay、TUN |
+| 无线（Wi‑Fi Direct、车机热点 SoftAP、局域网）与有线 USB（beta） | 内核 TUN、BYD HUD |
 | `armeabi-v7a` | x86 / arm64 车机包 |
 
 ## 反馈

@@ -19,6 +19,13 @@
 
 ABI 仅 `armeabi-v7a`（见各模块 `abiFilters` / `Application.mk`）。
 
+libopus 与 lwIP 源码不入库。本地编原生库、CI 和发布都会先执行：
+
+```sh
+python3 scripts/prepare-libopus.py
+python3 scripts/prepare-lwip.py
+```
+
 ## 调试包
 
 ```sh
@@ -68,8 +75,10 @@ powershell -ExecutionPolicy Bypass -File scripts\build-cs75plus-release.ps1
 
 ## 应用内更新
 
-- 打开主界面时检查本仓库 stable Release（成功后约 24h 内不重复）；也可在 **关于 → 检查更新** 手动触发。
-- Release 须同时提供 `75Play-vX.Y.Z-release.apk` 与同名 `.sha256`，且通过包名、`versionCode`、签名证书校验后才调安装器。
+- 打开主界面时检查本仓库 **稳定版** Release（成功后约 24h 内不重复）；也可在 **关于 → 检查更新** 手动触发。
+- 只接受标签 `vX.Y.Z` 或 `vX.Y.Z-cs75plus`。带 `-beta`、`-alpha`、`-rc` 的预发布不会被选中。
+- 已安装 `2.0.5-beta` 时，同数字的稳定版 `v2.0.5` 也不会被当成更新（比较会去掉 `-` 后面的后缀）。下一稳定版请提高 `versionName` 的数字部分，并提高 `versionCode`。
+- Release 须同时提供 `75Play-vX.Y.Z-release.apk` 与同名 `.sha256`，且通过包名、`versionCode`、签名证书校验后才调安装器。预发布文件名带后缀，例如 `75Play-v2.0.5-beta-release.apk`。
 
 ## 打 tag 发布（Actions）
 
@@ -88,10 +97,13 @@ powershell -ExecutionPolicy Bypass -File scripts\build-cs75plus-release.ps1
 
 发布前清单：
 
-1. 提高 `versionName` / `versionCode`
-2. 更新 `CHANGELOG.md` 与 `site/config.json`
-3. `python scripts/build_site.py`
-4. `git tag vX.Y.Z && git push origin vX.Y.Z`
+1. 提高 `mobile/build.gradle.kts` 的 `versionName` / `versionCode`（本测试版为 `2.0.5-beta` / `205`）
+2. 在 `CHANGELOG.md` 增加同名小节（标题必须是 `## 2.0.5-beta`，与标签去掉 `v` 后一致）
+3. 更新 `site/config.json` 的 `version`、`tag`、`apk_asset`，以及 `site/content.json`
+4. `python scripts/build_site.py`
+5. `git tag v2.0.5-beta && git push origin v2.0.5-beta`
+
+带 `-beta` / `-alpha` / `-rc` 的标签会自动标成 GitHub 预发布。Actions 会先准备 libopus 与 lwIP，再打签名包。产物名来自 `site/config.json` 的 `apk_asset`。
 
 改仓库名时同步 `site/config.json` 的 `github_repository`，以及应用内更新检查用的仓库常量。
 

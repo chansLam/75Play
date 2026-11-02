@@ -1,12 +1,12 @@
 # 75Play
 
-**Wireless CarPlay for the Changan CS75 Plus 2020 head unit.**
+**CarPlay for the Changan CS75 Plus 2020 head unit.**
 
-An open-source wireless CarPlay receiver for the factory head unit (`OS_S311-WT` · Android 4.4.2 / API 19 · `armeabi-v7a`). Three wireless modes: Wi‑Fi Direct (default), car hotspot (SoftAP), and existing Wi‑Fi / same LAN; built-in MFi authentication — no jailbreak, dongle, or account.
+An open-source CarPlay receiver for the factory head unit (`OS_S311-WT` · Android 4.4.2 / API 19 · `armeabi-v7a`). Wireless is the default: Wi‑Fi Direct, car hotspot (SoftAP), and existing Wi‑Fi / same LAN. **v2.0.5-beta** also supports wired USB. Built-in MFi authentication — no jailbreak, dongle, or account.
 
 > Independent implementation, **not** Apple-certified, not affiliated with Apple or Changan. Set up while safely parked.
 >
-> Modified and optimized from [DiPlay-Legacy-Android](https://github.com/programmerguohuajing/DiPlay-Legacy-Android). Current release **v2.0.3** — see [CHANGELOG](CHANGELOG.md).
+> Modified and optimized from [DiPlay-Legacy-Android](https://github.com/programmerguohuajing/DiPlay-Legacy-Android). Current release **v2.0.5-beta** — see [CHANGELOG](CHANGELOG.md). In-app update does not offer this beta.
 
 [Download APK](https://github.com/chansLam/75Play/releases) · [Project site](https://chansLam.github.io/75Play/en/) · [中文](README.md)
 
@@ -14,9 +14,11 @@ An open-source wireless CarPlay receiver for the factory head unit (`OS_S311-WT`
 
 ## Highlights
 
-- **Three wireless modes** — Wi‑Fi Direct is the default and uses IPv4 only; car hotspot and existing Wi‑Fi stay available. A failed direct link resets once. No USB — this head unit has no TUN
+- **Three wireless modes** — Wi‑Fi Direct is the default and uses IPv4 only; car hotspot and existing Wi‑Fi stay available. A failed direct link resets once
+- **Wired USB (beta)** — plug a data cable into the head unit, then connect. If an iPhone is already on USB, the session switches to wired and does not need a kernel TUN
 - **Steering-wheel keys** — voice wakes Siri, previous / next track, answer / hang up. Volume and SRC stay with the head unit
 - **Fullscreen picture** — always fullscreen, SurfaceView, H.264. Frame rate 15 / 30 / 45 / 60, default 30. Medium and small sizes can show Smart Display Zoom on the iPhone
+- **Cluster and temperature** — CarPlay turn guidance is sent to the factory cluster. A top bar shows outside, cabin, and setpoint temperatures, and can be turned off under Display
 - **Settings stay on the shell** — Display & audio and About are three columns, and they are not edited on the CarPlay picture
 - **Languages** — zh-Hans / zh-Hant / en / ar / es / ru / uk
 - **Android terminal** (experimental)
@@ -28,6 +30,7 @@ An open-source wireless CarPlay receiver for the factory head unit (`OS_S311-WT`
 3. Open 75Play, keep Bluetooth on, and pick a mode on the home screen:
    - **Wi‑Fi Direct** / **car hotspot**: switching auto-enables Wi‑Fi or configures the hotspot; then tap **Connect CarPlay**
    - **LAN**: pick the Wi‑Fi and enter the password; CarPlay starts **automatically** after Wi‑Fi connects
+   - **Wired USB (beta)**: plug a data cable into the head unit, tap **Connect CarPlay**, and allow the USB permission
 4. Allow CarPlay on the iPhone.
 
 Full guide (Chinese): [docs/INSTALL.md](docs/INSTALL.md).
@@ -48,7 +51,7 @@ Full guide (Chinese): [docs/INSTALL.md](docs/INSTALL.md).
 | Supported | Not supported |
 | --- | --- |
 | CS75 Plus **2020** · `OS_S311-WT` | Other head units / model years |
-| Wireless (Wi‑Fi Direct, SoftAP, existing Wi‑Fi / LAN) | USB wired CarPlay, TUN |
+| Wireless (Wi‑Fi Direct, SoftAP, existing Wi‑Fi / LAN) and wired USB (beta) | Kernel TUN, BYD HUD |
 | `armeabi-v7a` | x86 / arm64 head-unit packages |
 
 ## Feedback

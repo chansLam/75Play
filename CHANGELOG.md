@@ -2,7 +2,27 @@
 
 本仓库基于 [DiPlay-Legacy-Android](https://github.com/programmerguohuajing/DiPlay-Legacy-Android) 修改优化，面向长安 CS75 Plus 2020 车机（`OS_S311-WT` · Android 4.4.2 / API 19 · `armeabi-v7a`）。
 
-格式参考 [Keep a Changelog](https://keepachangelog.com/)。版本号遵循语义化版本。
+格式参考 [Keep a Changelog](https://keepachangelog.com/)。版本号遵循语义化版本。带 `-beta` 的标签是预发布，应用内更新不会推送。
+
+---
+
+## 2.0.5-beta
+
+相对 2.0.4 的测试版。有线 USB CarPlay 作为可选路径随本版发布；主页连接区和应用列表收紧。请从 Releases 手动安装，应用内更新不推送测试版。
+
+### 新增
+
+- **有线 USB CarPlay（beta）**：用数据线把 iPhone 接到车机数据口，再点「连接 CarPlay」。若 USB 主机上已经枚举到 iPhone，即使当前选的是无线方式，也会改走有线。不创建车机 TUN，链路在应用内完成（USB NCM、Lockdown、lwIP）。需允许 USB 权限；接口被原车 iPod 占用时，先退出再重插。无线三种方式仍是默认。
+
+### 变更
+
+- **主页**：连接中心去掉外框。连接过程仍显示准备、网络、手机、握手、画面。应用列表收到图标和名字外大约一圈半，不固定行列，多出来的空间留给连接区。
+- **构建**：CI 与发布在 ndk-build 之前拉取固定版本的 libopus 与 lwIP 源码，避免原生配置因缺头文件失败。
+
+### 说明
+
+- 标签 `v2.0.5-beta` 以预发布挂到 GitHub Releases。应用内更新只接受稳定版标签 `vX.Y.Z`（或 `vX.Y.Z-cs75plus`）。已安装本测试版时，同数字的稳定版 `v2.0.5` 不会被当成更新。
+- Wi‑Fi Direct 与车机热点的实车结论仍以安装说明为准。有线 USB 以本测试版上车验证为准。
 
 ---
 

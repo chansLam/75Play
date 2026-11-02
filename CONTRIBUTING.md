@@ -8,12 +8,12 @@
 
 1. 先搜是否已有相同问题。
 2. 写明：车机固件（如 `OS_S311-WT`）、iPhone / iOS、75Play 版本、复现步骤。
-3. 附上「设置 → 诊断」导出的 `.txt`。
+3. 附上「关于 → 诊断报告 → 导出」的 `.txt`。
 4. **不要**上传热点密码、配对材料或密钥。
 
 ## 提 Pull Request
 
-- 保持产品边界：不要加入 BYD HUD / 仪表 cluster、有线 USB CarPlay、多 OEM 车辆数据设置。
+- 保持产品边界：不要加入 BYD HUD、多 OEM 车辆数据设置。有线 USB 与导航投仪表已在本分支，不要删除。
 - `minSdk` / `targetSdk` 均为 **19**；不要堆 Android 6+ 手机权限路径。
 - 新增或移动设置项：按司机目标分类（见 `AGENTS.md`），同步全部 `values-xx` 字符串。
 - 提交前尽量跑通：
@@ -28,7 +28,7 @@
 
 ## 上游移植
 
-上游 tip 只维护在 [docs/THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md)。合入建议：`merge(changan|legacy): port <hash> …`。不引入有线 USB、TUN、BYD HUD / cluster。
+上游 tip 只维护在 [docs/THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md)。合入建议：`merge(changan|legacy): port <hash> …`。不要带回 BYD HUD，也不要改用内核 TUN。有线 USB 维持本仓库的 NCM / lwIP。
 
 ## 协议
 

@@ -1,7 +1,7 @@
 name: Publish download site
 on:
   push:
-    branches: [main, master, cs75plus-2020]
+    branches: [main, master, cs75plus-2020, wired-usb-carplay]
     paths:
       - 'site/**'
       - 'scripts/build_site.py'
