@@ -76,10 +76,12 @@ jobs:
           echo "$DIPLAY_AUTH_CERTIFICATE_P7B_BASE64" | base64 -d > "$assets/certificate.p7b"
           echo "DIPLAY_AUTH_ASSETS_DIR=$RUNNER_TEMP/runtime-assets" >> "$GITHUB_ENV"
 
-      # Pinned native libopus is restored from xiph/opus by prepare-libopus.py
-      # (see scripts/prepare-libopus.py). It is git-ignored, so generate it here.
+      # Pinned native libopus and lwIP are git-ignored and restored before ndk-build.
       - name: Prepare native libopus sources
         run: python3 scripts/prepare-libopus.py
+
+      - name: Prepare native lwIP sources
+        run: python3 scripts/prepare-lwip.py
 
       - name: Read release metadata
         id: meta
