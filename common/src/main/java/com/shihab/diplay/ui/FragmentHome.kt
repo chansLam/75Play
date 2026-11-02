@@ -18,6 +18,7 @@ import com.shihab.diplay.connect.ShellNetworkActions
 import com.shihab.diplay.host.R
 import com.shihab.diplay.orchestration.WirelessHotspotMode
 import com.shihab.diplay.ui.settings.GlassSettingsRows
+import com.shihab.diplay.util.AppLog
 
 /**
  * 主页：连接与车机应用左右铺满（竖屏则上下）。
@@ -496,7 +497,7 @@ class FragmentHome : Fragment() {
         fun px(v: Int) = GlassColors.dp(ctx, v)
         val showingFlow = flowView.visibility != View.GONE
         val pinned = if (showingFlow) Gravity.TOP or Gravity.CENTER_HORIZONTAL else Gravity.CENTER
-        if (top is LinearLayout && top.gravity != pinned) top.gravity = pinned
+        if (top is LinearLayout) setLinearGravity(top, pinned)
         val gap = LayoutMetrics.heroGap(ctx)
         val flowH = if (!showingFlow) 0 else flowView.height.coerceAtLeast(LayoutMetrics.connectFlowH(ctx))
         val heroH = if (heroMain.visibility == View.GONE) 0 else heroMain.height.coerceAtLeast(heroMain.minimumHeight)
@@ -509,6 +510,31 @@ class FragmentHome : Fragment() {
         lp.width = side
         lp.height = side
         heroBtn.layoutParams = lp
+    }
+
+    /**
+     * The CS75 head-unit ROM (Freescale S401AUTO, API 19) ships a cut-down android.widget.LinearLayout
+     * that has no getGravity()/setGravity() -> java.lang.NoSuchMethodError at runtime (seen on a
+     * production crash: FragmentHome.fitConnectOrb:499). Read/write the backing mGravity field via
+     * reflection instead, and never touch the missing accessors. Idempotent: re-applying the same
+     * value is a no-op so it does not churn layout.
+     */
+    private fun setLinearGravity(l: LinearLayout, pinned: Int) {
+        try {
+            val f = LinearLayout::class.java.getDeclaredField("mGravity")
+            f.isAccessible = true
+            if (f.getInt(l) != pinned) {
+                f.setInt(l, pinned)
+                l.requestLayout()
+            }
+        } catch (e: Throwable) {
+            // Fallback: direct accessor (still missing on the cut-down ROM, but safe here).
+            try {
+                if (l.gravity != pinned) l.gravity = pinned
+            } catch (ignore: Throwable) {
+                AppLog.w("FragmentHome", "setLinearGravity failed: ${ignore.javaClass.simpleName}: ${ignore.message}")
+            }
+        }
     }
 
     private fun refresh() {
