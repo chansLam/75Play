@@ -66,7 +66,6 @@ internal class VideoDecoder(
     private val referenceChain = VideoReferenceChain()
     private var lastKeyFrameRequestNs = 0L
     private var consecutiveInputWithoutOutput = 0
-    private var staleFramesDropped = 0
     private val stallRebuildTracker = DecoderStallRebuildTracker()
     private var lastOutputRenderedNs = 0L
     private var surfaceAttachedAtNs = if (surface != null) System.nanoTime() else 0L
@@ -143,18 +142,12 @@ internal class VideoDecoder(
                                 val now = System.nanoTime()
                                 val rendering = lastOutputRenderedNs != 0L &&
                                     now - lastOutputRenderedNs < MIN_OUTPUT_STALL_NS
-                                if (now - job.receivedNs > MAX_FRAME_AGE_NS && rendering) {
-                                    staleFramesDropped++
-                                    if (staleFramesDropped == 1 || staleFramesDropped % 30 == 0) {
-                                        report(
-                                            "video stale frame dropped count=$staleFramesDropped " +
-                                                "(decoder behind, keeping feed)",
-                                        )
-                                    }
-                                } else if (now - job.receivedNs > MAX_FRAME_AGE_NS) {
+                                if (now - job.receivedNs > MAX_FRAME_AGE_NS && !rendering) {
                                     queue.discardFrames()
                                     recover("video backlog exceeded 800 ms")
                                 } else {
+                                    // A late frame is still fed. Skipping it breaks every following
+                                    // predicted frame and the picture freezes until the next keyframe.
                                     feed(job.nalus, job.length, localTimeOf(job))
                                 }
                             } finally {
@@ -629,15 +622,17 @@ internal class VideoDecoder(
                     if (paced && !heldOverGap && !pauseHeld && System.nanoTime() > targetNs + 5_000_000L) {
                         stats.onLate()
                     }
-                    codec.releaseOutputBuffer(index, render)
-                    if (shown) {
-                        stats.onRendered()
-                        consecutiveInputWithoutOutput = 0
-                        staleFramesDropped = 0
-                        stallRebuildTracker.onOutput()
-                        lastOutputRenderedNs = now
-                    }
-                    if (shown && !renderedFrameLogged) {
+                    // Decode every frame, but do not display a frame that is already late while a
+                    // newer one is queued. The reference chain stays intact and the picture catches up.
+                    val catchUp = paced && targetNs > 0L &&
+                        System.nanoTime() > targetNs + CATCH_UP_LATENESS_NS &&
+                        queue.pendingFrameCount() > 0
+                    codec.releaseOutputBuffer(index, render && !catchUp)
+                    consecutiveInputWithoutOutput = 0
+                    stallRebuildTracker.onOutput()
+                    if (shown) lastOutputRenderedNs = now
+                    if (shown && !catchUp) stats.onRendered()
+                    if (shown && !catchUp && !renderedFrameLogged) {
                         renderedFrameLogged = true
                         report("first frame rendered")
                         AppLog.i(TAG, "video decoder rendered first frame bytes=${info.size}")
@@ -715,6 +710,7 @@ internal class VideoDecoder(
         const val MIN_OUTPUT_STALL_NS = 1_500_000_000L
         const val SURFACE_WARMUP_NS = 3_500_000_000L
         const val MAX_FRAME_AGE_NS = 800_000_000L
+        const val CATCH_UP_LATENESS_NS = 80_000_000L
         val START_CODE = byteArrayOf(0x00, 0x00, 0x00, 0x01)
     }
 }

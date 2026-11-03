@@ -93,7 +93,7 @@ LOCAL_SRC_FILES := lwip_ncm_relay.c \
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/lwip_port \
     $(LOCAL_PATH)/lwip/src/include
 LOCAL_CFLAGS := -O2 -Wno-unused-parameter -Wno-sign-compare
-LOCAL_LDLIBS := -llog
+LOCAL_LDLIBS := -llog -ldl
 include $(BUILD_SHARED_LIBRARY)
 
 # usbfs fallbacks for Android 9 and older head units (API 19: no framework
@@ -110,4 +110,13 @@ include $(CLEAR_VARS)
 LOCAL_MODULE := legacy_ncm_claim
 LOCAL_SRC_FILES := legacy_ncm_claim.c
 LOCAL_CFLAGS := -Wall -Wextra
+include $(BUILD_SHARED_LIBRARY)
+
+# Async CDC-NCM bulk URBs on the already-authorized framework usbfs fd. This avoids
+# API 19's synchronous bulkTransfer JNI critical section without opening a second fd.
+include $(CLEAR_VARS)
+LOCAL_MODULE := usbfs_ncm_io
+LOCAL_SRC_FILES := usbfs_ncm_io.c
+LOCAL_CFLAGS := -Wall -Wextra -Werror
+LOCAL_LDLIBS := -llog -ldl
 include $(BUILD_SHARED_LIBRARY)

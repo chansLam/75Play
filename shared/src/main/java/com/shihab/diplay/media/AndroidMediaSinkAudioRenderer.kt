@@ -9,6 +9,7 @@ import android.media.MediaFormat
 import android.os.Build
 import com.shihab.diplay.airplay.AudioCodecKind
 import com.shihab.diplay.airplay.AudioFormat
+import com.shihab.diplay.airplay.AudioPacketBuffers
 import com.shihab.diplay.airplay.BufferedAudioStream
 import com.shihab.diplay.airplay.toHexString
 import com.shihab.diplay.compat.inputBufferCompat
@@ -122,7 +123,9 @@ internal class AudioRenderer(
                 while (gap > old && !maxArrivalGapMs.compareAndSet(old, gap)) old = maxArrivalGapMs.get()
             }
         }
-        if (!started || !queue.offer(AudioPacket(rtp, sample))) {
+        val owned = retainForPlayback(rtp)
+        if (!started || !queue.offer(AudioPacket(owned, sample))) {
+            AudioPacketBuffers.give(owned)
             if (started) {
                 packetsDropped.incrementAndGet()
                 packetsDroppedTotal.incrementAndGet()
@@ -133,6 +136,17 @@ internal class AudioRenderer(
                 report("Audio: queue full audioType=${format.audioType}")
             }
         }
+    }
+
+    /**
+     * Buffered music keeps its own RTP array until the stream retires or replays it.
+     * Playback gets a separate array so the two sides can recycle without sharing storage.
+     */
+    private fun retainForPlayback(rtp: ByteArray): ByteArray {
+        if (format.payloadType != BufferedAudioStream.STREAM_TYPE) return rtp
+        val copy = AudioPacketBuffers.take(rtp.size)
+        System.arraycopy(rtp, 0, copy, 0, rtp.size)
+        return copy
     }
 
     override fun close() {
@@ -195,6 +209,10 @@ internal class AudioRenderer(
                 reportFailure(error)
             }
         } finally {
+            while (true) {
+                val leftover = queue.poll() ?: break
+                AudioPacketBuffers.give(leftover.rtp)
+            }
             runCatching { logStatsIfDue(force = true) }
             release()
         }
@@ -555,49 +573,55 @@ internal class AudioRenderer(
 
     private fun handle(packet: AudioPacket) {
         val rtp = packet.rtp
-        newestRtpSample = packet.sample
-        // Hold short Wi-Fi bursts intact. If compressed audio remains >1.5s behind for
-        // another 1.5s, skip only stale undecoded packets to catch up to the live song.
-        val removed = mediaLagGuard?.recover(queue, packet.sample, AudioPacket::sample, System.nanoTime()) ?: 0
-        if (removed > 0) {
-            packetsDropped.addAndGet(removed)
-            packetsDroppedTotal.addAndGet(removed)
-            if (lagRecoveryReports < MAX_REBUFFER_REPORTS) {
-                lagRecoveryReports++
-                report("Audio: stale media packet backlog recovered audioType=${format.audioType} " +
-                    "packetsDiscarded=$removed remaining=${queue.size}")
-            }
-        }
-        val timestampUs = sampleTimestampUs(packet.sample)
-        when (format.codec) {
-            AudioCodecKind.LPCM -> {
-                val payloadLen = copyRtpPayload(rtp)
-                if (payloadLen > 0) writePcm(byteSwapS16(rtpPayloadScratch, payloadLen), 0, payloadLen)
-            }
-            AudioCodecKind.AAC_LC -> {
-                if (rtp.size > 12) {
-                    if (!firstAacPayloadLogged) {
-                        firstAacPayloadLogged = true
-                        AppLog.i(TAG, "audio AAC access unit bytes=${rtp.size - 12}")
-                    }
-                    feedAac(rtp, 12, rtp.size - 12, timestampUs)
+        try {
+            newestRtpSample = packet.sample
+            // Hold short Wi-Fi bursts intact. If compressed audio remains >1.5s behind for
+            // another 1.5s, skip only stale undecoded packets to catch up to the live song.
+            val removed = mediaLagGuard?.recover(
+                queue, packet.sample, AudioPacket::sample, System.nanoTime(),
+            ) { AudioPacketBuffers.give(it.rtp) } ?: 0
+            if (removed > 0) {
+                packetsDropped.addAndGet(removed)
+                packetsDroppedTotal.addAndGet(removed)
+                if (lagRecoveryReports < MAX_REBUFFER_REPORTS) {
+                    lagRecoveryReports++
+                    report("Audio: stale media packet backlog recovered audioType=${format.audioType} " +
+                        "packetsDiscarded=$removed remaining=${queue.size}")
                 }
             }
-            AudioCodecKind.OPUS -> {
-                val payloadLen = copyRtpPayload(rtp)
-                if (payloadLen < MIN_OPUS_PACKET_BYTES) {
-                    shortOpusPackets++
-                    if (!firstOpusShortPacketLogged) {
-                        firstOpusShortPacketLogged = true
-                        AppLog.i(
-                            TAG,
-                            "audio Opus skipping short packet bytes=$payloadLen",
-                        )
-                    }
-                    return
+            val timestampUs = sampleTimestampUs(packet.sample)
+            when (format.codec) {
+                AudioCodecKind.LPCM -> {
+                    val payloadLen = copyRtpPayload(rtp)
+                    if (payloadLen > 0) writePcm(byteSwapS16(rtpPayloadScratch, payloadLen), 0, payloadLen)
                 }
-                feedCodec(rtpPayloadScratch, timestampUs, 0, payloadLen)
+                AudioCodecKind.AAC_LC -> {
+                    if (rtp.size > 12) {
+                        if (!firstAacPayloadLogged) {
+                            firstAacPayloadLogged = true
+                            AppLog.i(TAG, "audio AAC access unit bytes=${rtp.size - 12}")
+                        }
+                        feedAac(rtp, 12, rtp.size - 12, timestampUs)
+                    }
+                }
+                AudioCodecKind.OPUS -> {
+                    val payloadLen = copyRtpPayload(rtp)
+                    if (payloadLen < MIN_OPUS_PACKET_BYTES) {
+                        shortOpusPackets++
+                        if (!firstOpusShortPacketLogged) {
+                            firstOpusShortPacketLogged = true
+                            AppLog.i(
+                                TAG,
+                                "audio Opus skipping short packet bytes=$payloadLen",
+                            )
+                        }
+                        return
+                    }
+                    feedCodec(rtpPayloadScratch, timestampUs, 0, payloadLen)
+                }
             }
+        } finally {
+            AudioPacketBuffers.give(rtp)
         }
     }
 

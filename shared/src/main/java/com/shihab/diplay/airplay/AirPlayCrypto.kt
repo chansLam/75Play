@@ -126,6 +126,45 @@ object AirPlayCrypto {
             }
     }
 
+    /**
+     * Seals [plainLength] bytes into [destination] at [destinationOffset]. The nonce is [counter].
+     * Returns the sealed length, including the 16-byte tag.
+     */
+    fun chachaSealInto(
+        key: ByteArray,
+        counter: Long,
+        aad: ByteArray,
+        aadOffset: Int,
+        aadLength: Int,
+        plain: ByteArray,
+        plainOffset: Int,
+        plainLength: Int,
+        destination: ByteArray,
+        destinationOffset: Int,
+    ): Int {
+        if (NativeChaCha.available && aadLength in 0..64 && plainLength in 0..4096 &&
+            aadOffset >= 0 && plainOffset >= 0 && destinationOffset >= 0 &&
+            aadOffset + aadLength <= aad.size && plainOffset + plainLength <= plain.size &&
+            destinationOffset + plainLength + 16 <= destination.size) {
+            val written = NativeChaCha.nativeSealInto(
+                key, counter, aad, aadOffset, aadLength, plain, plainOffset, plainLength,
+                destination, destinationOffset,
+            )
+            if (written >= 0) {
+                nativeNote.set("native")
+                return written
+            }
+        }
+        val sealed = chachaSeal(
+            key,
+            nonce64(counter),
+            plain.copyOfRange(plainOffset, plainOffset + plainLength),
+            aad.copyOfRange(aadOffset, aadOffset + aadLength),
+        )
+        sealed.copyInto(destination, destinationOffset)
+        return sealed.size
+    }
+
     fun chachaOpen(
         key: ByteArray,
         nonce: ByteArray,
@@ -166,6 +205,39 @@ object AirPlayCrypto {
             sealed.copyOfRange(sealedOffset, sealedOffset + sealedLength),
             aad.copyOfRange(aadOffset, aadOffset + aadLength),
         )
+    }
+
+    /**
+     * Decrypts a ranged packet directly into [destination]. The caller allocates the one array that
+     * playback retains, so the audio thread does not also allocate a temporary plaintext array.
+     */
+    fun chachaOpenRangeInto(
+        key: ByteArray,
+        nonce: ByteArray,
+        aad: ByteArray,
+        aadOffset: Int,
+        aadLength: Int,
+        sealed: ByteArray,
+        sealedOffset: Int,
+        sealedLength: Int,
+        destination: ByteArray,
+        destinationOffset: Int,
+    ): Int {
+        if (NativeChaCha.available && aadLength <= 64 && sealedLength <= 4096) {
+            val written = NativeChaCha.nativeOpenRangeInto(
+                key, nonce, aad, aadOffset, aadLength, sealed, sealedOffset, sealedLength,
+                destination, destinationOffset,
+            )
+            if (written < 0) throw BadPaddingException("ChaCha20-Poly1305 tag mismatch")
+            nativeNote.set("native")
+            return written
+        }
+        val plain = chachaOpenRange(key, nonce, aad, aadOffset, aadLength, sealed, sealedOffset, sealedLength)
+        if (destinationOffset < 0 || plain.size > destination.size - destinationOffset) {
+            throw BadPaddingException("ChaCha20-Poly1305 plaintext does not fit")
+        }
+        plain.copyInto(destination, destinationOffset)
+        return plain.size
     }
 
     /**
@@ -214,6 +286,30 @@ object AirPlayCrypto {
         output.limit(plainLength)
         output.get(destination, 0, plainLength)
         return plainLength
+    }
+
+    /**
+     * Decrypts one screen frame into [destination]. The nonce is [counter]; a matching tag
+     * failure throws. A frame the native path cannot take falls back to [chachaOpenDirectInto].
+     */
+    fun chachaOpenFrameInto(
+        key: ByteArray,
+        counter: Long,
+        aad: ByteArray,
+        ciphertext: ByteArray,
+        length: Int,
+        destination: ByteArray,
+    ): Int {
+        if (NativeChaCha.available && aad.size <= 256 && length >= 16 && length <= ciphertext.size &&
+            length - 16 <= destination.size) {
+            val written = NativeChaCha.nativeOpenFrameInto(key, counter, aad, ciphertext, length, destination)
+            if (written >= 0) {
+                nativeNote.set("native")
+                return written
+            }
+            if (written == -2) throw BadPaddingException("ChaCha20-Poly1305 tag mismatch")
+        }
+        return chachaOpenDirectInto(key, nonce64(counter), aad, ciphertext, length, destination)
     }
 
     private fun openNative(key: ByteArray, nonce: ByteArray, aad: ByteArray, sealed: ByteArray): ByteArray {

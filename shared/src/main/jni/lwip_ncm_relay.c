@@ -12,6 +12,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <android/log.h>
+#include <dlfcn.h>
 
 #include "lwip/init.h"
 #include "lwip/netif.h"
@@ -29,7 +30,7 @@
 
 #define MAX_RELAY_CONNS 32
 #define MAX_UDP_RELAYS 32
-#define BUFFER_SIZE 16384
+#define BUFFER_SIZE 32768
 
 // NO_SYS lwIP owns process-global heaps, PCB lists and cyclic timers.
 // Reinitializing those globals for another USB session corrupts next_timeout.
@@ -41,9 +42,12 @@ typedef struct {
     int active;
     struct tcp_pcb *lwip_pcb;
     int loopback_fd;
+    int loopback_connecting;
     uint8_t loopback_to_lwip_buf[BUFFER_SIZE];
+    int loopback_to_lwip_head;
     int loopback_to_lwip_len;
     uint8_t lwip_to_loopback_buf[BUFFER_SIZE];
+    int lwip_to_loopback_head;
     int lwip_to_loopback_len;
 } TcpRelayConn;
 
@@ -64,6 +68,21 @@ typedef struct {
 } PortMapping;
 
 #define MAX_PORT_MAPPINGS 32
+#define NCM_TX_CAP 32
+
+#define NCM_TX_INLINE 2048
+
+typedef struct {
+    uint8_t *data;
+    int len;
+    uint8_t inline_buf[NCM_TX_INLINE];
+} NcmTxFrame;
+
+static void release_tx_frame(NcmTxFrame *frame) {
+    if (frame->data != NULL && frame->data != frame->inline_buf) free(frame->data);
+    frame->data = NULL;
+    frame->len = 0;
+}
 
 typedef struct {
     JavaVM *jvm;
@@ -86,6 +105,18 @@ typedef struct {
     pthread_t thread;
     atomic_int running;
     int wake_pipe[2];
+    NcmTxFrame tx_q[NCM_TX_CAP];
+    int tx_head;
+    int tx_count;
+    pthread_mutex_t tx_mu;
+    pthread_cond_t tx_cv;
+    pthread_t tx_thread;
+    int tx_started;
+    void *usbfs_io;
+    int (*usbfs_submit)(void *, const unsigned char *const *, const int *, int, int, int, int *);
+    int usbfs_max_block;
+    int usbfs_alignment;
+    int usbfs_max_datagrams;
 
     uint32_t stats_rx_frames;
     uint32_t stats_rx_bytes;
@@ -104,45 +135,121 @@ static err_t ncm_netif_output_ip6(struct netif *netif, struct pbuf *p, const ip6
     return ethip6_output(netif, p, ip6addr);
 }
 
+static int jni_offer_frame(LwipContext *ctx, JNIEnv *env, const uint8_t *data, int len) {
+    jbyteArray jframe = (*env)->NewByteArray(env, len);
+    if (jframe == NULL) return 0;
+    (*env)->SetByteArrayRegion(env, jframe, 0, len, (const jbyte *)data);
+    jboolean accepted = (*env)->CallBooleanMethod(
+        env, ctx->bridge_obj_global, ctx->on_tx_frame_mid, jframe);
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+        accepted = JNI_FALSE;
+    }
+    (*env)->DeleteLocalRef(env, jframe);
+    return accepted == JNI_TRUE;
+}
+
+static void pop_tx_frames(LwipContext *ctx, int count) {
+    for (int i = 0; i < count && ctx->tx_count > 0; i++) {
+        release_tx_frame(&ctx->tx_q[ctx->tx_head]);
+        ctx->tx_head = (ctx->tx_head + 1) % NCM_TX_CAP;
+        ctx->tx_count--;
+    }
+}
+
+/** Packs the native TX ring into one NTB and submits it without entering Java. */
+static int submit_usbfs_batch(LwipContext *ctx) {
+    const unsigned char *frames[32];
+    int lengths[32];
+    pthread_mutex_lock(&ctx->tx_mu);
+    int count = ctx->tx_count;
+    int limit = ctx->usbfs_max_datagrams;
+    if (limit < 1) limit = 1;
+    if (limit > 32) limit = 32;
+    if (count > limit) count = limit;
+    void *io = ctx->usbfs_io;
+    int (*submit)(void *, const unsigned char *const *, const int *, int, int, int, int *) = ctx->usbfs_submit;
+    int max_block = ctx->usbfs_max_block;
+    int alignment = ctx->usbfs_alignment;
+    for (int i = 0; i < count; i++) {
+        NcmTxFrame frame = ctx->tx_q[(ctx->tx_head + i) % NCM_TX_CAP];
+        frames[i] = frame.data;
+        lengths[i] = frame.len;
+    }
+    pthread_mutex_unlock(&ctx->tx_mu);
+    if (submit == NULL || io == NULL || count <= 0) return 0;
+    int accepted = 0;
+    int submitted = submit(io, frames, lengths, count, max_block, alignment, &accepted);
+    pthread_mutex_lock(&ctx->tx_mu);
+    if (submitted > 0) pop_tx_frames(ctx, accepted);
+    else if (submitted < 0) pop_tx_frames(ctx, 1);
+    pthread_mutex_unlock(&ctx->tx_mu);
+    return submitted;
+}
+
+static void *ncm_tx_thread(void *arg) {
+    LwipContext *ctx = (LwipContext *)arg;
+    JNIEnv *env = NULL;
+    if ((*ctx->jvm)->AttachCurrentThread(ctx->jvm, &env, NULL) != 0) return NULL;
+    while (1) {
+        pthread_mutex_lock(&ctx->tx_mu);
+        while (ctx->tx_count == 0 && ctx->running) pthread_cond_wait(&ctx->tx_cv, &ctx->tx_mu);
+        int direct = ctx->usbfs_submit != NULL;
+        if (!ctx->running || ctx->tx_count == 0) {
+            pthread_mutex_unlock(&ctx->tx_mu);
+            break;
+        }
+        if (direct) {
+            pthread_mutex_unlock(&ctx->tx_mu);
+            if (submit_usbfs_batch(ctx) == 0 && ctx->running) usleep(10000);
+            continue;
+        }
+        NcmTxFrame frame = ctx->tx_q[ctx->tx_head];
+        pthread_mutex_unlock(&ctx->tx_mu);
+        int accepted = jni_offer_frame(ctx, env, frame.data, frame.len);
+        pthread_mutex_lock(&ctx->tx_mu);
+        if (accepted || !ctx->running) pop_tx_frames(ctx, 1);
+        pthread_mutex_unlock(&ctx->tx_mu);
+        if (!accepted && ctx->running) usleep(10000);
+    }
+    (*ctx->jvm)->DetachCurrentThread(ctx->jvm);
+    return NULL;
+}
+
 static err_t ncm_linkoutput(struct netif *netif, struct pbuf *p) {
     LwipContext *ctx = (LwipContext *)netif->state;
     if (ctx == NULL || !ctx->running) return ERR_OK;
 
     int total_len = p->tot_len;
     if (total_len <= 0 || total_len > 65535) return ERR_VAL;
+    uint8_t *heap = NULL;
+    if (total_len > NCM_TX_INLINE) {
+        heap = (uint8_t *)malloc((size_t)total_len);
+        if (heap == NULL) return ERR_MEM;
+        pbuf_copy_partial(p, heap, (u16_t)total_len, 0);
+    }
+
+    pthread_mutex_lock(&ctx->tx_mu);
+    if (!ctx->running || ctx->tx_count >= NCM_TX_CAP) {
+        pthread_mutex_unlock(&ctx->tx_mu);
+        free(heap);
+        return ERR_MEM;
+    }
+    int index = (ctx->tx_head + ctx->tx_count) % NCM_TX_CAP;
+    NcmTxFrame *slot = &ctx->tx_q[index];
+    if (heap != NULL) {
+        slot->data = heap;
+    } else {
+        pbuf_copy_partial(p, slot->inline_buf, (u16_t)total_len, 0);
+        slot->data = slot->inline_buf;
+    }
+    slot->len = total_len;
+    ctx->tx_count++;
+    pthread_cond_signal(&ctx->tx_cv);
+    pthread_mutex_unlock(&ctx->tx_mu);
 
     ctx->stats_tx_frames++;
     ctx->stats_tx_bytes += (uint32_t)total_len;
-
-    JNIEnv *env = NULL;
-    int attached = 0;
-    if ((*ctx->jvm)->GetEnv(ctx->jvm, (void **)&env, JNI_VERSION_1_6) != JNI_OK) {
-        if ((*ctx->jvm)->AttachCurrentThread(ctx->jvm, &env, NULL) != 0) {
-            return ERR_VAL;
-        }
-        attached = 1;
-    }
-
-    jbyteArray jframe = (*env)->NewByteArray(env, total_len);
-    if (jframe != NULL) {
-        jbyte *buf = (*env)->GetByteArrayElements(env, jframe, NULL);
-        if (buf != NULL) {
-            pbuf_copy_partial(p, buf, total_len, 0);
-            uint8_t header[21] = {0};
-            memcpy(header, buf, total_len < 21 ? (size_t)total_len : sizeof(header));
-            (*env)->ReleaseByteArrayElements(env, jframe, buf, 0);
-
-            LOGI("ncm_linkoutput sending frame len=%d proto=0x%02x%02x next=0x%02x", 
-                 total_len, (unsigned char)header[12], (unsigned char)header[13],
-                 total_len >= 21 ? (unsigned char)header[20] : 0);
-            (*env)->CallVoidMethod(env, ctx->bridge_obj_global, ctx->on_tx_frame_mid, jframe);
-        }
-        (*env)->DeleteLocalRef(env, jframe);
-    }
-
-    if (attached) {
-        (*ctx->jvm)->DetachCurrentThread(ctx->jvm);
-    }
     return ERR_OK;
 }
 
@@ -178,8 +285,23 @@ static void close_tcp_relay_conn(LwipContext *ctx, TcpRelayConn *conn) {
         tcp_abort(conn->lwip_pcb);
         conn->lwip_pcb = NULL;
     }
+    conn->loopback_to_lwip_head = 0;
     conn->loopback_to_lwip_len = 0;
+    conn->lwip_to_loopback_head = 0;
     conn->lwip_to_loopback_len = 0;
+    conn->loopback_connecting = 0;
+}
+
+static int ring_span(int head, int len) {
+    int until_end = BUFFER_SIZE - head;
+    return len < until_end ? len : until_end;
+}
+
+static void ring_consume(int *head, int *len, int count) {
+    *head += count;
+    if (*head >= BUFFER_SIZE) *head -= BUFFER_SIZE;
+    *len -= count;
+    if (*len == 0) *head = 0;
 }
 
 static void close_udp_relay(LwipContext *ctx, UdpRelay *relay) {
@@ -265,17 +387,17 @@ static void flush_loopback_to_lwip(TcpRelayConn *conn) {
     if (conn->loopback_to_lwip_len > 0) {
         u16_t snd_buf = tcp_sndbuf(conn->lwip_pcb);
         if (snd_buf > 0) {
-            u16_t to_send = (u16_t)conn->loopback_to_lwip_len;
-            if (to_send > snd_buf) {
-                to_send = snd_buf;
-            }
-            err_t wr_err = tcp_write(conn->lwip_pcb, conn->loopback_to_lwip_buf, to_send, TCP_WRITE_FLAG_COPY);
+            int span = ring_span(conn->loopback_to_lwip_head, conn->loopback_to_lwip_len);
+            u16_t to_send = (u16_t)span;
+            if (to_send > snd_buf) to_send = snd_buf;
+            err_t wr_err = tcp_write(
+                conn->lwip_pcb,
+                conn->loopback_to_lwip_buf + conn->loopback_to_lwip_head,
+                to_send,
+                TCP_WRITE_FLAG_COPY);
             if (wr_err == ERR_OK) {
                 tcp_output(conn->lwip_pcb);
-                conn->loopback_to_lwip_len -= (int)to_send;
-                if (conn->loopback_to_lwip_len > 0) {
-                    memmove(conn->loopback_to_lwip_buf, conn->loopback_to_lwip_buf + to_send, (size_t)conn->loopback_to_lwip_len);
-                }
+                ring_consume(&conn->loopback_to_lwip_head, &conn->loopback_to_lwip_len, to_send);
             } else if (wr_err != ERR_MEM) {
                 LOGW("tcp_write failed: %d", wr_err);
             }
@@ -313,7 +435,14 @@ static err_t tcp_relay_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err
     // Never wait for a slow local reader while holding the global NO_SYS core
     // lock. Keep bounded data and let the worker forward it nonblockingly.
     if (p->tot_len > BUFFER_SIZE - conn->lwip_to_loopback_len) return ERR_MEM;
-    pbuf_copy_partial(p, conn->lwip_to_loopback_buf + conn->lwip_to_loopback_len, p->tot_len, 0);
+    int tail = conn->lwip_to_loopback_head + conn->lwip_to_loopback_len;
+    if (tail >= BUFFER_SIZE) tail -= BUFFER_SIZE;
+    int first = BUFFER_SIZE - tail;
+    if (first > p->tot_len) first = p->tot_len;
+    pbuf_copy_partial(p, conn->lwip_to_loopback_buf + tail, (u16_t)first, 0);
+    if (p->tot_len > (u16_t)first) {
+        pbuf_copy_partial(p, conn->lwip_to_loopback_buf, (u16_t)(p->tot_len - first), (u16_t)first);
+    }
     conn->lwip_to_loopback_len += p->tot_len;
     pbuf_free(p);
     return ERR_OK;
@@ -352,20 +481,22 @@ static err_t tcp_relay_accept(void *arg, struct tcp_pcb *newpcb, err_t err) {
     sin.sin_port = htons((uint16_t)port);
     sin.sin_addr.s_addr = inet_addr("127.0.0.1");
 
+    int flags = fcntl(fd, F_GETFL, 0);
+    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
     int res = connect(fd, (struct sockaddr *)&sin, sizeof(sin));
-    if (res < 0) {
+    if (res < 0 && errno != EINPROGRESS) {
         LOGE("Failed to connect to 127.0.0.1:%d, errno=%d", port, errno);
         close(fd);
         return ERR_CONN;
     }
 
-    int flags = fcntl(fd, F_GETFL, 0);
-    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-
     conn->active = 1;
     conn->lwip_pcb = newpcb;
     conn->loopback_fd = fd;
+    conn->loopback_connecting = (res < 0);
+    conn->loopback_to_lwip_head = 0;
     conn->loopback_to_lwip_len = 0;
+    conn->lwip_to_loopback_head = 0;
     conn->lwip_to_loopback_len = 0;
     ctx->stats_tcp_conns_accepted++;
 
@@ -381,14 +512,25 @@ static void check_and_forward_loopback(LwipContext *ctx) {
     for (int i = 0; i < MAX_RELAY_CONNS; i++) {
         TcpRelayConn *conn = &ctx->tcp_conns[i];
         if (!conn->active || conn->loopback_fd < 0 || conn->lwip_pcb == NULL) continue;
+        if (conn->loopback_connecting) {
+            int connect_error = 0;
+            socklen_t error_len = sizeof(connect_error);
+            if (getsockopt(conn->loopback_fd, SOL_SOCKET, SO_ERROR, &connect_error, &error_len) != 0 ||
+                connect_error != 0) {
+                if (connect_error == EINPROGRESS || connect_error == EALREADY) continue;
+                LOGW("loopback connect failed: %d", connect_error == 0 ? errno : connect_error);
+                close_tcp_relay_conn(ctx, conn);
+                continue;
+            }
+            conn->loopback_connecting = 0;
+        }
 
         while (conn->lwip_to_loopback_len > 0) {
-            ssize_t sent = send(conn->loopback_fd, conn->lwip_to_loopback_buf,
-                                (size_t)conn->lwip_to_loopback_len, MSG_NOSIGNAL);
+            int span = ring_span(conn->lwip_to_loopback_head, conn->lwip_to_loopback_len);
+            ssize_t sent = send(conn->loopback_fd, conn->lwip_to_loopback_buf + conn->lwip_to_loopback_head,
+                                (size_t)span, MSG_NOSIGNAL);
             if (sent > 0) {
-                conn->lwip_to_loopback_len -= (int)sent;
-                memmove(conn->lwip_to_loopback_buf, conn->lwip_to_loopback_buf + sent,
-                        (size_t)conn->lwip_to_loopback_len);
+                ring_consume(&conn->lwip_to_loopback_head, &conn->lwip_to_loopback_len, (int)sent);
                 tcp_recved(conn->lwip_pcb, (u16_t)sent);
             } else if (sent < 0 && errno == EINTR) {
                 continue;
@@ -404,7 +546,10 @@ static void check_and_forward_loopback(LwipContext *ctx) {
 
         int space = BUFFER_SIZE - conn->loopback_to_lwip_len;
         if (space > 0) {
-            ssize_t n = read(conn->loopback_fd, conn->loopback_to_lwip_buf + conn->loopback_to_lwip_len, (size_t)space);
+            int tail = conn->loopback_to_lwip_head + conn->loopback_to_lwip_len;
+            if (tail >= BUFFER_SIZE) tail -= BUFFER_SIZE;
+            int span = ring_span(tail, space);
+            ssize_t n = read(conn->loopback_fd, conn->loopback_to_lwip_buf + tail, (size_t)span);
             if (n > 0) {
                 conn->loopback_to_lwip_len += (int)n;
                 flush_loopback_to_lwip(conn);
@@ -419,6 +564,8 @@ static void check_and_forward_loopback(LwipContext *ctx) {
     }
 }
 
+static struct pbuf *alloc_transport_pbuf(u16_t length);
+
 static void check_and_forward_udp_loopback(LwipContext *ctx) {
     for (int i = 0; i < MAX_UDP_RELAYS; i++) {
         UdpRelay *relay = &ctx->udp_relays[i];
@@ -429,7 +576,7 @@ static void check_and_forward_udp_loopback(LwipContext *ctx) {
         while (1) {
             ssize_t n = recvfrom(relay->loopback_fd, buf, sizeof(buf), 0, NULL, NULL);
             if (n > 0) {
-                struct pbuf *p = pbuf_alloc(PBUF_TRANSPORT, (u16_t)n, PBUF_RAM);
+                struct pbuf *p = alloc_transport_pbuf((u16_t)n);
                 if (p != NULL) {
                     pbuf_take(p, buf, (u16_t)n);
                     err_t err = udp_sendto(relay->lwip_pcb, p, &relay->peer_ip, relay->peer_port);
@@ -634,7 +781,7 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeCreate(
     ctx->bridge_obj_global = (*env)->NewGlobalRef(env, thiz);
 
     jclass cls = (*env)->GetObjectClass(env, thiz);
-    ctx->on_tx_frame_mid = (*env)->GetMethodID(env, cls, "onTxFrame", "([B)V");
+    ctx->on_tx_frame_mid = (*env)->GetMethodID(env, cls, "onTxFrame", "([B)Z");
     if (ctx->on_tx_frame_mid == NULL) {
         LOGE("Failed to find onTxFrame method");
         free(ctx);
@@ -658,6 +805,8 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeCreate(
         int flags = fcntl(ctx->wake_pipe[end], F_GETFL, 0);
         fcntl(ctx->wake_pipe[end], F_SETFL, flags | O_NONBLOCK);
     }
+    pthread_mutex_init(&ctx->tx_mu, NULL);
+    pthread_cond_init(&ctx->tx_cv, NULL);
 
     pthread_mutex_lock(&lwip_core_lock);
     pthread_once(&lwip_once, initialize_lwip_once);
@@ -680,33 +829,42 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeCreate(
 
     pthread_mutex_unlock(&lwip_core_lock);
     ctx->running = 1;
+    if (pthread_create(&ctx->tx_thread, NULL, ncm_tx_thread, ctx) == 0) ctx->tx_started = 1;
     pthread_create(&ctx->thread, NULL, lwip_worker_thread, ctx);
 
     LOGI("LwipContext initialized");
     return (jlong)(intptr_t)ctx;
 }
 
-JNIEXPORT void JNICALL
-Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeInputFrame(
-        JNIEnv *env, jobject thiz, jlong handle, jbyteArray frameArr, jint length) {
-    (void)thiz;
-    LwipContext *ctx = (LwipContext *)(intptr_t)handle;
-    if (ctx == NULL || !ctx->running || frameArr == NULL || length <= 0) return;
+/* A normal NCM frame fits one pool buffer. Larger or chained results use the heap. */
+static struct pbuf *alloc_frame_pbuf(u16_t length) {
+    if (length > 0 && length <= 1514) {
+        struct pbuf *pooled = pbuf_alloc(PBUF_RAW, length, PBUF_POOL);
+        if (pooled != NULL) {
+            if (pooled->next == NULL && pooled->len == length) return pooled;
+            pbuf_free(pooled);
+        }
+    }
+    return pbuf_alloc(PBUF_RAW, length, PBUF_RAM);
+}
 
+static struct pbuf *alloc_transport_pbuf(u16_t length) {
+    struct pbuf *pooled = pbuf_alloc(PBUF_TRANSPORT, length, PBUF_POOL);
+    if (pooled != NULL) return pooled;
+    return pbuf_alloc(PBUF_TRANSPORT, length, PBUF_RAM);
+}
+
+static void input_ethernet(LwipContext *ctx, const uint8_t *data, int length) {
     // lwIP is built with NO_SYS=1 / SYS_LIGHTWEIGHT_PROT=0: its heap (mem.c)
-    // has no internal locking, so every heap access must hold ctx->lock.
-    // pbuf_alloc() -> mem_malloc() used to run outside the lock here while the
-    // worker thread concurrently freed pbufs (mem_free) under the lock, which
-    // corrupted the heap and later aborted the process in mem_free (SIGABRT).
+    // has no internal locking, so every heap access must hold the core lock.
     pthread_mutex_lock(&lwip_core_lock);
-    struct pbuf *p = pbuf_alloc(PBUF_RAW, (u16_t)length, PBUF_RAM);
+    struct pbuf *p = alloc_frame_pbuf((u16_t)length);
     if (p == NULL) {
         pthread_mutex_unlock(&lwip_core_lock);
         LOGW("pbuf_alloc failed for length %d", length);
         return;
     }
-
-    (*env)->GetByteArrayRegion(env, frameArr, 0, length, (jbyte *)p->payload);
+    memcpy(p->payload, data, (size_t)length);
 
     ctx->stats_rx_frames++;
     ctx->stats_rx_bytes += (uint32_t)length;
@@ -737,8 +895,34 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeInputFrame(
         pbuf_free(p);
     }
     pthread_mutex_unlock(&lwip_core_lock);
-
     trigger_wake(ctx);
+}
+
+int ncm_lwip_input_ethernet(void *handle, const unsigned char *data, int length) {
+    LwipContext *ctx = (LwipContext *)handle;
+    if (ctx == NULL || !ctx->running || data == NULL || length <= 0 || length > 65535) return -1;
+    input_ethernet(ctx, data, length);
+    return 0;
+}
+
+JNIEXPORT void JNICALL
+Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeInputFrame(
+        JNIEnv *env, jobject thiz, jlong handle, jbyteArray frameArr, jint length) {
+    (void)thiz;
+    LwipContext *ctx = (LwipContext *)(intptr_t)handle;
+    if (ctx == NULL || !ctx->running || frameArr == NULL || length <= 0 || length > 65535) return;
+
+    // Copy the Java array before taking the lwIP lock. JNI must not run while that lock is held.
+    uint8_t *copy = (uint8_t *)malloc((size_t)length);
+    if (copy == NULL) return;
+    (*env)->GetByteArrayRegion(env, frameArr, 0, length, (jbyte *)copy);
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+        free(copy);
+        return;
+    }
+    input_ethernet(ctx, copy, length);
+    free(copy);
 }
 
 JNIEXPORT void JNICALL
@@ -769,6 +953,33 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeRegisterPort(
     trigger_wake(ctx);
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeBindUsbfs(
+        JNIEnv *env, jobject thiz, jlong handle, jlong io_handle,
+        jint max_block_bytes, jint alignment, jint max_datagrams) {
+    (void)env; (void)thiz;
+    LwipContext *ctx = (LwipContext *)(intptr_t)handle;
+    if (ctx == NULL || io_handle == 0 || max_block_bytes < 64 || alignment <= 0 || max_datagrams < 1) {
+        return JNI_FALSE;
+    }
+    int (*submit)(void *, const unsigned char *const *, const int *, int, int, int, int *) =
+        (int (*)(void *, const unsigned char *const *, const int *, int, int, int, int *))
+        dlsym(RTLD_DEFAULT, "ncm_usbfs_submit_ethernet");
+    if (submit == NULL) {
+        LOGW("native usbfs submit symbol unavailable");
+        return JNI_FALSE;
+    }
+    pthread_mutex_lock(&ctx->tx_mu);
+    ctx->usbfs_io = (void *)(intptr_t)io_handle;
+    ctx->usbfs_max_block = max_block_bytes;
+    ctx->usbfs_alignment = alignment;
+    ctx->usbfs_max_datagrams = max_datagrams > 32 ? 32 : max_datagrams;
+    ctx->usbfs_submit = submit;
+    pthread_mutex_unlock(&ctx->tx_mu);
+    LOGI("lwIP TX bound directly to usbfs NTB");
+    return JNI_TRUE;
+}
+
 JNIEXPORT void JNICALL
 Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeDestroy(
         JNIEnv *env, jobject thiz, jlong handle) {
@@ -779,7 +990,16 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeDestroy(
     LOGI("Destroying LwipContext");
     ctx->running = 0;
     trigger_wake(ctx);
+    pthread_mutex_lock(&ctx->tx_mu);
+    pthread_cond_broadcast(&ctx->tx_cv);
+    pthread_mutex_unlock(&ctx->tx_mu);
     pthread_join(ctx->thread, NULL);
+    if (ctx->tx_started) pthread_join(ctx->tx_thread, NULL);
+    pthread_mutex_lock(&ctx->tx_mu);
+    for (int i = 0; i < NCM_TX_CAP; i++) release_tx_frame(&ctx->tx_q[i]);
+    pthread_mutex_unlock(&ctx->tx_mu);
+    pthread_cond_destroy(&ctx->tx_cv);
+    pthread_mutex_destroy(&ctx->tx_mu);
 
     pthread_mutex_lock(&lwip_core_lock);
 

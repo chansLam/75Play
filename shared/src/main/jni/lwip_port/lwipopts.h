@@ -5,14 +5,14 @@
 #define SYS_LIGHTWEIGHT_PROT            0
 #define LWIP_DONT_PROVIDE_BYTEORDER_FUNCTIONS 1
 #define MEM_ALIGNMENT                   4
-#define MEM_SIZE                        (128 * 1024)
+#define MEM_SIZE                        (256 * 1024)
 
 #define MEMP_NUM_PBUF                   64
 #define MEMP_NUM_RAW_PCB                4
 #define MEMP_NUM_UDP_PCB                32
 #define MEMP_NUM_TCP_PCB                32
 #define MEMP_NUM_TCP_PCB_LISTEN         16
-#define MEMP_NUM_TCP_SEG                128
+#define MEMP_NUM_TCP_SEG                256
 
 #define PBUF_POOL_SIZE                  128
 #define PBUF_POOL_BUFSIZE               1600
@@ -41,9 +41,9 @@
 
 #define LWIP_TCP                        1
 #define TCP_MSS                         1440
-#define TCP_WND                         (32 * 1024)
-#define TCP_SND_BUF                     (32 * 1024)
-#define TCP_SND_QUEUELEN                64
+#define TCP_WND                         (40 * TCP_MSS)
+#define TCP_SND_BUF                     (40 * TCP_MSS)
+#define TCP_SND_QUEUELEN                128
 #define TCP_LISTEN_BACKLOG              1
 
 #define LWIP_UDP                        1

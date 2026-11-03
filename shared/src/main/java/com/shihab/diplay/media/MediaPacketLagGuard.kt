@@ -25,6 +25,7 @@ internal class MediaPacketLagGuard(private val clockRate: Int) {
         newestSample: Int,
         timestampOf: (T) -> Int,
         nowNs: Long,
+        onDiscard: (T) -> Unit = {},
     ): Int {
         val durationFrames = pendingFrames(queue, newestSample, timestampOf)
         val delayNs = durationFrames * 1_000_000_000L / clockRate.coerceAtLeast(1)
@@ -52,7 +53,8 @@ internal class MediaPacketLagGuard(private val clockRate: Int) {
         while (queue.isNotEmpty() &&
             pendingFrames(queue, newestSample, timestampOf) * 1_000_000_000L /
             clockRate.coerceAtLeast(1) > trimTarget) {
-            if (queue.poll() == null) break
+            val discarded = queue.poll() ?: break
+            onDiscard(discarded)
             removed++
         }
         recovering = false

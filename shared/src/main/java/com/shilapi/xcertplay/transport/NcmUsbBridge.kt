@@ -35,6 +35,9 @@ class NcmUsbBridge internal constructor(
     private val legacyRestore: (() -> Unit)? = null,
     /** Issue #279: the data interface, kept so a wedged OUT endpoint can be reset in place. */
     private val dataInterface: UsbInterface? = null,
+    /** API 19 uses asynchronous usbfs URBs; newer or unavailable hosts use the framework pipe. */
+    internal val ntbLimits: NcmNtbLimits = NcmNtbLimits.DEFAULT,
+    private val dataIo: NcmIo,
 ) : Closeable {
     private val descriptorMac = descriptorHostMac?.copyOf()
     val hostMac: ByteArray? get() = descriptorMac?.copyOf()
@@ -55,6 +58,7 @@ class NcmUsbBridge internal constructor(
     /** Marks the bridge aborted (e.g. iPhone detached) to suppress blocking writes and interface release ioctls. */
     fun markAborted() {
         isAbortedOrDetached = true
+        dataIo.abort()
     }
     private var sequence = 0
     private var loggedWriteTimeout = false
@@ -112,55 +116,79 @@ class NcmUsbBridge internal constructor(
         }
     }
 
-    /** Wraps one Ethernet frame in one NTB16 block and writes it to bulk OUT. */
-    fun send(frame: ByteArray, timeoutMillis: Int) = synchronized(writeLock) {
-        if (closed || isAbortedOrDetached) return@synchronized
-        ncmWriteEnqueuedFrames++
+    /** Native usbfs context used by lwIP for direct NTB submission. Zero on the framework path. */
+    internal fun nativeDataPlaneHandle(): Long = (dataIo as? UsbfsNcmIo)?.nativeHandle() ?: 0L
+
+    /** Delivers ordinary IPv6 frames from the usbfs reader straight into this lwIP context. */
+    internal fun bindDirectInput(lwipHandle: Long): Boolean =
+        (dataIo as? UsbfsNcmIo)?.bindLwip(lwipHandle) == true
+
+    /** Submits one Ethernet frame. Returns false when the OUT ring cannot accept it yet. */
+    fun send(frame: ByteArray, timeoutMillis: Int): Boolean =
+        sendBatch(listOf(frame), timeoutMillis) == 1
+
+    /**
+     * Packs a prefix of [frames] into one NTB16 and submits it. Returns how many frames were
+     * accepted; zero means the caller must retain them and retry.
+     */
+    fun sendBatch(frames: List<ByteArray>, timeoutMillis: Int): Int = synchronized(writeLock) {
+        if (frames.isEmpty() || closed || isAbortedOrDetached) return@synchronized 0
+        val batch = NcmTxBatch.take(frames, ntbLimits)
+        if (batch.isEmpty()) return@synchronized 0
+        ncmWriteEnqueuedFrames += batch.size
         checkOpen()
         require(timeoutMillis > 0) { "timeoutMillis must be positive" }
         val sequence = synchronized(stateLock) {
             checkOpenLocked()
             this.sequence.also { this.sequence = (this.sequence + 1) and 0xffff }
         }
-        val block = Ntb16Codec.build(frame, sequence)
-        ensureWriteWatchdog()
-        writeInFlightSinceNs = System.nanoTime()
+        val usbfs = dataIo as? UsbfsNcmIo
+        // usbfs allocates and fills the final NTB inside its URB buffer. The framework fallback
+        // retains the managed encoder because it has no native URB-owned destination.
+        val block = if (usbfs == null) {
+            Ntb16Codec.buildFrames(batch, sequence, ntbLimits.maxBlockBytes, ntbLimits.alignment)
+        } else {
+            null
+        }
+        val blockBytes = NativeNcmBatch.select(batch, ntbLimits).blockBytes.let { encoded ->
+            if (encoded % USB_PACKET_SIZE == 0) encoded + 1 else encoded
+        }
+        val blocking = usbfs == null
+        if (blocking) {
+            ensureWriteWatchdog()
+            writeInFlightSinceNs = System.nanoTime()
+        }
         var failedAfterNanos = 0L
         var errno = 0
         val transferred = try {
-            writeUsbChunks(block.size, realSdkInt(), timeoutMillis) { offset, count, timeout ->
-                val started = System.nanoTime()
-                ncmWriteSubmittedChunks++
-                val written = sharedConnection.bulkTransfer(outEndpoint, block, offset, count, timeout)
-                if (written > 0) {
-                    ncmWriteCompletedChunks++
-                    ncmWriteSuccessBytes += written
-                    return@writeUsbChunks written
+            when (val submitted = usbfs?.submitFrames(batch, sequence, ntbLimits)
+                ?: dataIo.submitOut(checkNotNull(block), timeoutMillis)) {
+                NcmSubmit.Backpressured -> {
+                    onDiagnostic("ncm async bulk-out ring full bytes=$blockBytes slots=${dataIo.availableOutSlots()} " + dataIo.diagnostics())
+                    return@synchronized 0
                 }
-                failedAfterNanos = System.nanoTime() - started
-                // The framework collapses every failure into -1, which hides the one fact that
-                // decides the fix: a phone that NAKs (ETIMEDOUT) needs the link brought up, a
-                // stale endpoint (ENODEV/EPIPE) needs it re-acquired. A transfer that consumed
-                // its timeout may still be on the wire and must never be re-sent; one that failed
-                // at once never left the host, so the usbfs ioctl can be asked for the same write
-                // to recover the errno (and keep the data if it lands).
-                if (failedAfterNanos < timeout.toLong() * SLOW_FAILURE_NANOS_PER_MILLIS) {
-                    val probed = sharedConnection.bulkTransferErrno(outEndpoint, block, offset, count, timeout)
-                    if (probed > 0) {
-                        ncmWriteCompletedChunks++
-                        ncmWriteSuccessBytes += probed
-                        return@writeUsbChunks probed
+                is NcmSubmit.Accepted -> {
+                    ncmWriteSubmittedChunks += submitted.submittedChunks
+                    if (submitted.completedNow) {
+                        ncmWriteCompletedChunks += submitted.completedChunks
+                        ncmWriteSuccessBytes += submitted.successBytes
                     }
-                    // The framework transport collapses every failure to -1 (no errno); only a raw
-                    // usbfs probe returns a genuine negative errno (<= -2). A bare -1 must NOT be
-                    // re-interpreted as errno 1 (EPERM) — that produced the misleading "raw(1)"
-                    // lines that blamed permissions/claim for a host-side endpoint wedge.
-                    errno = if (probed < -1) -probed else 0
+                    if (usbfs != null) maybeObserveAsyncOut()
+                    noteBatch(batch.size)
+                    finishOutbound(block, blockBytes, sequence)
+                    return@synchronized batch.size
                 }
-                written
+                is NcmSubmit.Failed -> {
+                    ncmWriteSubmittedChunks += submitted.submittedChunks
+                    ncmWriteCompletedChunks += submitted.completedChunks
+                    ncmWriteSuccessBytes += submitted.successBytes
+                    failedAfterNanos = submitted.elapsedNanos
+                    errno = submitted.errno
+                    submitted.transferred
+                }
             }
         } finally {
-            writeInFlightSinceNs = 0L
+            if (blocking) writeInFlightSinceNs = 0L
         }
         // Before StartCarPlaySession the phone keeps the NCM data path NAKed. Android reports the
         // resulting timeout as -1; it is not a detach and later packets must be allowed to retry.
@@ -174,7 +202,7 @@ class NcmUsbBridge internal constructor(
             )
             if (inEarlyGrace || !inboundFrameSeen) {
                 earlyNakCount += 1
-                logFirstOutbound(block, sequence, failed = true)
+                logFirstOutbound(block, blockBytes, sequence, failed = true)
                 if (WiredNcmTuning.reselectAltOnEarlyNak && earlyNakCount == 1) {
                     dataInterface?.let { iface ->
                         val reselected = runCatching { LegacyUsbHostCompat.select(sharedConnection, iface) }
@@ -197,7 +225,7 @@ class NcmUsbBridge internal constructor(
                             "elapsedMs=${elapsedSinceOpenMillis()})",
                     )
                 }
-                return@synchronized
+                return@synchronized 0
             }
             // The phone only sends once its data path is up, so from here a run of failures means bulk
             // OUT alone is gone: inbound video keeps arriving while touch, return audio and TCP ACKs
@@ -206,10 +234,10 @@ class NcmUsbBridge internal constructor(
             // latched, so try to release one before counting this as a fault.
             clearOutEndpointHalt()
             consecutiveWriteFailures += 1
-            logFirstOutbound(block, sequence, failed = true)
+            logFirstOutbound(block, blockBytes, sequence, failed = true)
             val failureLine = "ncm bulk-out failed $consecutiveWriteFailures/$MAX_CONSECUTIVE_WRITE_FAILURES " +
                 "while the data path was live: endpoint=0x${outEndpoint.address.toString(16)} " +
-                "requested=${block.size} transferred=$transferred errno=${errnoLabel(errno)} " +
+                "requested=$blockBytes transferred=$transferred errno=${errnoLabel(errno)} " +
                 "elapsedMs=${failedAfterNanos / NANOS_PER_MILLISECOND} sinceOpenMs=${elapsedSinceOpenMillis()} " +
                 "timeoutMs=$timeoutMillis inboundSeen=$inboundFrameSeen " +
                 "ncmCounts=enqueued=$ncmWriteEnqueuedFrames submitted=$ncmWriteSubmittedChunks " +
@@ -247,17 +275,34 @@ class NcmUsbBridge internal constructor(
                     "NCM write failed $consecutiveWriteFailures times while the data path was live",
                 )
             }
-            return@synchronized
+            return@synchronized 0
         }
-        if (transferred != block.size) {
+        if (transferred != blockBytes) {
             // The phone holds a truncated NTB16 block, so this frame stream cannot be resumed in
             // place; record the failure so the read side stops alongside this writer.
-            throw failSession("NCM write transferred $transferred of ${block.size} bytes")
+            throw failSession("NCM write transferred $transferred of $blockBytes bytes")
         }
+        noteBatch(batch.size)
+        finishOutbound(block, blockBytes, sequence)
+        batch.size
+    }
+
+    private var ntbBlocks = 0
+    private var aggregatedFrames = 0
+
+    private fun noteBatch(frames: Int) {
+        ntbBlocks++
+        aggregatedFrames += frames
+        if (frames > 1) {
+            onDiagnostic("ncm ntb aggregate frames=$frames blocks=$ntbBlocks totalFrames=$aggregatedFrames")
+        }
+    }
+
+    private fun finishOutbound(block: ByteArray?, blockBytes: Int, sequence: Int) {
         consecutiveWriteFailures = 0
         interfaceResetAttempted = false
         interfaceReclaimAttempted = false
-        logFirstOutbound(block, sequence, failed = false)
+        logFirstOutbound(block, blockBytes, sequence, failed = false)
         if (loggedWriteTimeout) {
             loggedWriteTimeout = false
             Log.i(
@@ -269,6 +314,43 @@ class NcmUsbBridge internal constructor(
         earlyNakCount = 0
     }
 
+    private var lastOutHealthNs = 0L
+
+    private fun maybeObserveAsyncOut() {
+        val io = dataIo as? UsbfsNcmIo ?: return
+        val now = System.nanoTime()
+        if (now - lastOutHealthNs < 500_000_000L) return
+        lastOutHealthNs = now
+        observeAsyncOut(io)
+    }
+
+    private fun observeAsyncOut(io: UsbfsNcmIo) {
+        val snapshot = NcmOutSnapshot.parse(io.diagnostics()) ?: return
+        if (snapshot.completed > ncmWriteCompletedChunks) ncmWriteCompletedChunks = snapshot.completed
+        if (snapshot.successBytes > ncmWriteSuccessBytes) {
+            ncmWriteSuccessBytes = snapshot.successBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        }
+        when (NcmSessionHealth.decide(snapshot)) {
+            NcmOutAction.CONTINUE -> Unit
+            NcmOutAction.DISCARD, NcmOutAction.REPLUG -> {
+                if (!snapshot.replug && snapshot.reclaimFailed == 0) io.abort()
+                val deadline = System.nanoTime() + 2_000_000_000L
+                var latest = snapshot
+                while (System.nanoTime() < deadline && !latest.replug && latest.reclaimFailed == 0) {
+                    Thread.sleep(100)
+                    latest = NcmOutSnapshot.parse(io.diagnostics()) ?: latest
+                }
+                val line = io.diagnostics()
+                if (latest.replug || latest.reclaimFailed > 0) {
+                    onDiagnostic("ncm USB controller wedged; replug required $line")
+                    throw failSession("USB 控制器卡死、需物理重插")
+                }
+                onDiagnostic("ncm bulk-out no completion; discarded URBs $line")
+                throw failSession("NCM bulk-out had no completion")
+            }
+        }
+    }
+
     private fun elapsedSinceOpenMillis(): Long =
         (System.nanoTime() - openNanos) / NANOS_PER_MILLISECOND
 
@@ -277,15 +359,15 @@ class NcmUsbBridge internal constructor(
      * Ethernet header (14 B) = 42 bytes, enough to verify signature/sequence/blockLength/NDPIndex
      * and the Ethernet dst/src MAC + ethertype without leaking payload.
      */
-    private fun logFirstOutbound(block: ByteArray, sequence: Int, failed: Boolean) {
+    private fun logFirstOutbound(block: ByteArray?, blockBytes: Int, sequence: Int, failed: Boolean) {
         if (!WiredNcmTuning.logFirstOutboundHex || firstOutboundLogged) return
         firstOutboundLogged = true
-        val dump = hexPrefix(block, 42)
+        val dump = block?.let { hexPrefix(it, 42) } ?: "native-urb"
         Log.i(
             IphoneCarPlayConfiguration.TAG,
-            "ncm first outbound NTB seq=$sequence failed=$failed bytes=${block.size} hex=$dump",
+            "ncm first outbound NTB seq=$sequence failed=$failed bytes=$blockBytes hex=$dump",
         )
-        onDiagnostic("ncm first outbound NTB seq=$sequence failed=$failed bytes=${block.size} hex=$dump")
+        onDiagnostic("ncm first outbound NTB seq=$sequence failed=$failed bytes=$blockBytes hex=$dump")
     }
 
     private fun hexPrefix(block: ByteArray, maxBytes: Int): String {
@@ -372,6 +454,27 @@ class NcmUsbBridge internal constructor(
         synchronized(readLock) {
             checkOpen()
             if (frames.isNotEmpty()) return pollFrame()
+            val usbfs = dataIo as? UsbfsNcmIo
+            if (usbfs != null) {
+                val deadline = System.nanoTime() + timeoutMillis * NANOS_PER_MILLISECOND
+                while (true) {
+                    val remainingNanos = deadline - System.nanoTime()
+                    if (remainingNanos <= 0) return null
+                    val decoded = try {
+                        usbfs.receiveFrames(
+                            ((remainingNanos + NANOS_PER_MILLISECOND - 1) / NANOS_PER_MILLISECOND)
+                                .coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                        )
+                    } catch (error: RuntimeException) {
+                        throw failSession("NCM native NTB read failed", error)
+                    }
+                    maybeObserveAsyncOut()
+                    if (usbfs.takeDirectFrames() > 0) inboundFrameSeen = true
+                    if (decoded.isNullOrEmpty()) continue
+                    for (frame in decoded) enqueueFrame(frame)
+                    return pollFrame()
+                }
+            }
 
             val deadline = System.nanoTime() + timeoutMillis * NANOS_PER_MILLISECOND
             while (true) {
@@ -394,6 +497,7 @@ class NcmUsbBridge internal constructor(
             closed = true
             readRequest
         }
+        dataIo.abort()
         // Teardown counters distinguish "never armed OUT" (re-entry black screen) from
         // "worked then wedged": enqueued frames queued but completed=0 on close means the phone
         // never accepted a single OUT block this session.
@@ -441,6 +545,7 @@ class NcmUsbBridge internal constructor(
                 false
             }
         }
+        dataIo.close()
         sharedConnection.release()
         requestToClose?.let(sharedConnection::forget)
         if (requestToClose == null || reaped || !cancelled ||
@@ -593,7 +698,20 @@ class NcmUsbBridge internal constructor(
     }
 
     private fun readChunk(timeoutMillis: Long): Int? {
-        if (!useAsyncRead) return readChunkSynchronously(timeoutMillis)
+        if (dataIo is UsbfsNcmIo || !useAsyncRead) {
+            checkOpen()
+            val chunk = try {
+                dataIo.receive(
+                    timeoutMillis.coerceIn(1L, Int.MAX_VALUE.toLong()).toInt(),
+                    readBuffer.size,
+                )
+            } catch (error: RuntimeException) {
+                throw failSession("NCM synchronous read failed", error)
+            } ?: return null
+            if (dataIo is UsbfsNcmIo) maybeObserveAsyncOut()
+            chunk.copyInto(readBuffer)
+            return chunk.size
+        }
         checkOpen()
         var acceptedFallback: UsbReadQueueResult? = null
         val request = try {
@@ -656,17 +774,6 @@ class NcmUsbBridge internal constructor(
             throw error
         } catch (error: RuntimeException) {
             throw failSession("NCM read failed", error)
-        }
-    }
-
-    private fun readChunkSynchronously(timeoutMillis: Long): Int? {
-        checkOpen()
-        val timeout = timeoutMillis.coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()
-        return try {
-            sharedConnection.bulkTransfer(inEndpoint, readBuffer, readBuffer.size, timeout)
-                .takeIf { it > 0 }
-        } catch (error: RuntimeException) {
-            throw failSession("NCM synchronous read failed", error)
         }
     }
 
@@ -964,7 +1071,7 @@ class NcmUsbBridge internal constructor(
             connection: SharedUsbConnection,
             controlInterface: Int,
             log: (String) -> Unit,
-        ) {
+        ): NcmNtbLimits {
             val paramsBuffer = ByteArray(NTB_PARAMETERS_LENGTH)
             val paramsRead = runCatching {
                 connection.controlTransfer(
@@ -1008,6 +1115,7 @@ class NcmUsbBridge internal constructor(
                 }.getOrDefault(-1)
                 log("ncm SET_CRC_MODE=off(0) iface=$controlInterface result=$setCrc")
             }
+            return NcmNtbLimits.parse(paramsBuffer, paramsRead) ?: NcmNtbLimits.DEFAULT
         }
 
         /** Claims NCM while retaining the caller's shared USB connection. */
@@ -1109,7 +1217,7 @@ class NcmUsbBridge internal constructor(
                 // interface is still at alt=0 (kernel cdc_ncm_init ordering: SET_NTB_FORMAT /
                 // SET_CRC_MODE must precede alt=1). Best-effort; a phone that ignores the request
                 // keeps its default NTB16/no-CRC, which matches the blocks we encode anyway.
-                negotiateNcmControlPlane(connection, function.control.id, ::log)
+                val ntbLimits = negotiateNcmControlPlane(connection, function.control.id, ::log)
 
                 if (WiredNcmTuning.settleAfterSetInterfaceMillis > 0) {
                     runCatching { Thread.sleep(WiredNcmTuning.settleAfterSetInterfaceMillis) }
@@ -1142,6 +1250,16 @@ class NcmUsbBridge internal constructor(
                         "out=0x${function.bulkOut.address.toString(16)}@${function.bulkOut.maxPacketSize}" +
                         "/type=${function.bulkOut.type}",
                 )
+                val nativeIo = if (realSdkInt() <= 19) {
+                    UsbfsNcmIo.open(sharedConnection, function.bulkIn, function.bulkOut).also {
+                        log(
+                            if (it != null) "ncm using async usbfs URB data plane: ${it.diagnostics()}"
+                            else "ncm async usbfs URB unavailable; using framework bulk transfer",
+                        )
+                    }
+                } else {
+                    null
+                }
                 return NcmUsbBridge(
                     sharedConnection = sharedConnection,
                     outEndpoint = function.bulkOut,
@@ -1153,6 +1271,8 @@ class NcmUsbBridge internal constructor(
                     onDiagnostic = onDiagnostic,
                     legacyRestore = legacyRestore,
                     dataInterface = function.data,
+                    ntbLimits = ntbLimits,
+                    dataIo = nativeIo ?: FrameworkNcmIo(sharedConnection, function.bulkOut, function.bulkIn),
                 )
             } catch (error: Throwable) {
                 for (usbInterface in claimed.asReversed()) {

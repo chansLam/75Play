@@ -340,12 +340,16 @@ internal class MicrophoneUplink(
         }
     }
 
+    private val uplinkPacket = ByteArray(MicrophonePacketizer.packetLength(config.frameBytes))
+    private val uplinkDatagram = DatagramPacket(uplinkPacket, 0, config.host, config.port)
+
     private fun sendFrame(socket: DatagramSocket, counters: MicrophoneCounters, frame: ByteArray) {
         stats.frameSilent(frame.all { it == 0.toByte() })
         val bodies = if (config.codec == AudioCodecKind.OPUS) {
             opusEncoder?.encode(frame).orEmpty()
         } else {
-            listOf(MicrophonePacketizer.toWirePcm(frame))
+            MicrophonePacketizer.toWirePcmInto(frame, frame.size)
+            listOf(frame)
         }
         stats.encoded(bodies.size, if (bodies.isEmpty()) 1 else bodies.count { it.isEmpty() })
         bodies.forEach { body ->
@@ -364,15 +368,33 @@ internal class MicrophoneUplink(
         body: ByteArray,
         samples: Int,
     ) {
-        val packet = MicrophonePacketizer.sealPacket(
-            key = config.key,
-            payloadType = config.payloadType,
-            counters = counters,
-            body = body,
-            samples = samples,
-        )
+        val packet: ByteArray
+        val length: Int
+        if (uplinkPacket.size >= MicrophonePacketizer.packetLength(body.size)) {
+            packet = uplinkPacket
+            length = MicrophonePacketizer.sealInto(
+                key = config.key,
+                payloadType = config.payloadType,
+                counters = counters,
+                body = body,
+                bodyOffset = 0,
+                bodyLength = body.size,
+                samples = samples,
+                destination = uplinkPacket,
+            )
+        } else {
+            packet = MicrophonePacketizer.sealPacket(
+                key = config.key,
+                payloadType = config.payloadType,
+                counters = counters,
+                body = body,
+                samples = samples,
+            )
+            length = packet.size
+        }
         try {
-            socket.send(DatagramPacket(packet, packet.size, config.host, config.port))
+            uplinkDatagram.setData(packet, 0, length)
+            socket.send(uplinkDatagram)
             stats.sent()
         } catch (error: Exception) {
             stats.sendFailed()

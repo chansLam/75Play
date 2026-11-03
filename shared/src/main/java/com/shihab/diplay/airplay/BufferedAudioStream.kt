@@ -68,6 +68,7 @@ internal class BufferedAudioStream(
     }
 
     private var bodyBuffer = ByteArray(2048)
+    private val openNonce = ByteArray(12)
 
     private fun receive() {
         var accepted: Socket? = null
@@ -91,7 +92,7 @@ internal class BufferedAudioStream(
                 val payloadBytes = length - LENGTH_BYTES
                 if (bodyBuffer.size < payloadBytes) bodyBuffer = ByteArray(payloadBytes)
                 input.readFully(bodyBuffer, 0, payloadBytes)
-                val frame = open(key, bodyBuffer, payloadBytes)
+                val frame = open(key, bodyBuffer, payloadBytes, openNonce)
                 if (frame == null) {
                     if (failures++ < 3) log("Buffered audio: frame did not open ($payloadBytes bytes)")
                     continue
@@ -105,7 +106,10 @@ internal class BufferedAudioStream(
                     receivedBytes = 0
                     windowStart = now
                 }
-                if (frame.rtp.size <= RTP_HEADER) continue
+                if (frame.rtp.size <= RTP_HEADER) {
+                    AudioPacketBuffers.give(frame.rtp)
+                    continue
+                }
                 synchronized(lock) {
                     while (!closed.get() &&
                         flushUntil?.let { before(frame.timestamp, it) } != true &&
@@ -114,8 +118,14 @@ internal class BufferedAudioStream(
                         // of a track. Close, playback and flush all wake the bounded receiver.
                         lock.wait()
                     }
-                    if (closed.get()) return
-                    if (flushUntil?.let { before(frame.timestamp, it) } == true) return@synchronized
+                    if (closed.get()) {
+                        AudioPacketBuffers.give(frame.rtp)
+                        return
+                    }
+                    if (flushUntil?.let { before(frame.timestamp, it) } == true) {
+                        AudioPacketBuffers.give(frame.rtp)
+                        return@synchronized
+                    }
                     queue.addLast(frame)
                     queuedBytes += frame.rtp.size
                     lock.notifyAll()
@@ -269,7 +279,9 @@ internal class BufferedAudioStream(
     private fun dropBeforeLocked(timestamp: Long) {
         flushUntil = timestamp
         while (queue.peekFirst()?.let { before(it.timestamp, timestamp) } == true) {
-            queuedBytes -= queue.pollFirst()!!.rtp.size
+            val dropped = queue.pollFirst() ?: break
+            queuedBytes -= dropped.rtp.size
+            AudioPacketBuffers.give(dropped.rtp)
         }
         lock.notifyAll()
     }
@@ -280,7 +292,9 @@ internal class BufferedAudioStream(
             val end = (frame.timestamp + SAMPLES_PER_FRAME) and U32
             end == position || before(end, position)
         } == true) {
-            queuedBytes -= fed.removeFirst().rtp.size
+            val retired = fed.removeFirst()
+            queuedBytes -= retired.rtp.size
+            AudioPacketBuffers.give(retired.rtp)
         }
         lock.notifyAll()
     }
@@ -309,6 +323,8 @@ internal class BufferedAudioStream(
             try {
                 runCatching { client?.close() }
                 client = null
+                queue.forEach { AudioPacketBuffers.give(it.rtp) }
+                fed.forEach { AudioPacketBuffers.give(it.rtp) }
                 queue.clear()
                 fed.clear()
                 queuedBytes = 0
@@ -345,20 +361,35 @@ internal class BufferedAudioStream(
          * One buffered frame: RTP header, ChaCha20-Poly1305 ciphertext and tag sealed with [key] (the
          * header's timestamp and SSRC as associated data), then an 8-byte nonce. Null when it does not open.
          */
-        internal fun open(key: ByteArray, body: ByteArray, length: Int = body.size): Frame? {
+        internal fun open(
+            key: ByteArray,
+            body: ByteArray,
+            length: Int = body.size,
+            nonce: ByteArray? = null,
+        ): Frame? {
             if (length < RTP_HEADER + TAG_BYTES + NONCE_BYTES || length > body.size) return null
             // This wire format has exactly a 12-byte RTP v2 header; extensions, padding and CSRCs
             // cannot be interpreted as ciphertext or passed to the AAC renderer.
             if ((body[0].toInt() and 0xff) != 0x80) return null
             val sealedEnd = length - NONCE_BYTES
-            val nonce = ByteArray(12).also { body.copyInto(it, 4, sealedEnd, length) }
-            val payload = runCatching {
-                AirPlayCrypto.chachaOpenRange(key, nonce, body, 4, RTP_HEADER - 4, body, RTP_HEADER, sealedEnd - RTP_HEADER)
-            }.getOrNull() ?: return null
-            val sequence = ((body[2].toInt() and 0xff) shl 8) or (body[3].toInt() and 0xff)
-            val rtp = ByteArray(RTP_HEADER + payload.size)
+            val nonceBytes = if (nonce != null && nonce.size >= 12) nonce else ByteArray(12)
+            nonceBytes.fill(0, 0, 4)
+            body.copyInto(nonceBytes, 4, sealedEnd, length)
+            val plainLength = sealedEnd - RTP_HEADER - TAG_BYTES
+            if (plainLength < 0) return null
+            val rtp = AudioPacketBuffers.take(RTP_HEADER + plainLength)
             body.copyInto(rtp, 0, 0, RTP_HEADER)
-            payload.copyInto(rtp, RTP_HEADER)
+            val opened = runCatching {
+                AirPlayCrypto.chachaOpenRangeInto(
+                    key, nonceBytes, body, 4, RTP_HEADER - 4, body, RTP_HEADER, sealedEnd - RTP_HEADER,
+                    rtp, RTP_HEADER,
+                )
+            }.getOrNull()
+            if (opened == null || opened != plainLength) {
+                AudioPacketBuffers.give(rtp)
+                return null
+            }
+            val sequence = ((body[2].toInt() and 0xff) shl 8) or (body[3].toInt() and 0xff)
             return Frame(sequence, u32(body, 4), rtp)
         }
 

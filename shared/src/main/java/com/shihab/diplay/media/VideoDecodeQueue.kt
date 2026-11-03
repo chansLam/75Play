@@ -43,11 +43,11 @@ internal class VideoDecodeQueue(
 ) {
     companion object {
         /**
-         * KitKat / Freescale i.MX6 (2 GB): keep a shorter queue so NALU bursts cannot pin tens of MB
-         * while a slow HW decoder catches up. Newer devices keep the burst-tolerant defaults.
+         * Twelve frames covers a Wi-Fi jitter burst at 30 fps without becoming a long backlog.
+         * Overflow keeps the newest keyframe and the frames after it, so playback stays continuous.
          */
         fun forDevice(): VideoDecodeQueue =
-            VideoDecodeQueue(maxFrames = 16, maxBytes = 3 * 1024 * 1024)
+            VideoDecodeQueue(maxFrames = 12, maxBytes = 2 * 1024 * 1024)
     }
     private val jobs = LinkedBlockingQueue<VideoJob>()
     private var pendingFrames = 0
@@ -57,11 +57,21 @@ internal class VideoDecodeQueue(
         if (job is VideoJob.Frame) {
             val bytes = job.length.coerceIn(0, job.nalus.size)
             if (pendingFrames >= maxFrames || pendingBytes + bytes > maxBytes) {
-                discardFrames()
-                jobs.offer(VideoJob.Resync)
+                val anchor = if (isRandomAccess(job.nalus, job.length)) {
+                    discardFrames()
+                    ChainAnchor.Incoming
+                } else {
+                    trimBeforeLatestRandomAccess()
+                }
+                val exceedsBytes = pendingBytes + bytes > maxBytes && pendingFrames > 0
+                if (anchor == ChainAnchor.None || (anchor != ChainAnchor.Incoming && exceedsBytes)) {
+                    discardFrames()
+                    jobs.offer(VideoJob.Resync)
+                }
             }
             // An oversized frame is an unusable reference chain, not retained in the queue.
             if (bytes > maxBytes) {
+                if (jobs.none { it is VideoJob.Resync }) jobs.offer(VideoJob.Resync)
                 VideoFrameBuffers.give(job.nalus)
                 return
             }
@@ -70,6 +80,42 @@ internal class VideoDecodeQueue(
         }
         jobs.offer(job)
     }
+
+    @Synchronized fun pendingFrameCount(): Int = pendingFrames
+
+    private enum class ChainAnchor { None, Incoming, Trimmed, Continuous }
+
+    /**
+     * Drops frames before the newest keyframe. A chain that already starts at a keyframe stays
+     * intact: those frames still have to be decoded, and the display catches up separately.
+     */
+    @Synchronized private fun trimBeforeLatestRandomAccess(): ChainAnchor {
+        var latest = -1
+        var index = 0
+        for (item in jobs) {
+            if (item is VideoJob.Frame && isRandomAccess(item.nalus, item.length)) latest = index
+            index++
+        }
+        if (latest < 0) return ChainAnchor.None
+        if (latest == 0) return ChainAnchor.Continuous
+        val iterator = jobs.iterator()
+        var cursor = 0
+        while (iterator.hasNext() && cursor < latest) {
+            val item = iterator.next()
+            if (item is VideoJob.Frame) {
+                VideoFrameBuffers.give(item.nalus)
+                pendingFrames = maxOf(0, pendingFrames - 1)
+                pendingBytes = maxOf(0L, pendingBytes - item.length.coerceIn(0, item.nalus.size))
+            }
+            iterator.remove()
+            cursor++
+        }
+        return ChainAnchor.Trimmed
+    }
+
+    private fun isRandomAccess(nalus: ByteArray, length: Int): Boolean =
+        MediaCodecSupport.isRandomAccess(nalus, VideoCodec.H264, length) ||
+            MediaCodecSupport.isRandomAccess(nalus, VideoCodec.H265, length)
 
     @Synchronized fun discardFrames() {
         val iterator = jobs.iterator()

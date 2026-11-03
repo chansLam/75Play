@@ -45,6 +45,34 @@ class VideoDecodeQueueTest {
         assertNull(queue.poll(0))
     }
 
+    @Test fun deviceQueueKeepsTheNewestKeyframeInsteadOfFreezingForAResync() {
+        val queue = VideoDecodeQueue.forDevice()
+        repeat(12) { queue.offer(VideoJob.Frame(byteArrayOf(1))) }
+        val keyframe = byteArrayOf(0, 0, 0, 1, 0x65, 1)
+        val following = byteArrayOf(0, 0, 0, 1, 0x41, 2)
+        queue.offer(VideoJob.Frame(keyframe))
+        queue.offer(VideoJob.Frame(following))
+
+        assertArrayEquals(keyframe, (queue.poll(0) as VideoJob.Frame).nalus)
+        assertArrayEquals(following, (queue.poll(0) as VideoJob.Frame).nalus)
+        assertNull(queue.poll(0))
+    }
+
+    @Test fun framesAfterAKeyframeStayQueuedWhenTheFrameBudgetIsFull() {
+        val queue = VideoDecodeQueue(maxFrames = 2)
+        val keyframe = byteArrayOf(0, 0, 0, 1, 0x65, 1)
+        val first = byteArrayOf(0, 0, 0, 1, 0x41, 2)
+        val second = byteArrayOf(0, 0, 0, 1, 0x41, 3)
+        queue.offer(VideoJob.Frame(keyframe))
+        queue.offer(VideoJob.Frame(first))
+        queue.offer(VideoJob.Frame(second))
+
+        assertArrayEquals(keyframe, (queue.poll(0) as VideoJob.Frame).nalus)
+        assertArrayEquals(first, (queue.poll(0) as VideoJob.Frame).nalus)
+        assertArrayEquals(second, (queue.poll(0) as VideoJob.Frame).nalus)
+        assertNull(queue.poll(0))
+    }
+
     @Test fun dequeueThenOverflowUsesOnlyPendingFrames() {
         val queue = VideoDecodeQueue(maxFrames = 2, maxBytes = 5)
         queue.offer(VideoJob.Frame(ByteArray(3)))

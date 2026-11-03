@@ -2,6 +2,7 @@ package com.shilapi.xcertplay.network
 
 import android.util.Log
 import com.shilapi.xcertplay.transport.EthernetIpv6Codec
+import com.shilapi.xcertplay.transport.NcmTxBatch
 import com.shilapi.xcertplay.transport.NcmUsbBridge
 import java.io.Closeable
 import java.io.IOException
@@ -87,8 +88,8 @@ class LwipNcmBridge(
     // Issue #187: lwIP's linkoutput runs on the native worker thread while holding the native
     // ctx lock; doing blocking USB bulkTransfer there (up to 2s) convoys every other native
     // call and can wedge a fragile USB host driver (whole-unit freeze on T3 cold-start wired).
-    // Hand TX frames to a dedicated thread instead; the queue is bounded so a wedged USB
-    // endpoint drops frames instead of growing without limit.
+    // Hand TX frames to a dedicated thread instead; a full queue makes linkoutput return ERR_MEM
+    // so lwIP's TCP window applies backpressure instead of silently dropping ACKs.
     private val txQueue = LinkedBlockingQueue<ByteArray>(TX_QUEUE_CAPACITY)
     private val droppedTxFrames = AtomicInteger(0)
     private var txDropLogBudget = 4
@@ -105,6 +106,12 @@ class LwipNcmBridge(
             val err = IOException("Failed to initialize userspace lwIP stack")
             onError(err)
             throw err
+        }
+        if (lwipNative.bindUsbfs(ncm.nativeDataPlaneHandle(), ncm.ntbLimits)) {
+            runCatching { onDebugLog("ncm lwip tx bound to native usbfs NTB") }
+        }
+        if (ncm.bindDirectInput(lwipNative.lwipHandle())) {
+            runCatching { onDebugLog("ncm ipv6 data frames enter lwIP directly") }
         }
 
         sendUnsolicitedNeighborAdvertisement(force = true)
@@ -134,28 +141,58 @@ class LwipNcmBridge(
     private fun enqueueTxFrame(frame: ByteArray, tag: String = "lwip"): Boolean {
         if (!running.get()) return false
         val queued = txQueue.offer(frame)
+            if (!queued) {
+                droppedTxFrames.incrementAndGet()
+                if (txDropLogBudget > 0) {
+                    txDropLogBudget--
+                    runCatching { onDebugLog("ncm $tag tx backpressure bytes=${frame.size}") }
+                }
+            }
+        return queued
+    }
+
+    private fun onLwipTxFrame(frame: ByteArray): Boolean {
+        if (!running.get()) return false
+        val queued = txQueue.offer(frame)
         if (!queued) {
-            droppedTxFrames.incrementAndGet()
-            if (txDropLogBudget > 0) {
-                txDropLogBudget--
-                runCatching { onDebugLog("ncm $tag tx queue full; dropping frame bytes=${frame.size}") }
+            val count = droppedTxFrames.incrementAndGet()
+            if (count % 16 == 1) {
+                runCatching { onDebugLog("ncm lwip tx backpressure count=$count bytes=${frame.size}") }
             }
         }
         return queued
     }
 
-    private fun onLwipTxFrame(frame: ByteArray) {
-        enqueueTxFrame(frame, tag = "lwip")
-    }
-
     private fun runNcmTx() {
         try {
-            while (running.get()) {
-                val frame = txQueue.poll(TX_POLL_MILLIS, TimeUnit.MILLISECONDS) ?: continue
+            val pending = ArrayList<ByteArray>()
+            while (running.get() || pending.isNotEmpty()) {
+                if (pending.isEmpty()) {
+                    val first = txQueue.poll(TX_POLL_MILLIS, TimeUnit.MILLISECONDS) ?: continue
+                    pending.add(first)
+                }
+                while (pending.size < ncm.ntbLimits.maxDatagrams) {
+                    val extra = txQueue.poll() ?: break
+                    pending.add(extra)
+                }
+                val batch = NcmTxBatch.take(pending, ncm.ntbLimits)
+                if (batch.isEmpty()) {
+                    runCatching { onDebugLog("ncm drop oversized frame bytes=${pending.first().size}") }
+                    pending.removeAt(0)
+                    continue
+                }
                 try {
-                    ncm.send(frame, WRITE_TIMEOUT_MILLIS)
+                    val accepted = ncm.sendBatch(batch, WRITE_TIMEOUT_MILLIS)
+                    if (accepted > 0) {
+                        repeat(accepted) { pending.removeAt(0) }
+                    } else if (running.get()) {
+                        Thread.sleep(TX_BACKPRESSURE_RETRY_MILLIS)
+                    } else {
+                        break
+                    }
                 } catch (error: Exception) {
                     Log.w(TAG, "ncm send lwip tx frame failed: ${error.message}")
+                    pending.clear()
                 }
             }
         } catch (_: InterruptedException) {
@@ -469,6 +506,7 @@ class LwipNcmBridge(
         const val NA_RETRY_INTERVAL_NANOS = 500_000_000L
         const val TX_QUEUE_CAPACITY = 64
         const val TX_POLL_MILLIS = 200L
+        const val TX_BACKPRESSURE_RETRY_MILLIS = 10L
         /** Emit the mDNS diagnostic summary after every N answered/unmatched queries (#262). */
         const val MDNS_DIAG_LOG_EVERY = 5
     }

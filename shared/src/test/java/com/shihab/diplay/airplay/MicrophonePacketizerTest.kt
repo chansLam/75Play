@@ -41,6 +41,19 @@ class MicrophonePacketizerTest {
     }
 
     @Test
+    fun sealIntoMatchesTheAllocatedPacket() {
+        val key = ByteArray(32) { index -> (index + 1).toByte() }
+        val body = byteArrayOf(0x28, 0x01, 0x02, 0x03)
+        val allocated = MicrophonePacketizer.sealPacket(key, 100, MicrophoneCounters(), body, 480)
+        val destination = ByteArray(allocated.size)
+        val written = MicrophonePacketizer.sealInto(
+            key, 100, MicrophoneCounters(), body, 0, body.size, 480, destination,
+        )
+        assertEquals(allocated.size, written)
+        assertArrayEquals(allocated, destination.copyOf(written))
+    }
+
+    @Test
     fun pcmIsConvertedToBigEndian() {
         assertArrayEquals(
             byteArrayOf(0x12, 0x34, 0x56, 0x78),

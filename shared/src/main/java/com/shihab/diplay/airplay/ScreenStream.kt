@@ -96,6 +96,9 @@ class ScreenStream(
         var failure: Throwable? = null
         val stats = StreamReceiveStats("video", onDiagnostic)
         try {
+            // Wireless video must continue receiving while foreground UI or camera work is busy;
+            // decrypting and enqueueing here is deliberately cheaper than decoder work.
+            runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DISPLAY) }
             val input = sock.getInputStream()
             while (!closed.get()) {
                 stats.reading()
@@ -241,8 +244,8 @@ object ScreenCodec {
         val plainLength = bodyLength - TAG_SIZE
         val storage = VideoFrameBuffers.take(plainLength)
         return try {
-            val written = AirPlayCrypto.chachaOpenDirectInto(
-                key, AirPlayCrypto.nonce64(counter), header, body, bodyLength, storage,
+            val written = AirPlayCrypto.chachaOpenFrameInto(
+                key, counter, header, body, bodyLength, storage,
             )
             storage to written
         } catch (error: Exception) {
