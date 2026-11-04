@@ -32,7 +32,7 @@ python3 scripts/prepare-lwip.py
 ./gradlew :mobile:assembleDebug
 ```
 
-产物：`mobile/build/outputs/apk/debug/mobile-debug.apk`（无 MFi 时不能独立完成认证）。
+产物：`mobile/build/outputs/apk/debug/mobile-debug.apk`（无 MFi 时不能独立完成认证）。Debug 包含多 dex，Dalvik 会在 `MultiDex.install` 崩溃，不能装到目标车机；车上安装用 `assembleStandaloneRelease` 的单 dex 包。
 
 与 CI 一致的检查（见 `.github/workflows/android.yml`）：
 

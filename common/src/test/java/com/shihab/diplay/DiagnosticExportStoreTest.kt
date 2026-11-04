@@ -46,7 +46,7 @@ class DiagnosticExportStoreTest {
         override fun insert(uri: Uri, values: ContentValues?): Uri? = this.uri
         override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
             assertEquals(this.uri, uri)
-            assertEquals("wt", mode)
+            assertEquals("w", mode)
             if (denyWrite) throw SecurityException("Test provider refused write")
             return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_CREATE or
                 ParcelFileDescriptor.MODE_WRITE_ONLY or ParcelFileDescriptor.MODE_TRUNCATE)

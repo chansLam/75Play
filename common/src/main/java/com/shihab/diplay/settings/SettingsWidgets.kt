@@ -14,7 +14,6 @@ import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
 import com.shihab.diplay.airplay.CarPlayDisplayScale
-import com.shihab.diplay.compat.realSdkInt
 import com.shihab.diplay.host.R
 
 object SettingsWidgets {
@@ -76,18 +75,7 @@ object SettingsWidgets {
             isChecked = checked
             this.contentDescription = contentDescription
             isEnabled = enabled
-            if (theme.isOverlay) {
-                if (realSdkInt() >= android.os.Build.VERSION_CODES.M) {
-                    thumbTintList = ColorStateList(
-                        arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
-                        intArrayOf(theme.accent, theme.textSecondary),
-                    )
-                    trackTintList = ColorStateList(
-                        arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
-                        intArrayOf(theme.accentTrack, theme.trackOff),
-                    )
-                }
-            } else {
+            if (!theme.isOverlay) {
                 minHeight = theme.dp(context, 56)
             }
             setOnCheckedChangeListener { _, isChecked -> onChanged(isChecked) }

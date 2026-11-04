@@ -100,4 +100,13 @@ internal object NcmSessionHealth {
         snapshot.noCompletion > 0 -> NcmOutAction.DISCARD
         else -> NcmOutAction.CONTINUE
     }
+
+    /**
+     * A data path that has already written successfully and then rejects OUT within 50ms
+     * is a dead host pipe. The first such rejection still bounces the data alt.
+     */
+    fun immediateRejection(elapsedMs: Long): Boolean = elapsedMs in 0..50
+
+    fun immediateReplug(elapsedMs: Long, outHasSucceeded: Boolean): Boolean =
+        outHasSucceeded && immediateRejection(elapsedMs)
 }

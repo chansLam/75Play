@@ -24,6 +24,29 @@ import com.shihab.diplay.util.AppLog
  * 主页：连接与车机应用左右铺满（竖屏则上下）。
  * 状态和时钟在壳层顶栏，这里不再叠一条主操作带。
  */
+/**
+ * Writes LinearLayout gravity without calling getGravity(). API 19 and the CS75 ROM do not
+ * implement that accessor; reading the Kotlin `gravity` property crashes the main thread.
+ */
+internal object LinearLayoutGravity {
+    fun apply(
+        current: Int?,
+        target: Int,
+        writeField: (Int) -> Unit,
+        requestLayout: () -> Unit,
+        setGravity: (Int) -> Unit,
+    ) {
+        if (current != null) {
+            if (current != target) {
+                writeField(target)
+                requestLayout()
+            }
+            return
+        }
+        setGravity(target)
+    }
+}
+
 class FragmentHome : Fragment() {
 
     private val handler = Handler(Looper.getMainLooper())
@@ -525,21 +548,25 @@ class FragmentHome : Fragment() {
      * value is a no-op so it does not churn layout.
      */
     private fun setLinearGravity(l: LinearLayout, pinned: Int) {
-        try {
-            val f = LinearLayout::class.java.getDeclaredField("mGravity")
-            f.isAccessible = true
-            if (f.getInt(l) != pinned) {
-                f.setInt(l, pinned)
-                l.requestLayout()
-            }
-        } catch (e: Throwable) {
-            // Fallback: direct accessor (still missing on the cut-down ROM, but safe here).
-            try {
-                if (l.gravity != pinned) l.gravity = pinned
-            } catch (ignore: Throwable) {
-                AppLog.w("FragmentHome", "setLinearGravity failed: ${ignore.javaClass.simpleName}: ${ignore.message}")
-            }
-        }
+        val field = runCatching {
+            LinearLayout::class.java.getDeclaredField("mGravity").apply { isAccessible = true }
+        }.getOrNull()
+        val current = field?.let { runCatching { it.getInt(l) }.getOrNull() }
+        LinearLayoutGravity.apply(
+            current = if (field != null) current else null,
+            target = pinned,
+            writeField = { value -> field?.setInt(l, value) },
+            requestLayout = { l.requestLayout() },
+            setGravity = { value ->
+                // setGravity exists on API 19. Never read the gravity property: that calls
+                // getGravity(), which this head unit does not have.
+                try {
+                    l.setGravity(value)
+                } catch (ignore: Throwable) {
+                    AppLog.w("FragmentHome", "setLinearGravity failed: ${ignore.javaClass.simpleName}: ${ignore.message}")
+                }
+            },
+        )
     }
 
     private fun refresh() {

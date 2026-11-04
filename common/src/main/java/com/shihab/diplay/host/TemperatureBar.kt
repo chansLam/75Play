@@ -165,6 +165,11 @@ object TemperatureBar {
     }
 
     private fun fmt(label: String, value: Float): String {
-        return if (value.isNaN()) "$label --" else "$label ${String.format("%.1f°C", value)}"
+        return when {
+            value.isNaN() -> "$label --"
+            value == -1f -> "$label LO"
+            value == -2f -> "$label HI"
+            else -> "$label ${String.format("%.1f°C", value)}"
+        }
     }
 }

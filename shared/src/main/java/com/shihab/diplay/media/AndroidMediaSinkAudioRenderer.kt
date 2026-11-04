@@ -329,9 +329,7 @@ internal class AudioRenderer(
     private fun findSoftwareDecoderName(mime: String): String? {
         if (realSdkInt() >= Build.VERSION_CODES.Q) {
             return runCatching {
-                MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.firstOrNull {
-                    !it.isEncoder && it.isSoftwareOnly && mime in it.supportedTypes
-                }?.name
+                platformMediaCodec("softwareDecoderName", arrayOf(String::class.java), mime) as String?
             }.getOrNull()
         }
         if (realSdkInt() >= 16) {

@@ -1108,13 +1108,13 @@ class CarPlayHostActivity : ComponentActivity() {
         val alignedSize = DisplaySize(safeWidth, safeHeight)
         val physical = resolvePhysicalSize(alignedSize)
         val knobPrimary = AndroidTvInputMode.shouldUseKnobAsPrimaryInput(this)
-        val advertisedFps = if (realSdkInt() <= 19) CarPlaySmartDisplayZoom.advertisedFps(fps) else fps
+        val sessionFps = fps
         val baseDisplay = AirPlayDisplayConfig(
             widthPixels = alignedSize.width,
             heightPixels = alignedSize.height,
             widthPhysicalMm = physical.widthMm,
             heightPhysicalMm = physical.heightMm,
-            fps = advertisedFps,
+            fps = sessionFps,
             // Tell CarPlay to use its native knob/focus model on Android TV and other non-touch
             // hosts. Touch-capable head units remain touchscreen-primary.
             primaryInputDevice = if (knobPrimary) 3 else 1,
@@ -1172,9 +1172,8 @@ class CarPlayHostActivity : ComponentActivity() {
                         else R.string.this_head_unit_cannot_use_the_smaller_size_at_this_resolut), true)
             }
         }
-        // iOS decides whether Settings shows 智能缩放显示. KitKat sessions advertise 60 fps so
-        // that page is not hidden. Medium and small keep the selected physical width; large
-        // stays a narrow panel, which is the one size iOS does not offer the row for.
+        // iOS decides whether Settings shows 智能缩放显示 from the reported physical size.
+        // The negotiated frame rate stays at the saved value so the phone does not encode 60 fps.
         if (realSdkInt() <= 19) {
             val reported = CarPlaySmartDisplayZoom.force(scaledDisplay)
             if (reported != scaledDisplay) {
@@ -1182,7 +1181,7 @@ class CarPlayHostActivity : ComponentActivity() {
                     "Smart Display Zoom ${scaledDisplay.widthPixels}x${scaledDisplay.heightPixels} " +
                         "${scaledDisplay.widthPhysicalMm}x${scaledDisplay.heightPhysicalMm}mm " +
                         "-> ${reported.widthPixels}x${reported.heightPixels} " +
-                        "${reported.widthPhysicalMm}x${reported.heightPhysicalMm}mm fps=$advertisedFps",
+                        "${reported.widthPhysicalMm}x${reported.heightPhysicalMm}mm fps=$sessionFps",
                 )
                 scaledDisplay = reported
                 support = CanvasSupport(
@@ -1265,7 +1264,7 @@ class CarPlayHostActivity : ComponentActivity() {
         val requestSummary = "Display request selected=${CarPlayUiScale.label(requestedPercent)} percent=$requestedPercent " +
             "surface=${size.width}x${size.height} resolution=${requestedResolutionPercent}% " +
             "base=${requestedResolutionDisplay.widthPixels}x${requestedResolutionDisplay.heightPixels} " +
-            "candidate=${candidate.widthPixels}x${candidate.heightPixels} fps=$advertisedFps " +
+            "candidate=${candidate.widthPixels}x${candidate.heightPixels} fps=$sessionFps " +
             "codec=${if (sessionHevc) "HEVC" else "H.264"} softwareHevc=$hevcSoftwareDecoderEnabled"
         val effectiveSummary = "Display effective percent=$uiScalePercent resolution=${displayScalePercent}% " +
             "canvas=${display.widthPixels}x${display.heightPixels} decision=${support.reason} " +

@@ -50,7 +50,8 @@ internal class HomeAppDragFloat {
                         textSize = child.textSize / ctx.resources.displayMetrics.scaledDensity
                         typeface = child.typeface
                         gravity = Gravity.CENTER_HORIZONTAL
-                        maxLines = 1
+                        maxLines = 2
+                        ellipsize = android.text.TextUtils.TruncateAt.END
                     }, LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT,

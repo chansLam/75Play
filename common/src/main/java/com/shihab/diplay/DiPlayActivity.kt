@@ -6,7 +6,6 @@ import com.shihab.diplay.connect.ShellNetworkActions
 import com.shihab.diplay.network.CarHotspotEnable
 import com.shihab.diplay.network.CarHotspotStatus
 import com.shihab.diplay.connect.ShellPhonePicker
-import com.shihab.diplay.connect.UsbHostProbe
 import com.shihab.diplay.host.CarPlayBackgroundSession
 import com.shihab.diplay.host.FloatingBall
 import com.shihab.diplay.host.ImmersiveBars
@@ -650,6 +649,15 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         if (DiPlayPreferences.temperatureBarEnabled(applicationContext)) {
             com.shihab.diplay.host.CoagentAcBridge.nudge()
         }
+        CarPlayBackgroundSession.setParkedSessionLost(this) {
+            if (isFinishing || isDestroyed) return@setParkedSessionLost
+            handler.post {
+                if (isFinishing || isDestroyed) return@post
+                if (DiPlayPreferences.autoConnect(this) && !CarPlayBackgroundSession.hasSession()) {
+                    connect(DiPlayPreferences.autoConnectWireless(this))
+                }
+            }
+        }
         if (AirPlayPersistence.loadFloatingBallEnabled(this)) {
             FloatingBall.show(
                 applicationContext,
@@ -735,6 +743,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         runCatching { TerminalOverlay.dismiss(this) }
         // P1 leak兜底：选机用的单线程 ExecutorService 是非 daemon，不 shutdown 会随 Activity 泄漏。
         runCatching { phonePicker.shutdown() }
+        CarPlayBackgroundSession.clearParkedSessionLost(this)
         super.onDestroy()
     }
 
@@ -1179,9 +1188,6 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
     override fun chooseReportDestination() {
         diagnostics.chooseDestination { export.launch(it) }
     }
-
-    private val usbHostProbe by lazy { UsbHostProbe(this) }
-    override fun runUsbHostProbe() { usbHostProbe.run() }
 
     private fun permissionHelp(title: String, body: String) {
         DiPlayDialog.showConfirm(

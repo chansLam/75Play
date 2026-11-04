@@ -248,7 +248,6 @@ internal class HomeAppGrid(
 
     private fun buildAppTile(ctx: android.content.Context, app: CarAppCatalog.App, grid: ViewGroup): View {
         val iconDp = LayoutMetrics.appIconDp(ctx)
-        val iconPx = dp(iconDp)
         val tile = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -279,15 +278,14 @@ internal class HomeAppGrid(
         tile.addView(TextView(ctx).apply {
             text = app.label
             textSize = LayoutMetrics.appLabelSize(ctx)
-            setTextColor(GlassColors.TEXT_BODY)
+            setTextColor(GlassColors.TEXT_PRIMARY)
             gravity = Gravity.CENTER_HORIZONTAL
-            maxLines = 1
+            maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
             includeFontPadding = false
-            maxWidth = iconPx * 2
             setPadding(0, dp(6), 0, 0)
             layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             )
         })
@@ -597,12 +595,15 @@ internal class HomeAppGrid(
             }
             stride = gridW / columns
             cellW = (stride - 2 * m).coerceAtLeast(0)
+            // 子项默认是 wrap_content。若只给 AT_MOST，竖向 LinearLayout 会按图标宽度收拢，
+            // MATCH_PARENT 的应用名也被收成图标宽，随后 layout() 把格子拉满却不再测量文字。
             val wSpec = MeasureSpec.makeMeasureSpec(cellW, MeasureSpec.EXACTLY)
             // 第一遍：高度不约束，量出每格自然高，取最大值作为统一行高。
             var maxRow = 0
             for (i in 0 until childCount) {
                 val child = getChildAt(i)
                 if (child.visibility == GONE) continue
+                child.layoutParams.width = cellW
                 measureChild(child, wSpec, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
                 val lp = child.layoutParams as MarginLayoutParams
                 maxRow = maxOf(maxRow, child.measuredHeight + lp.topMargin + lp.bottomMargin)

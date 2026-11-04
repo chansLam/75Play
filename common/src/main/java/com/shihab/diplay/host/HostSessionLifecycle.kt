@@ -242,12 +242,18 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
             sidePanel?.visibility = View.VISIBLE
             sidePanelTick.run()
         }
-        CarPlayBackgroundSession.store(snapshot.controller, snapshot.sink, snapshot.width, snapshot.height,
+        val stored = CarPlayBackgroundSession.store(snapshot.controller, snapshot.sink, snapshot.width, snapshot.height,
             this, snapshot.display) { completion ->
             runOnUiThread {
                 sessionShutdown(false, "DiPlay disconnect", completion)
                 finish()
             }
+        }
+        if (!stored) {
+            controller = null
+            sink = null
+            sessionDisplay = null
+            return false
         }
         if (snapshot.width > 0 && snapshot.height > 0) {
             activeDisplaySize = CarPlayHostActivity.DisplaySize(snapshot.width, snapshot.height)
@@ -379,11 +385,18 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
         )
         sessionDisplay = display
         videoView?.let { sessionUpdateVideoLayout(it.width, it.height) }
-        CarPlayBackgroundSession.store(next, renderer, size.width, size.height, this, display) { completion ->
+        val stored = CarPlayBackgroundSession.store(next, renderer, size.width, size.height, this, display) { completion ->
             runOnUiThread {
                 sessionShutdown(terminateProcess = false, reason = "DiPlay disconnect", completion = completion)
                 finish()
             }
+        }
+        if (!stored) {
+            controller = null
+            sink = null
+            runCatching { next.close() }
+            appendLog("CarPlay session is already stopping; this host did not replace it")
+            return
         }
         try {
             val service = Intent(this, DiPlaySessionService::class.java)
@@ -442,7 +455,7 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
             reconnectRunnable = null
             reconnectScheduled = false
             if (!CarPlayBackgroundSession.isOwner(this)) return
-            controller?.attachUi(object : AirPlaySessionListener {}, { _ -> })
+            controller?.attachUi(ParkedSessionListener, { _ -> })
             CarPlayBackgroundSession.park(this)
         }
     }
@@ -537,5 +550,16 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
             }
         }
             }
+    }
+}
+
+/** Does not capture a host Activity. The shell decides whether to reconnect. */
+private object ParkedSessionListener : AirPlaySessionListener {
+    override fun onSessionEnded(session: AirPlaySession) {
+        CarPlayBackgroundSession.releaseParked("session ended")
+    }
+
+    override fun onTransportError(message: String) {
+        CarPlayBackgroundSession.releaseParked(message)
     }
 }

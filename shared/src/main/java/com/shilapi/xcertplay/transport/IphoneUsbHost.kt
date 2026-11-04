@@ -500,8 +500,7 @@ class IphoneUsbHost(
 
     private fun permissionPendingIntent(): PendingIntent {
         val intent = Intent(permissionAction).setPackage(appContext.packageName)
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT
         return PendingIntent.getBroadcast(
             appContext,
             0,
@@ -520,23 +519,15 @@ class IphoneUsbHost(
                 }
             }
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            appContext.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            appContext.registerReceiver(receiver, filter)
-        }
+        appContext.registerReceiver(receiver, filter)
         val registered = AtomicBoolean(true)
         return Closeable {
             if (registered.compareAndSet(true, false)) appContext.unregisterReceiver(receiver)
         }
     }
 
-    private fun Intent.usbDevice(): UsbDevice? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
-    } else {
-        @Suppress("DEPRECATION")
-        getParcelableExtra(UsbManager.EXTRA_DEVICE)
-    }
+    @Suppress("DEPRECATION")
+    private fun Intent.usbDevice(): UsbDevice? = getParcelableExtra(UsbManager.EXTRA_DEVICE)
 
     companion object {
         /** Issue #256: claim retry budget for head units whose kernel settles slowly. */

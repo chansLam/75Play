@@ -27,8 +27,6 @@ import com.shihab.diplay.airplay.AirPlaySafeArea
 import com.shihab.diplay.airplay.AirPlaySessionListener
 import com.shihab.diplay.airplay.CarPlayDisplayScale
 import com.shihab.diplay.airplay.CarPlayMediaEngine
-import com.shihab.diplay.airplay.CarPlaySmartDisplayZoom
-import com.shihab.diplay.compat.realSdkInt
 import com.shihab.diplay.host.R
 import com.shihab.diplay.location.AndroidCarPlayLocationProvider
 import com.shihab.diplay.media.AndroidMediaSink
@@ -232,9 +230,9 @@ internal object CarPlaySessionFactory {
         val smoothVideo = AirPlayPersistence.loadSmoothVideo(ctx)
         val sessionHevc = false
         // The phone reads this /info during the background handshake and keeps it when the host
-        // adopts the session. The display fields below are the ones that handshake used to omit:
-        // physical size (otherwise 200 mm), KitKat's advertised frame rate, the safe area, and any
-        // extra view areas the dock, split screen or side panel need.
+        // adopts the session. Physical size still comes from the smart-zoom basis. The frame
+        // rate is the saved setting (default 30): advertising 60 on KitKat makes the phone
+        // encode faster than this i.MX6 can decode.
         val physical = AirPlayDisplaySettings.resolvePhysicalSizeMm(
             currentWidthPixels = safeWidth,
             currentHeightPixels = safeHeight,
@@ -243,13 +241,12 @@ internal object CarPlaySessionFactory {
             referenceMillimeters = AirPlayPersistence.loadWidthPhysicalMm(ctx),
             basis = AirPlayPersistence.loadPhysicalSizeBasis(ctx),
         )
-        val reportedFps = if (realSdkInt() <= 19) CarPlaySmartDisplayZoom.advertisedFps(fps) else fps
         val baseDisplay = AirPlayDisplayConfig(
             widthPixels = safeWidth,
             heightPixels = safeHeight,
             widthPhysicalMm = physical.widthMm,
             heightPhysicalMm = physical.heightMm,
-            fps = reportedFps,
+            fps = fps,
             primaryInputDevice = if (AndroidTvInputMode.shouldUseKnobAsPrimaryInput(ctx)) 3 else 1,
         )
         val scaled = headlessDisplay(

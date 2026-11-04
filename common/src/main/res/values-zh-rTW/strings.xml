@@ -52,6 +52,8 @@
     <string name="could_not_save_the_report">無法儲存報告</string>
     <string name="could_not_start_carplay_return_to_diplay_and_check_app_per">無法啟動 CarPlay。請返回 75Play 檢查 App 權限。</string>
     <string name="diagnostic_report_saved">診斷報告已儲存</string>
+    <string name="report_scan_hint">手機連接車機熱點或同一個 Wi-Fi 後掃碼下載。關閉此視窗後連結失效。</string>
+    <string name="report_scan_unavailable">車機沒有手機可以連到的位址，無法掃碼下載。</string>
     <string name="diplay">75Play</string>
     <string name="discovering_iphone">正在尋找 iPhone</string>
     <string name="done">完成</string>
@@ -75,6 +77,11 @@
     <string name="hotspot_ssid_contains_u_0000">熱點 SSID 包含 U+0000</string>
     <string name="hotspot_ssid_is_required">必須填寫熱點 SSID</string>
     <string name="hotspot_ssid_must_be_at_most_32_utf_8_bytes">熱點 SSID 最多為 32 個 UTF-8 位元組</string>
+    <string name="hotspot_ssid_edit_hint">留空則使用預設名稱（75Play）。改名可避免與附近熱點的 SSID 衝突。</string>
+    <string name="hotspot_password_edit_hint">留空則使用預設密碼。部分車機會拒絕純數字 Wi-Fi 密碼，請使用字母加數字（例如 Play2026）。</string>
+    <string name="hotspot_reapplying">正在用新設定重新套用熱點…</string>
+    <string name="hotspot_reapplied">已用新設定重新套用熱點</string>
+    <string name="hotspot_reapply_failed">重新套用熱點失敗，請檢查車機設定後再試</string>
     <string name="hotspot_status">熱點狀態</string>
     <string name="i2c">I2C</string>
     <string name="language_app_language">應用程式語言</string>
@@ -376,4 +383,5 @@
     <string name="cd_floating_ball">懸浮球：輕觸模擬返回鍵，長按回到 75Play 主頁</string>
     <string name="session_notification_text">CarPlay 連線執行中</string>
     <string name="session_notification_disconnect">中斷連線</string>
+    <string name="cd_temp_bar">溫度欄：顯示室外、車內與空調設定溫度</string>
 </resources>

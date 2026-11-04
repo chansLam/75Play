@@ -81,11 +81,6 @@ class NcmUsbBridge internal constructor(
     private var interfaceResetAttempted = false
     /** Issue #75: the data-interface re-claim (release+re-claim+re-select) runs once per failure run. */
     private var interfaceReclaimAttempted = false
-    /** Issue #279: a bulk URB rejected in <50ms (elapsedMs≈0, halt=0) is a host-side endpoint
-     *  wedge, not a phone NAK (which consumes the full timeout) and not a latched stall (halt=1).
-     *  clear-halt cannot fix a non-halted endpoint; the correct in-place recovery is an alt bounce. */
-    private var lastWriteFailedImmediately = false
-    private val immediateFailureCutoffNanos = 50_000_000L
     private val frames = ArrayDeque<ByteArray>()
     private var queuedBytes = 0
     private var buffered = ByteArray(0)
@@ -195,7 +190,6 @@ class NcmUsbBridge internal constructor(
         // inboundFrameSeen alone closes the window too early: unsolicited mDNS/ICMPv6 flow on IN
         // before the phone arms OUT, so also tolerate a bounded early-grace count/elapsed window.
         if (transferred <= 0) {
-            lastWriteFailedImmediately = failedAfterNanos < immediateFailureCutoffNanos
             val inEarlyGrace = WiredNcmTuning.earlyGraceEnabled && (
                 ncmWriteEnqueuedFrames <= WiredNcmTuning.earlyGraceFrames ||
                     System.nanoTime() - openNanos < WiredNcmTuning.earlyGraceMillis * NANOS_PER_MILLISECOND
@@ -247,6 +241,14 @@ class NcmUsbBridge internal constructor(
             // were logcat-only, so a report could never show the halt state
             // they exist to capture (issue #137).
             onDiagnostic(failureLine)
+            val elapsedMs = failedAfterNanos / NANOS_PER_MILLISECOND
+            val outHasSucceeded = ncmWriteSuccessBytes > 0
+            val immediate = NcmSessionHealth.immediateRejection(elapsedMs)
+            if (immediate && outHasSucceeded && interfaceResetAttempted) {
+                throw failSession(
+                    "NCM bulk-out rejected immediately while the data path was live elapsedMs=$elapsedMs",
+                )
+            }
             if (consecutiveWriteFailures == 1) {
                 // Issue #279: the framework transfer result carries no errno, so probe
                 // the endpoint status word instead — halt=1 means the device latched a
@@ -256,11 +258,10 @@ class NcmUsbBridge internal constructor(
                 Log.i(IphoneCarPlayConfiguration.TAG, statusLine)
                 onDiagnostic(statusLine)
             }
-            // A wedged host-side OUT (elapsedMs≈0, halt=0) cannot be cleared by CLEAR_FEATURE:
-            // the endpoint is not halted. Bounce the data alt (alt=0 -> alt=1) on the FIRST such
-            // failure instead of waiting for the 5th; a NAK-style failure (consumed the timeout)
-            // still waits for the original rung so healthy bring-up delays are not disrupted.
-            val resetAtFailure = if (lastWriteFailedImmediately) 1 else INTERFACE_RESET_AT_FAILURE
+            // An immediate host-side rejection (elapsedMs within 50ms) bounces the data alt
+            // on the first failure. A NAK that consumed the timeout waits for the later rung.
+            // A second immediate rejection after a successful OUT ends the session above.
+            val resetAtFailure = if (immediate) 1 else INTERFACE_RESET_AT_FAILURE
             if (consecutiveWriteFailures == resetAtFailure && !interfaceResetAttempted) {
                 interfaceResetAttempted = true
                 resetDataInterface()
@@ -289,13 +290,16 @@ class NcmUsbBridge internal constructor(
 
     private var ntbBlocks = 0
     private var aggregatedFrames = 0
+    private var lastAggregateLogNs = 0L
 
     private fun noteBatch(frames: Int) {
         ntbBlocks++
         aggregatedFrames += frames
-        if (frames > 1) {
-            onDiagnostic("ncm ntb aggregate frames=$frames blocks=$ntbBlocks totalFrames=$aggregatedFrames")
-        }
+        if (frames <= 1) return
+        val now = System.nanoTime()
+        if (now - lastAggregateLogNs < 2_000_000_000L) return
+        lastAggregateLogNs = now
+        onDiagnostic("ncm ntb aggregate frames=$frames blocks=$ntbBlocks totalFrames=$aggregatedFrames")
     }
 
     private fun finishOutbound(block: ByteArray?, blockBytes: Int, sequence: Int) {
@@ -1254,7 +1258,7 @@ class NcmUsbBridge internal constructor(
                     UsbfsNcmIo.open(sharedConnection, function.bulkIn, function.bulkOut).also {
                         log(
                             if (it != null) "ncm using async usbfs URB data plane: ${it.diagnostics()}"
-                            else "ncm async usbfs URB unavailable; using framework bulk transfer",
+                            else "ncm async usbfs URB unavailable (${UsbfsNcmIo.lastOpenFailure}); using framework bulk transfer",
                         )
                     }
                 } else {

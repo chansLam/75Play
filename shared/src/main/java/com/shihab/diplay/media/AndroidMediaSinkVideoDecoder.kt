@@ -266,12 +266,14 @@ internal class VideoDecoder(
         }
     }
 
-    /** MediaCodec.getName() only exists on API 21+; on older devices it throws NoSuchMethodError. */
+    /** MediaCodec.getName() only exists on API 21+; keep that reference out of this class. */
     private fun safeDecoderName(codec: MediaCodec): String =
-        if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) {
-            runCatching { codec.name }.getOrDefault("unknown")
-        } else {
+        if (realSdkInt() < Build.VERSION_CODES.LOLLIPOP) {
             "unknown"
+        } else {
+            runCatching {
+                platformMediaCodec("decoderName", arrayOf(MediaCodec::class.java), codec) as String
+            }.getOrDefault("unknown")
         }
 
     private data class DecoderAttempt(val codecName: String?, val tuned: Boolean)
@@ -280,9 +282,10 @@ internal class VideoDecoder(
         MediaFormat.createVideoFormat(mime, width, height).apply {
             if (tuned) {
                 setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, MAX_INPUT_SIZE)
-                // KEY_PRIORITY is API 23. A faked SDK_INT must not set it on KitKat.
                 if (realSdkInt() >= Build.VERSION_CODES.M) {
-                    setInteger(MediaFormat.KEY_PRIORITY, 0)
+                    runCatching {
+                        platformMediaCodec("setRealtimePriority", arrayOf(MediaFormat::class.java), this)
+                    }
                 }
             }
             csd.forEachIndexed { index, bytes -> setByteBuffer("csd-$index", ByteBuffer.wrap(bytes)) }
@@ -299,9 +302,16 @@ internal class VideoDecoder(
             val format = buildFormat(mime, csd, attempt.tuned)
             val codec = attempt.codecName?.let { MediaCodec.createByCodecName(it) } ?: createDecoder(mime)
             candidate = codec
-            if (attempt.tuned && realSdkInt() >= Build.VERSION_CODES.R &&
-                codec.codecInfo.getCapabilitiesForType(mime).isFeatureSupported("low-latency")) {
-                format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
+            if (attempt.tuned && realSdkInt() >= Build.VERSION_CODES.R) {
+                runCatching {
+                    platformMediaCodec(
+                        "enableLowLatency",
+                        arrayOf(MediaCodec::class.java, MediaFormat::class.java, String::class.java),
+                        codec,
+                        format,
+                        mime,
+                    )
+                }
             }
             codec.configure(format, surface, null, 0)
             codec.start()
@@ -326,9 +336,7 @@ internal class VideoDecoder(
     private fun softwareDecoderName(mime: String): String? {
         if (realSdkInt() >= Build.VERSION_CODES.Q) {
             return runCatching {
-                MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.firstOrNull {
-                    !it.isEncoder && it.isSoftwareOnly && mime in it.supportedTypes
-                }?.name
+                platformMediaCodec("softwareDecoderName", arrayOf(String::class.java), mime) as String?
             }.getOrNull()
         }
         @Suppress("DEPRECATION")
@@ -347,14 +355,14 @@ internal class VideoDecoder(
             mime == MediaFormat.MIMETYPE_VIDEO_HEVC &&
             preferSoftwareHevcDecoder
         ) {
-            val software = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.firstOrNull {
-                !it.isEncoder && it.isSoftwareOnly && mime in it.supportedTypes
-            }
+            val software = runCatching {
+                platformMediaCodec("softwareDecoderName", arrayOf(String::class.java), mime) as String?
+            }.getOrNull()
             if (software != null) {
                 try {
-                    return MediaCodec.createByCodecName(software.name)
+                    return MediaCodec.createByCodecName(software)
                 } catch (error: Exception) {
-                    AppLog.w(TAG, "software HEVC decoder unavailable name=${software.name}", error)
+                    AppLog.w(TAG, "software HEVC decoder unavailable name=$software", error)
                 }
             }
         }
@@ -377,7 +385,12 @@ internal class VideoDecoder(
                     val consumer = parking ?: ParkingOutput(width, height).also { parking = it }
                     try {
                         if (realSdkInt() < 23) throw IllegalStateException("Surface parking requires Android 6")
-                        checkNotNull(decoder).setOutputSurface(consumer.surface)
+                        platformMediaCodec(
+                            "setOutputSurface",
+                            arrayOf(MediaCodec::class.java, Surface::class.java),
+                            checkNotNull(decoder),
+                            consumer.surface,
+                        )
                         outputSurface = consumer.surface
                         AppLog.i(TAG, "video decoder parked off screen")
                     } catch (error: Exception) {
@@ -417,7 +430,12 @@ internal class VideoDecoder(
         val codec = decoder
         if (codec != null && realSdkInt() >= Build.VERSION_CODES.M) {
             try {
-                codec.setOutputSurface(surface)
+                platformMediaCodec(
+                    "setOutputSurface",
+                    arrayOf(MediaCodec::class.java, Surface::class.java),
+                    codec,
+                    surface,
+                )
                 // A new surface is a new picture. Report the next shown frame again so the host
                 // can uncover; setOutputSurface itself does not reset the codec.
                 renderedFrameLogged = false

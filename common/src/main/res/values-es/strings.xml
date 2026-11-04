@@ -52,6 +52,8 @@
     <string name="could_not_save_the_report">No se pudo guardar el informe</string>
     <string name="could_not_start_carplay_return_to_diplay_and_check_app_per">No se pudo iniciar CarPlay. Vuelve a 75Play y comprueba los permisos de la aplicación.</string>
     <string name="diagnostic_report_saved">Informe de diagnóstico guardado</string>
+    <string name="report_scan_hint">Conecta el teléfono al punto de acceso del coche o a la misma Wi-Fi y escanea. Al cerrar esta ventana se detiene la descarga.</string>
+    <string name="report_scan_unavailable">La unidad no tiene una dirección a la que el teléfono pueda acceder, así que no se puede descargar el informe escaneando.</string>
     <string name="discovering_iphone">Buscando iPhone</string>
     <string name="done">Listo</string>
     <string name="draw_outside_safe_area">Dibujar fuera de la zona segura</string>
@@ -74,6 +76,11 @@
     <string name="hotspot_ssid_contains_u_0000">El SSID del punto de acceso contiene U+0000</string>
     <string name="hotspot_ssid_is_required">Se requiere el SSID del punto de acceso</string>
     <string name="hotspot_ssid_must_be_at_most_32_utf_8_bytes">El SSID del punto de acceso debe tener como máximo 32 bytes UTF-8</string>
+    <string name="hotspot_ssid_edit_hint">Déjalo vacío para usar el nombre predeterminado (75Play). Cambiarlo evita conflictos de SSID con puntos de acceso cercanos.</string>
+    <string name="hotspot_password_edit_hint">Déjalo vacío para usar la contraseña predeterminada. Algunas unidades rechazan contraseñas solo numéricas; usa letras y números (por ejemplo Play2026).</string>
+    <string name="hotspot_reapplying">Volviendo a aplicar el punto de acceso con los ajustes nuevos…</string>
+    <string name="hotspot_reapplied">Punto de acceso aplicado de nuevo con los ajustes nuevos</string>
+    <string name="hotspot_reapply_failed">No se pudo volver a aplicar el punto de acceso. Revisa los ajustes de la unidad e inténtalo de nuevo</string>
     <string name="hotspot_status">Estado del punto de acceso</string>
     <string name="later">Más tarde</string>
     <string name="local_offline">Local sin conexión</string>
@@ -378,4 +385,5 @@
     <string name="cd_floating_ball">Bola flotante: toque para Atrás, manténgala pulsada para volver al inicio de DiPlay</string>
     <string name="session_notification_text">CarPlay conexión activa</string>
     <string name="session_notification_disconnect">Desconectar</string>
+    <string name="cd_temp_bar">Barra de temperatura: exterior, interior y temperatura ajustada del aire</string>
 </resources>

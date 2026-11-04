@@ -162,17 +162,15 @@ internal class MicrophoneUplink(
     private fun createRecorder(source: Int, channelMask: Int, bufferSize: Int): AudioRecord? {
         val recorder = try {
             if (realSdkInt() >= android.os.Build.VERSION_CODES.M) {
-                AudioRecord.Builder()
-                    .setAudioSource(source)
-                    .setAudioFormat(
-                        AndroidAudioFormat.Builder()
-                            .setEncoding(AndroidAudioFormat.ENCODING_PCM_16BIT)
-                            .setSampleRate(config.sampleRate)
-                            .setChannelMask(channelMask)
-                            .build(),
+                Class.forName("com.shihab.diplay.media.Api23AudioRecord")
+                    .getMethod(
+                        "create",
+                        Int::class.javaPrimitiveType,
+                        Int::class.javaPrimitiveType,
+                        Int::class.javaPrimitiveType,
+                        Int::class.javaPrimitiveType,
                     )
-                    .setBufferSizeInBytes(bufferSize)
-                    .build()
+                    .invoke(null, source, config.sampleRate, channelMask, bufferSize) as AudioRecord
             } else {
                 @Suppress("DEPRECATION")
                 AudioRecord(
@@ -183,6 +181,16 @@ internal class MicrophoneUplink(
                     bufferSize,
                 )
             }
+        } catch (error: java.lang.reflect.InvocationTargetException) {
+            val cause = error.cause ?: error
+            if (cause is SecurityException) {
+                AppLog.e(TAG, "microphone permission denied source=$source", cause)
+                stats.failure(MicrophoneFailureStage.RECORDER_CREATION, cause)
+            } else {
+                AppLog.e(TAG, "microphone recorder creation failed source=$source", cause)
+                stats.failure(MicrophoneFailureStage.RECORDER_CREATION, cause)
+            }
+            return null
         } catch (error: SecurityException) {
             AppLog.e(TAG, "microphone permission denied source=$source", error)
             stats.failure(MicrophoneFailureStage.RECORDER_CREATION, error)
@@ -280,11 +288,7 @@ internal class MicrophoneUplink(
         try {
             while (running.get()) {
                 stats.reading()
-                val count = if (realSdkInt() >= android.os.Build.VERSION_CODES.M) {
-                    recorder.read(readBuffer, 0, readBuffer.size, AudioRecord.READ_BLOCKING)
-                } else {
-                    recorder.read(readBuffer, 0, readBuffer.size)
-                }
+                val count = recorder.read(readBuffer, 0, readBuffer.size)
                 stats.read(count)
                 if (count > 0) clock?.read(recorder, count / 2)
                 if (count < 0) {
@@ -531,8 +535,6 @@ internal class MicrophoneUplink(
  * timestamp when the platform has one, otherwise assumes the newest sample arrived [FALLBACK_LATENCY_NS] ago.
  */
 internal class CaptureClock(private val sampleRate: Int) {
-    private val timestamp = if (realSdkInt() >= android.os.Build.VERSION_CODES.N)
-        android.media.AudioTimestamp() else null
     private var samplesRead = 0L
     private var lastReadSamples = 0
     private var lastReadEndNs = 0L
@@ -541,17 +543,21 @@ internal class CaptureClock(private val sampleRate: Int) {
         samplesRead += samples
         lastReadSamples = samples
         val now = System.nanoTime()
-        val ts = timestamp
-        val stamped = if (realSdkInt() >= android.os.Build.VERSION_CODES.N && ts != null) {
+        val stamped = if (realSdkInt() >= android.os.Build.VERSION_CODES.N) {
             runCatching {
-                recorder.getTimestamp(ts, android.media.AudioTimestamp.TIMEBASE_MONOTONIC) == AudioRecord.SUCCESS
-            }.getOrDefault(false)
-        } else false
-        lastReadEndNs = if (stamped && ts != null && ts.nanoTime > 0) {
-            ts.nanoTime + (samplesRead - ts.framePosition) * 1_000_000_000L / sampleRate
+                Class.forName("com.shihab.diplay.media.Api24AudioClock")
+                    .getMethod(
+                        "endNanos",
+                        AudioRecord::class.java,
+                        Long::class.javaPrimitiveType,
+                        Int::class.javaPrimitiveType,
+                    )
+                    .invoke(null, recorder, samplesRead, sampleRate) as Long?
+            }.getOrNull()
         } else {
-            now - FALLBACK_LATENCY_NS
+            null
         }
+        lastReadEndNs = stamped ?: (now - FALLBACK_LATENCY_NS)
     }
 
     /** The capture time of the end of the first [samplesIntoRead] samples of the latest read. */
@@ -560,5 +566,17 @@ internal class CaptureClock(private val sampleRate: Int) {
 
     private companion object {
         const val FALLBACK_LATENCY_NS = 20_000_000L
+    }
+}
+
+/** Loaded only when [com.shilapi.xcertplay.compat.realSdkInt] is at least 24. */
+internal object Api24AudioClock {
+    @JvmStatic
+    fun endNanos(recorder: AudioRecord, samplesRead: Long, sampleRate: Int): Long? {
+        val stamp = android.media.AudioTimestamp()
+        val ok = recorder.getTimestamp(stamp, android.media.AudioTimestamp.TIMEBASE_MONOTONIC) ==
+            AudioRecord.SUCCESS
+        if (!ok || stamp.nanoTime <= 0) return null
+        return stamp.nanoTime + (samplesRead - stamp.framePosition) * 1_000_000_000L / sampleRate
     }
 }

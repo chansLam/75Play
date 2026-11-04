@@ -1,7 +1,6 @@
 package com.shilapi.xcertplay.transport
 
 import android.annotation.SuppressLint
-import android.os.Build
 import java.io.ByteArrayInputStream
 import java.nio.charset.StandardCharsets
 import java.security.GeneralSecurityException
@@ -128,9 +127,6 @@ object LockdownTlsEngineFactory {
                 )
             return context.createSSLEngine(PEER_HOST, PEER_PORT).apply {
                 useClientMode = true
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    sslParameters = sslParameters.apply { endpointIdentificationAlgorithm = null }
-                }
                 // Verify the actual returned engine, not just a test instance: on some vendor
                 // ROMs the supported protocols differ between engine instances from the same
                 // context. If this fails, TlsDuplexChannel would hit the same wall.

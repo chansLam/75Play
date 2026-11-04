@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay.transport
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -57,6 +58,12 @@ class NcmWiredPolicyTest {
         assertEquals(NcmOutAction.CONTINUE, NcmSessionHealth.decide(live))
         assertEquals(NcmOutAction.DISCARD, NcmSessionHealth.decide(silent))
         assertEquals(NcmOutAction.REPLUG, NcmSessionHealth.decide(wedged))
+        assertTrue(NcmSessionHealth.immediateRejection(0))
+        assertFalse(NcmSessionHealth.immediateRejection(51))
+        assertTrue(NcmSessionHealth.immediateReplug(elapsedMs = 0, outHasSucceeded = true))
+        assertFalse(NcmSessionHealth.immediateReplug(elapsedMs = 0, outHasSucceeded = false))
+        assertFalse(NcmSessionHealth.immediateReplug(elapsedMs = 51, outHasSucceeded = true))
+        assertFalse(NcmSessionHealth.immediateReplug(elapsedMs = 800, outHasSucceeded = true))
         assertEquals(silent, NcmOutSnapshot.parse(
             "queued=0 submitted=2 completed=1 cancelling=0 reclaimFailed=0 stall=0 nak=1 " +
                 "noCompletion=1 latencyMs=4 replug=0 successBytes=100",

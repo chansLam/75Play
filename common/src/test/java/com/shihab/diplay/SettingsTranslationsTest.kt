@@ -1,6 +1,7 @@
 package com.shihab.diplay
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
@@ -10,8 +11,9 @@ class SettingsTranslationsTest {
     private val res = File("src/main/res")
     private val placeholder = Regex("%\\d+\\$[sd]")
 
-    @Test fun everySettingsStringIsTranslatedWithTheSamePlaceholders() {
-        val base = strings(File(res, "values")).filterKeys { it.startsWith("settings_") }
+    @Test fun everyStringIsTranslatedWithTheSamePlaceholders() {
+        val base = strings(File(res, "values"))
+        assertTrue(base.values.none { text -> text.contains('\uFFFD') || text.contains("â") || text.contains("Ã") })
         val locales = res.listFiles { file -> file.name.matches(Regex("values-[a-z]{2}(-r[A-Z]{2})?")) }!!
         for (locale in locales) {
             val translated = strings(locale)

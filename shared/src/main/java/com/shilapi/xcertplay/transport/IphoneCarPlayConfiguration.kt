@@ -1,14 +1,11 @@
 package com.shilapi.xcertplay.transport
 
-import android.hardware.usb.UsbConfiguration
 import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbInterface
-import android.os.Build
 import android.util.Log
-import com.shilapi.xcertplay.compat.realSdkInt
 
 data class CarPlayUsbConfiguration(
     val id: Int,
@@ -37,11 +34,7 @@ object IphoneCarPlayConfiguration {
     private const val PREFERRED_USBMUX_IN = 0x85
 
     fun find(device: UsbDevice, connection: UsbDeviceConnection? = null): CarPlayUsbConfiguration? {
-        val configurations = if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) {
-            val platform = platformConfigurations(device)
-            if (platform.any { usbMuxInterface(it) != null && hasCdcNcm(it) }) platform
-            else listOf(CarPlayUsbConfiguration(1, (0 until device.interfaceCount).map(device::getInterface)))
-        } else if (connection != null) {
+        val configurations = if (connection != null) {
             val parsed = KitKatUsbDescriptors.read(connection)
             if (parsed.any { usbMuxInterface(it) != null && hasCdcNcm(it) }) parsed
             else listOf(CarPlayUsbConfiguration(1, (0 until device.interfaceCount).map(device::getInterface)))
@@ -114,19 +107,6 @@ object IphoneCarPlayConfiguration {
         }
 
     fun alternateSetting(usbInterface: UsbInterface): Int =
-        if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) usbInterface.alternateSetting
-        else KitKatUsbDescriptors.alternate(usbInterface)
+        KitKatUsbDescriptors.alternate(usbInterface)
             ?: if (usbInterface.interfaceClass == 0x0a && usbInterface.endpointCount > 0) 1 else 0
-
-    @androidx.annotation.RequiresApi(Build.VERSION_CODES.LOLLIPOP)
-    private fun platformConfigurations(device: UsbDevice): List<CarPlayUsbConfiguration> =
-        (0 until device.configurationCount).map { index ->
-            val configuration: UsbConfiguration = device.getConfiguration(index)
-            CarPlayUsbConfiguration(
-                id = configuration.id,
-                interfaces = (0 until configuration.interfaceCount).map(configuration::getInterface),
-                platformConfiguration = configuration,
-            )
-        }
-
 }

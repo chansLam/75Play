@@ -29,8 +29,6 @@ interface DiPlayHost {
     fun updateCheckNow()
     fun exportDiagnosticsNow()
     fun chooseReportDestination()
-    /** Run the on-demand wired USB host feasibility probe (permission + claim + control). */
-    fun runUsbHostProbe()
     fun autoUpdateEnabled(): Boolean
     fun setAutoUpdateEnabled(enabled: Boolean)
     fun openDevTerminal()

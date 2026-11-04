@@ -52,6 +52,8 @@
     <string name="could_not_save_the_report">تعذّر حفظ التقرير</string>
     <string name="could_not_start_carplay_return_to_diplay_and_check_app_per">تعذّر بدء CarPlay. عد إلى 75Play وتحقق من أذونات التطبيق.</string>
     <string name="diagnostic_report_saved">تم حفظ تقرير التشخيص</string>
+    <string name="report_scan_hint">صل الهاتف بنقطة اتصال السيارة أو بشبكة Wi-Fi نفسها ثم امسح الرمز. يُغلق الرابط عند إغلاق هذه النافذة.</string>
+    <string name="report_scan_unavailable">لا يوجد عنوان يمكن للهاتف الوصول إليه، لذا لا يمكن تنزيل التقرير بالمسح.</string>
     <string name="discovering_iphone">جارٍ اكتشاف iPhone</string>
     <string name="done">تم</string>
     <string name="draw_outside_safe_area">الرسم خارج المنطقة الآمنة</string>
@@ -74,6 +76,11 @@
     <string name="hotspot_ssid_contains_u_0000">‏SSID نقطة الاتصال يحتوي على U+0000</string>
     <string name="hotspot_ssid_is_required">‏SSID نقطة الاتصال مطلوب</string>
     <string name="hotspot_ssid_must_be_at_most_32_utf_8_bytes">يجب ألا يتجاوز SSID لنقطة الاتصال 32 بايت UTF-8</string>
+    <string name="hotspot_ssid_edit_hint">اتركه فارغًا لاستخدام الاسم الافتراضي (75Play). تغيير الاسم يتجنب تعارض SSID مع نقاط الاتصال القريبة.</string>
+    <string name="hotspot_password_edit_hint">اتركه فارغًا لاستخدام كلمة المرور الافتراضية. بعض الوحدات ترفض كلمات المرور الرقمية فقط، لذا استخدم حروفًا وأرقامًا (مثل Play2026).</string>
+    <string name="hotspot_reapplying">جارٍ إعادة تطبيق نقطة الاتصال بالإعدادات الجديدة…</string>
+    <string name="hotspot_reapplied">أُعيد تطبيق نقطة الاتصال بالإعدادات الجديدة</string>
+    <string name="hotspot_reapply_failed">فشلت إعادة تطبيق نقطة الاتصال. تحقق من إعدادات الوحدة ثم أعد المحاولة</string>
     <string name="hotspot_status">حالة نقطة الاتصال</string>
     <string name="later">لاحقاً</string>
     <string name="local_offline">محلي دون اتصال</string>
@@ -378,4 +385,5 @@
     <string name="cd_floating_ball">الكرة العائمة: انقر للرجوع، واضغط مطولًا للعودة إلى الصفحة الرئيسية لـ DiPlay</string>
     <string name="session_notification_text">اتصال CarPlay قيد التشغيل</string>
     <string name="session_notification_disconnect">قطع الاتصال</string>
+    <string name="cd_temp_bar">شريط الحرارة: يعرض درجة الحرارة الخارجية والداخلية ودرجة تكييف الهواء المضبوطة</string>
 </resources>

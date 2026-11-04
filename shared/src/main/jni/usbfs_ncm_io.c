@@ -79,6 +79,8 @@ typedef struct NcmIo {
     uint32_t direct_frames;
 } NcmIo;
 
+static __thread int last_open_errno = 0;
+
 static int64_t mono_ms(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -267,9 +269,16 @@ Java_com_shilapi_xcertplay_transport_UsbfsNcmIo_nativeOpen(
         JNIEnv *env, jclass clazz, jint fd, jint in_endpoint, jint out_endpoint,
         jint read_bytes, jint depth) {
     (void)env; (void)clazz;
-    if (fd < 0 || read_bytes < 512 || depth < 1 || depth > 16) return 0;
+    last_open_errno = 0;
+    if (fd < 0 || read_bytes < 512 || depth < 1 || depth > 16) {
+        last_open_errno = EINVAL;
+        return 0;
+    }
     NcmIo *io = (NcmIo *)calloc(1, sizeof(NcmIo));
-    if (io == NULL) return 0;
+    if (io == NULL) {
+        last_open_errno = ENOMEM;
+        return 0;
+    }
     io->fd = fd;
     io->depth = depth;
     io->out_endpoint = out_endpoint;
@@ -277,12 +286,18 @@ Java_com_shilapi_xcertplay_transport_UsbfsNcmIo_nativeOpen(
     io->in_slots = (NcmUrbSlot *)calloc((size_t)depth, sizeof(NcmUrbSlot));
     io->out_slots = (NcmUrbSlot *)calloc((size_t)depth, sizeof(NcmUrbSlot));
     if (io->in_slots == NULL || io->out_slots == NULL) {
-        free(io->in_slots); free(io->out_slots); free(io); return 0;
+        last_open_errno = ENOMEM;
+        free(io->in_slots); free(io->out_slots);
+        pthread_mutex_destroy(&io->lock);
+        free(io);
+        return 0;
     }
     pthread_mutex_lock(&io->lock);
     for (int i = 0; i < depth; i++) {
         init_urb(&io->in_slots[i], in_endpoint, read_bytes, 1);
+        if (io->in_slots[i].buffer == NULL) last_open_errno = ENOMEM;
         if (io->in_slots[i].buffer == NULL || !submit_slot(io, &io->in_slots[i], read_bytes)) {
+            if (last_open_errno == 0) last_open_errno = errno;
             discard_all(io);
             pthread_mutex_unlock(&io->lock);
             free_if_reaped(io);
@@ -291,6 +306,13 @@ Java_com_shilapi_xcertplay_transport_UsbfsNcmIo_nativeOpen(
     }
     pthread_mutex_unlock(&io->lock);
     return (jlong)(intptr_t)io;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_shilapi_xcertplay_transport_UsbfsNcmIo_nativeLastOpenErrno(
+        JNIEnv *env, jclass clazz) {
+    (void)env; (void)clazz;
+    return last_open_errno;
 }
 
 JNIEXPORT jboolean JNICALL
@@ -766,7 +788,7 @@ Java_com_shilapi_xcertplay_transport_UsbfsNcmIo_nativeAvailableOutSlots(
     pthread_mutex_lock(&io->lock);
     reap_ready(io);
     int free_slots = 0;
-    for (int i = 0; i < io->depth; i++) if (!io->out_slots[i].in_flight && io->out_slots[i].buffer == NULL) free_slots++;
+    for (int i = 0; i < io->depth; i++) if (!io->out_slots[i].in_flight) free_slots++;
     pthread_mutex_unlock(&io->lock);
     return free_slots;
 }

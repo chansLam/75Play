@@ -82,12 +82,12 @@ object LayoutMetrics {
     fun switchH(context: Context): Int = tier(context, 28, 38, 28)
     fun switchKnob(context: Context): Int = tier(context, 22, 30, 22)
 
-    fun appIconDp(context: Context): Int = tier(context, 44, 72, 56)
-    fun appLabelSize(context: Context): Float = tier(context, 12f, 14f, 12f)
-    fun appTilePadH(context: Context): Int = px(context, tier(context, 4, 8, 8))
-    fun appTilePadT(context: Context): Int = px(context, tier(context, 4, 14, 14))
-    fun appTilePadB(context: Context): Int = px(context, tier(context, 2, 10, 10))
-    fun appTileMargin(context: Context): Int = px(context, tier(context, 2, 6, 6))
+    fun appIconDp(context: Context): Int = tier(context, 52, 72, 64)
+    fun appLabelSize(context: Context): Float = tier(context, 13f, 14f, 13f)
+    fun appTilePadH(context: Context): Int = px(context, tier(context, 8, 10, 10))
+    fun appTilePadT(context: Context): Int = px(context, tier(context, 10, 14, 12))
+    fun appTilePadB(context: Context): Int = px(context, tier(context, 8, 10, 10))
+    fun appTileMargin(context: Context): Int = px(context, tier(context, 6, 8, 8))
     /** 驾驶舱用 4 列，少占高度。短屏仍 3 列大图标。 */
     fun appColumns(context: Context): Int = tier(context, 4, 3, 4)
 

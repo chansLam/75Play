@@ -118,10 +118,6 @@ object CarHotspotEnable {
     }
 
     private fun wifiManager(app: Context): WifiManager? =
-        if (realSdkInt() >= Build.VERSION_CODES.M) {
-            app.getSystemService(WifiManager::class.java)
-        } else {
-            @Suppress("DEPRECATION")
-            app.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-        }
+        @Suppress("DEPRECATION")
+        app.getSystemService(Context.WIFI_SERVICE) as? WifiManager
 }

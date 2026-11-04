@@ -55,6 +55,8 @@
     <string name="could_not_save_the_report">Не вдалося зберегти звіт</string>
     <string name="could_not_start_carplay_return_to_diplay_and_check_app_per">Не вдалося запустити CarPlay. Поверніться до 75Play та перевірте дозволи застосунку.</string>
     <string name="diagnostic_report_saved">Діагностичний звіт збережено</string>
+    <string name="report_scan_hint">Підключіть телефон до точки доступу авто або до тієї самої мережі Wi-Fi і відскануйте код. Посилання закриється разом із цим вікном.</string>
+    <string name="report_scan_unavailable">У головного пристрою немає адреси, доступної телефону, тому звіт не можна завантажити за кодом.</string>
     <string name="diplay">75Play</string>
     <string name="discovering_iphone">Пошук iPhone</string>
     <string name="done">Готово</string>
@@ -78,6 +80,11 @@
     <string name="hotspot_ssid_contains_u_0000">SSID точки доступу містить U+0000</string>
     <string name="hotspot_ssid_is_required">Укажіть SSID точки доступу</string>
     <string name="hotspot_ssid_must_be_at_most_32_utf_8_bytes">SSID точки доступу має містити не більше 32 байтів UTF-8</string>
+    <string name="hotspot_ssid_edit_hint">Залиште порожнім, щоб використати типову назву (75Play). Інша назва уникає конфлікту SSID із сусідніми точками.</string>
+    <string name="hotspot_password_edit_hint">Залиште порожнім, щоб використати типовий пароль. Деякі пристрої відхиляють суто цифрові паролі Wi-Fi, використайте літери й цифри (наприклад Play2026).</string>
+    <string name="hotspot_reapplying">Повторне застосування точки доступу з новими налаштуваннями…</string>
+    <string name="hotspot_reapplied">Точку доступу застосовано з новими налаштуваннями</string>
+    <string name="hotspot_reapply_failed">Не вдалося застосувати точку доступу. Перевірте налаштування головного пристрою й повторіть</string>
     <string name="hotspot_status">Стан точки доступу</string>
     <string name="i2c">I2C</string>
     <string name="later">Пізніше</string>
@@ -378,4 +385,5 @@
     <string name="cd_floating_ball">Плаваюча кнопка: торкніться для «Назад», утримуйте для повернення на головний екран DiPlay</string>
     <string name="session_notification_text">CarPlay: з\'єднання активне</string>
     <string name="session_notification_disconnect">Від\'єднати</string>
+    <string name="cd_temp_bar">Рядок температури: зовні, в салоні та задана температура кондиціонера</string>
 </resources>

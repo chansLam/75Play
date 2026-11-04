@@ -729,9 +729,11 @@ object DiPlayDialog {
         title: String,
         message: String? = null,
         buttons: List<Pair<String, () -> Unit>>,
-    ) {
+        header: View? = null,
+    ): Dialog {
         val d = themed(context)
         val shell = openShell(context, title)
+        if (header != null) shell.body.addView(header)
         if (message != null) {
             shell.body.addView(body(context, message).apply {
                 if (LayoutMetrics.isShort(context)) textSize = 14f
@@ -751,6 +753,7 @@ object DiPlayDialog {
         shell.setFooter(buttonRow(context, *btns.toTypedArray()))
         shell.ready()
         show(d, shell.panel)
+        return d
     }
 
     /** Glass toast：替代系统 Toast，走同一套玻璃风格。长文请用 [showInfo]，勿塞进 Toast。 */

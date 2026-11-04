@@ -4,6 +4,7 @@ import com.shihab.diplay.CarPlayHostActivity
 import com.shihab.diplay.media.AndroidMediaSink
 import com.shihab.diplay.orchestration.CarPlayController
 import com.shihab.diplay.session.CarPlaySessionDisplay
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Process-local hand-off for keeping the CarPlay session alive while no Activity is visible. */
 internal object CarPlayBackgroundSession {
@@ -50,6 +51,51 @@ internal object CarPlayBackgroundSession {
     private var display: CarPlaySessionDisplay? = null
     /** Owner after the host Activity has left. The controller stays up for the next host. */
     private val parkedOwner = Any()
+    /** Shell callback after a parked session ends and its radio has been released. */
+    @Volatile var onParkedSessionLost: (() -> Unit)? = null
+    private var parkedLostOwner: Any? = null
+    private val releasingParked = AtomicBoolean(false)
+
+    /** Registers [callback] for [owner]. A later owner replaces it; an older owner cannot clear it. */
+    fun setParkedSessionLost(owner: Any, callback: (() -> Unit)?) {
+        synchronized(this) {
+            parkedLostOwner = owner
+            onParkedSessionLost = callback
+        }
+    }
+
+    fun clearParkedSessionLost(owner: Any) {
+        synchronized(this) {
+            if (parkedLostOwner !== owner) return
+            parkedLostOwner = null
+            onParkedSessionLost = null
+        }
+    }
+
+    /**
+     * The parked controller's session ended. Close it once so the Direct group is released,
+     * wait for radio teardown, then tell the shell it may start a new connection.
+     * A host that has already adopted the session is left alone.
+     */
+    fun releaseParked(reason: String) {
+        val closing = synchronized(this) {
+            if (owner !== parkedOwner || stopping || controller == null || stopAction == null) return
+            if (!releasingParked.compareAndSet(false, true)) return
+            controller
+        } ?: run {
+            releasingParked.set(false)
+            return
+        }
+        android.util.Log.i("xcertplay", "parked session release: $reason")
+        stop {
+            Thread({
+                runCatching { closing.awaitClosed(PARKED_CLOSE_TIMEOUT_MILLIS) }
+                releasingParked.set(false)
+                val callback = onParkedSessionLost
+                if (callback != null) runCatching { callback() }
+            }, "diplay-parked-await").apply { isDaemon = true }.start()
+        }
+    }
 
     @Synchronized
     fun snapshot(): Snapshot? {
@@ -61,7 +107,8 @@ internal object CarPlayBackgroundSession {
 
     @Synchronized
     fun store(controller: CarPlayController, sink: AndroidMediaSink, width: Int, height: Int,
-        owner: Any, display: CarPlaySessionDisplay, stop: (() -> Unit) -> Unit) {
+        owner: Any, display: CarPlaySessionDisplay, stop: (() -> Unit) -> Unit): Boolean {
+        if (stopping || releasingParked.get()) return false
         this.stopAction = stop
         this.owner = owner
         this.controller = controller
@@ -69,6 +116,7 @@ internal object CarPlayBackgroundSession {
         this.width = width
         this.height = height
         this.display = display
+        return true
     }
 
     @Synchronized
@@ -124,4 +172,6 @@ internal object CarPlayBackgroundSession {
         }
         callbacks.forEach { runCatching { it() } }
     }
+
+    private const val PARKED_CLOSE_TIMEOUT_MILLIS = 4_000L
 }

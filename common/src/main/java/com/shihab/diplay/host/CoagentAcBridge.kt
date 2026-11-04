@@ -4,7 +4,6 @@ package com.shihab.diplay.host
 import android.os.Binder
 import android.os.Handler
 import android.os.IBinder
-import android.os.Looper
 import android.os.Parcel
 import com.shihab.diplay.ActiveSessionLog
 import com.shihab.diplay.AsyncDiagnosticLog
@@ -37,14 +36,11 @@ object CoagentAcBridge {
     private const val CALLBACK_DESCRIPTOR = "com.incall.proxy.ac.IAirConditionCallback"
 
     /**
-     * The firmware serves the `getAirConditionInfo()` (tx27) reply as
-     * [writeNoException][int 1 present][className string][AirConditionInfo.writeToParcel payload]
-     * where the className string is the UTF-16 `Parcelable` class name. The reply bytes captured
-     * on the S401AUTO head unit show the firmware writes this name with an unreliable length
-     * prefix (0x2c = 44 for the 37-char name), so a plain `Parcel.readString()` desyncs the
-     * serializable layout that follows. We skip the exact known span instead (see [parseInfoExact]).
+     * The firmware serves `getAirConditionInfo()` (tx27) as
+     * [writeNoException][int present][AirConditionInfo.writeToParcel]. There is no extra
+     * Parcelable class name. Each enum is `writeSerializable` (`readString` + `createByteArray`).
+     * The length 0x2c in a device dump is `AirConditionInfo$Switch`, the first enum.
      */
-    private const val AIR_CONDITION_INFO_CLASS_NAME = "com.incall.proxy.can.AirConditionInfo"
 
     // IAirConditionInterface.Stub transaction codes.
     private const val TX_GET_AC_TYPE = 1
@@ -81,7 +77,10 @@ object CoagentAcBridge {
     // (head-unit boot sequence), so a single startup attempt misses it permanently. Retry on a
     // fixed cadence until the service appears, then stop. (Lazy so the bridge object loads in
     // plain-JVM unit tests; the main looper is only needed at runtime.)
-    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
+    private val worker by lazy {
+        Handler(android.os.HandlerThread("coagent-ac").apply { isDaemon = true; start() }.looper)
+    }
+    private val retryLock = Any()
     private var retryRunnable: Runnable? = null
     private var attempts = 0
     private val seenSeats = HashSet<Int>()
@@ -93,7 +92,7 @@ object CoagentAcBridge {
     private val binderDeathRecipient = android.os.IBinder.DeathRecipient { onServiceBinderDied() }
 
     private const val RETRY_INTERVAL_MS = 2000L
-    private const val MAX_ATTEMPTS = 30 // ~60s of retries after first show()
+    private const val MAX_ATTEMPTS = 30 // ~60s of fast retries after first show()
 
     /**
      * Resolves (lazily, via reflection) and caches the Coagent AC service binder.
@@ -169,42 +168,43 @@ object CoagentAcBridge {
 
     /**
      * Starts the late-ready polling loop: register() + refreshSnapshot() every [RETRY_INTERVAL_MS]
-     * until both succeed or [MAX_ATTEMPTS] is reached. Idempotent.
+     * until both succeed. After the fast window, retries continue slowly. Idempotent.
      */
     fun startRetries() {
-        if (retryRunnable != null) return
-        attempts = 0
-        scheduleNext(0L)
+        synchronized(retryLock) {
+            if (retryRunnable != null) return
+            attempts = 0
+            val runnable = Runnable { attemptOnce() }
+            retryRunnable = runnable
+            worker.post(runnable)
+        }
     }
 
     /** One-shot register + refresh attempt (called from Activity onResume/onStart); does not cancel the loop. */
     fun nudge() {
-        register()
-        refreshSnapshot()
+        worker.post {
+            register()
+            refreshSnapshot()
+        }
     }
 
-    private fun scheduleNext(delayMs: Long) {
-        val r = object : Runnable {
-            override fun run() {
-                retryRunnable = this
-                attempts++
-                register()
-                refreshSnapshot()
-                val done = registered && snapshotReady
-                if (!done && attempts < MAX_ATTEMPTS) {
-                    mainHandler.postDelayed(this, RETRY_INTERVAL_MS)
-                } else {
-                    retryRunnable = null
-                    if (attempts >= MAX_ATTEMPTS && !done) {
-                        diag("coagent.ac retry gave up after $attempts attempts: registered=$registered snapshotReady=$snapshotReady")
-                    } else {
-                        diag("coagent.ac retry settled after $attempts attempts: registered=$registered snapshotReady=$snapshotReady")
-                    }
-                }
+    private fun attemptOnce() {
+        register()
+        refreshSnapshot()
+        synchronized(retryLock) {
+            val runnable = retryRunnable ?: return
+            attempts++
+            val done = registered && snapshotReady
+            if (done || attempts >= MAX_ATTEMPTS) {
+                retryRunnable = null
+                diag(
+                    "coagent.ac retry stopped after $attempts attempts: " +
+                        "registered=$registered snapshotReady=$snapshotReady",
+                )
+                return
             }
+            worker.postDelayed(runnable, RETRY_INTERVAL_MS)
         }
-        retryRunnable = r
-        mainHandler.postDelayed(r, delayMs)
     }
 
     /** Reads current AC type via transaction 1 (fuel vs electric). */
@@ -297,45 +297,39 @@ object CoagentAcBridge {
      *   + 2 floats (leftTemperature, rightTemperature)
      *   + remaining fields we do not need.
      *
-     * Enum fields are written with `Parcel.writeSerializable`, whose body is a length-prefixed
-     * Java serialization stream — not a fixed 4-byte int — so the earlier heuristic decoder never
-     * matched. Using `readSerializable()`/`readByte()`/`readFloat()` in the documented order reads
-     * exactly what the firmware writes.
-     *
-     * The firmware additionally writes the Parcelable class name (UTF-16LE) ahead of the payload.
-     * On S401AUTO the observed span is exactly 37 chars = 74 bytes with NO extra terminator (the
-     * hex on-device ends at the 74th byte: ...49 00 6e 00 66 00 6f 00), while the length prefix it
-     * writes is wrong (0x2c = 44) — so neither `readString()` nor trusting the prefix works. Skip
-     * the exact known span = class name length * 2 (74); the parse stays guarded, a mismatch simply
-     * returns null and the snapshot is retried on the next tick.
+     * Each enum is API 19 `Parcel.writeSerializable`: `writeString(className)` then
+     * `writeByteArray(ObjectOutputStream bytes)`. The class name length 0x2c is
+     * `AirConditionInfo$Switch`, not a Parcelable header. The OEM enum classes are not in
+     * this APK, so the bytes are discarded instead of calling `readSerializable()`.
      */
     internal fun parseInfoExact(reply: Parcel): Parsed? {
-        try {
-            val classLen = reply.readInt() // present in every real tx27 reply; value unreliable on this ROM
-            if (classLen < 0 || classLen > 512) return null
-            reply.setDataPosition(reply.dataPosition() + AIR_CONDITION_INFO_CLASS_NAME.length * 2)
-            if (!skipSerializables(reply, 4)) return null      // frontMain, refrigeration, circleStatus, subregion
-            reply.readByte()                                    // isCompressorActive
-            if (!skipSerializables(reply, 3)) return null       // frontSwitch, tempRegionMode, windMode
+        return try {
+            if (!skipSerializables(reply, 4)) return null
+            reply.readByte()
+            if (!skipSerializables(reply, 3)) return null
             val outside = reply.readFloat()
             val inside = reply.readFloat()
-            if (!skipSerializables(reply, 3)) return null       // frontDefrost, rearDefrost, autoMode
+            if (!skipSerializables(reply, 3)) return null
             val left = reply.readFloat()
             val right = reply.readFloat()
-            return Parsed("exact", outside, inside, left, right)
+            Parsed("exact", outside, inside, left, right)
         } catch (e: Exception) {
-            return null
+            diag("coagent.ac snapshot parse failed: ${e.javaClass.simpleName}: ${e.message}")
+            null
         }
     }
 
-    /** Skips [count] `writeSerializable` fields by consuming them via the matching reader. */
+    /** Consumes [count] `writeSerializable` values without loading the OEM enum classes. */
     private fun skipSerializables(reply: Parcel, count: Int): Boolean {
         repeat(count) {
-            try {
-                reply.readSerializable()
-            } catch (e: Exception) {
-                return false
-            }
+            val name = reply.readString()
+            if (name.isNullOrEmpty() || name.length > 240) return false
+            val position = reply.dataPosition()
+            val length = reply.readInt()
+            if (length < 0 || length > 64 * 1024 || length > reply.dataAvail()) return false
+            reply.setDataPosition(position)
+            val payload = reply.createByteArray() ?: return false
+            if (payload.size > 64 * 1024) return false
         }
         return true
     }
@@ -400,8 +394,10 @@ object CoagentAcBridge {
 
     /** Drops the cached binder so the next call re-resolves (useful after service restart). */
     fun reset() {
-        retryRunnable?.let { mainHandler.removeCallbacks(it) }
-        retryRunnable = null
+        synchronized(retryLock) {
+            retryRunnable?.let { worker.removeCallbacks(it) }
+            retryRunnable = null
+        }
         serviceBinder = null
         registered = false
         snapshotReady = false

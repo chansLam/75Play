@@ -53,18 +53,27 @@ internal class LegacyWifiP2pGroupManager(
         channel = p2pChannel
 
         try {
-            requestGroupInfo(p2pChannel, 2_000)?.let { group ->
+            val retained = requestGroupInfo(p2pChannel, 2_000)
+            val reuse = retained != null && retained.isGroupOwner &&
+                retained.networkName?.startsWith("DIRECT-") == true &&
+                !retained.passphrase.isNullOrBlank()
+            if (reuse) {
+                created = true
                 diagnostic(
-                    "Legacy Wi-Fi Direct removing retained group owner=${group.isGroupOwner} " +
-                        "name=${group.networkName ?: "unknown"}",
+                    "Legacy Wi-Fi Direct reusing group owner name=${retained?.networkName}",
+                )
+            } else if (retained != null) {
+                diagnostic(
+                    "Legacy Wi-Fi Direct removing retained group owner=${retained.isGroupOwner} " +
+                        "name=${retained.networkName ?: "unknown"}",
                 )
                 removeGroupBlocking(p2pChannel, 4_000)
             }
 
-            var groupCreated = false
+            var groupCreated = reuse
             var lastCreateFailure: IOException? = null
             var createAttempts = 0
-            while (!groupCreated && createAttempts < 3 && !closed) {
+            while (!reuse && !groupCreated && createAttempts < 3 && !closed) {
                 createAttempts++
                 val createLatch = CountDownLatch(1)
                 val createFailure = AtomicReference<IOException?>()
@@ -99,6 +108,9 @@ internal class LegacyWifiP2pGroupManager(
                 }
             }
             if (!groupCreated) {
+                if (lastCreateFailure?.message?.contains("code=2") == true) {
+                    throw P2pResetRequiredException()
+                }
                 lastCreateFailure?.let { throw it }
             }
 

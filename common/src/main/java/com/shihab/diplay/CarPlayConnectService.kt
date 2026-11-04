@@ -9,7 +9,9 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import com.shihab.diplay.airplay.AirPlaySession
 import com.shihab.diplay.airplay.AirPlaySessionListener
@@ -20,6 +22,7 @@ import com.shihab.diplay.host.CarPlayBackgroundSession
 import com.shihab.diplay.host.R
 import com.shihab.diplay.util.AppLog
 import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Drives the wireless CarPlay handshake in the background (replacing the old connect-only
@@ -36,6 +39,7 @@ import java.io.File
  * The controller itself is process-global: we only ever hand it off — never rebuild it.
  */
 class CarPlayConnectService : Service() {
+    private val connectGeneration = AtomicInteger()
 
     @Volatile private var started = false
     @Volatile private var succeeded = false
@@ -108,7 +112,10 @@ class CarPlayConnectService : Service() {
             val missingPermission = listOf(
                 android.Manifest.permission.RECORD_AUDIO,
                 android.Manifest.permission.ACCESS_FINE_LOCATION,
-            ).firstOrNull { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+            ).firstOrNull {
+                checkPermission(it, android.os.Process.myPid(), android.os.Process.myUid()) !=
+                    PackageManager.PERMISSION_GRANTED
+            }
             if (missingPermission != null) {
                 broadcastFailed(getString(R.string.could_not_start_carplay_return_to_diplay_and_check_app_per))
                 teardown()
@@ -154,16 +161,33 @@ class CarPlayConnectService : Service() {
             completion()
         }
 
-        try {
-            // DiPlaySessionService (the session-alive foreground notification) starts only once the
-            // handshake succeeds, in onSessionActive — not during connecting.
-            built.controller.start()
-        } catch (error: RuntimeException) {
-            AppLog.w(TAG, "controller start failed", error)
-            broadcastFailed(getString(R.string.could_not_start_carplay_return_to_diplay_and_check_app_per))
-            teardown()
-            stopSelf()
-        }
+        // Identity install runs off the main thread and can still be in progress when the user
+        // taps connect. Starting MFi before that rename finishes reports a missing directory.
+        val launch = built.controller
+        val generation = connectGeneration.get()
+        Thread({
+            val authError = runCatching {
+                DiPlayBootstrap.ensure(applicationContext, AirPlayPersistence.loadMfiTarget(applicationContext))
+            }.exceptionOrNull()
+            Handler(Looper.getMainLooper()).post {
+                if (generation != connectGeneration.get() || controller !== launch) return@post
+                if (authError != null) {
+                    AppLog.e(TAG, "CarPlay authentication could not be loaded", authError)
+                    broadcastFailed(getString(R.string.setup_error_auth))
+                    teardown()
+                    stopSelf()
+                    return@post
+                }
+                try {
+                    launch.start()
+                } catch (error: RuntimeException) {
+                    AppLog.w(TAG, "controller start failed", error)
+                    broadcastFailed(getString(R.string.could_not_start_carplay_return_to_diplay_and_check_app_per))
+                    teardown()
+                    stopSelf()
+                }
+            }
+        }, "diplay-mfi-ready").apply { isDaemon = true }.start()
     }
 
     private val forwardingListener = object : AirPlaySessionListener {
@@ -227,6 +251,7 @@ class CarPlayConnectService : Service() {
     }
 
     private fun teardown() {
+        connectGeneration.incrementAndGet()
         val current = controller
         if (current != null) {
             CarPlayBackgroundSession.clear(current)

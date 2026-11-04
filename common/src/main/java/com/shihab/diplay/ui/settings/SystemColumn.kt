@@ -55,9 +55,6 @@ internal class SystemColumn(page: Fragment) : AboutColumnKit(page) {
         card.addView(divider(ctx))
         card.addView(settingRow(ctx, ctx.getString(R.string.about_export_report), ghostButton(ctx, ctx.getString(R.string.about_export)) { host.exportDiagnosticsNow() }))
         card.addView(settingRow(ctx, ctx.getString(R.string.choose_save_location), capPick(ctx, ctx.getString(R.string.about_default)) { host.chooseReportDestination() }))
-        card.addView(divider(ctx))
-        card.addView(settingRow(ctx, ctx.getString(R.string.usb_probe_report), ghostButton(ctx, ctx.getString(R.string.usb_probe_run)) { host.runUsbHostProbe() }))
-        card.addView(paragraph(ctx, ctx.getString(R.string.usb_probe_hint)))
     }
 
     private fun sectionTitle(ctx: android.content.Context, text: String) =

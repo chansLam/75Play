@@ -52,6 +52,8 @@
     <string name="could_not_save_the_report">Не удалось сохранить отчёт</string>
     <string name="could_not_start_carplay_return_to_diplay_and_check_app_per">Не удалось запустить CarPlay. Вернитесь в 75Play и проверьте разрешения приложения.</string>
     <string name="diagnostic_report_saved">Диагностический отчёт сохранён</string>
+    <string name="report_scan_hint">Подключите телефон к точке доступа автомобиля или к той же сети Wi-Fi и отсканируйте код. Ссылка закроется вместе с этим окном.</string>
+    <string name="report_scan_unavailable">У головного устройства нет адреса, доступного телефону, поэтому отчёт нельзя скачать по коду.</string>
     <string name="discovering_iphone">Поиск iPhone</string>
     <string name="done">Готово</string>
     <string name="draw_outside_safe_area">Рисовать за пределами безопасной области</string>
@@ -74,6 +76,11 @@
     <string name="hotspot_ssid_contains_u_0000">SSID точки доступа содержит U+0000</string>
     <string name="hotspot_ssid_is_required">Укажите SSID точки доступа</string>
     <string name="hotspot_ssid_must_be_at_most_32_utf_8_bytes">SSID точки доступа должен занимать не более 32 байт UTF-8</string>
+    <string name="hotspot_ssid_edit_hint">Оставьте пустым, чтобы использовать имя по умолчанию (75Play). Другое имя избегает конфликта SSID с соседними точками.</string>
+    <string name="hotspot_password_edit_hint">Оставьте пустым, чтобы использовать пароль по умолчанию. Некоторые устройства отклоняют чисто цифровые пароли Wi-Fi, используйте буквы и цифры (например Play2026).</string>
+    <string name="hotspot_reapplying">Повторное применение точки доступа с новыми настройками…</string>
+    <string name="hotspot_reapplied">Точка доступа применена с новыми настройками</string>
+    <string name="hotspot_reapply_failed">Не удалось применить точку доступа. Проверьте настройки головного устройства и повторите</string>
     <string name="hotspot_status">Состояние точки доступа</string>
     <string name="later">Позже</string>
     <string name="local_offline">Локальный офлайн</string>
@@ -378,4 +385,5 @@
     <string name="cd_floating_ball">Плавающая кнопка: нажмите для «Назад», удерживайте для возврата на главный экран DiPlay</string>
     <string name="session_notification_text">CarPlay: соединение активно</string>
     <string name="session_notification_disconnect">Отключить</string>
+    <string name="cd_temp_bar">Строка температуры: снаружи, в салоне и заданная температура кондиционера</string>
 </resources>

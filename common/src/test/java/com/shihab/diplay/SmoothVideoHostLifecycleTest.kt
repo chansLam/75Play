@@ -275,6 +275,16 @@ class SmoothVideoHostLifecycleTest {
             closing in retiringSinks())
     }
 
+    @Test fun directSurfaceDestroyParksTheLiveDecoder() {
+        val live = spy(AndroidMediaSink()).also(ownedSinks::add)
+        setField("sink", live)
+        val surface = surface()
+        val holder = mock(SurfaceHolder::class.java)
+        `when`(holder.surface).thenReturn(surface)
+        (getField("fallbackSurfaceCallback") as SurfaceHolder.Callback).surfaceDestroyed(holder)
+        verify(live).beginSurfaceDetach(surface, true)
+    }
+
     /** A fake native codec call that ignores close's interrupt until the test lets it return. */
     private class BlockingCodec : ShadowMediaCodec.CodecConfig.Codec {
         val entered = CountDownLatch(1)

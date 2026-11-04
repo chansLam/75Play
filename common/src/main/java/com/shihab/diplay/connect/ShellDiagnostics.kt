@@ -2,12 +2,15 @@
 package com.shihab.diplay.connect
 
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
 import com.shihab.diplay.compat.realSdkInt
 import android.view.Gravity
+import android.view.View
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -144,7 +147,18 @@ class ShellDiagnostics(
                         uri == null -> "Downloads/DiPlay/$fileName"
                         else -> activity.getString(R.string.your_report_was_saved_to_the_selected_location)
                     }
-                    DiPlayDialog.showChoices(
+                    val download = runCatching {
+                        DiagnosticDownloadServer.start(report.toByteArray(Charsets.UTF_8), fileName)
+                    }.getOrNull()
+                    val header = if (download == null) {
+                        label(activity.getString(R.string.report_scan_unavailable), 14, GlassColors.MUTED)
+                    } else {
+                        runCatching { downloadHeader(download) }.getOrElse {
+                            download.close()
+                            label(activity.getString(R.string.report_scan_unavailable), 14, GlassColors.MUTED)
+                        }
+                    }
+                    val dialog = DiPlayDialog.showChoices(
                         activity, activity.getString(R.string.diagnostic_report_saved), msg, listOf(
                             activity.getString(R.string.view_diagnostic_report) to { showReport(report) },
                             activity.getString(R.string.share) to {
@@ -158,7 +172,9 @@ class ShellDiagnostics(
                             },
                             activity.getString(R.string.done) to {},
                         ),
+                        header = header,
                     )
+                    dialog.setOnDismissListener { download?.close() }
                 } else {
                     DiPlayDialog.showConfirm(
                         activity, activity.getString(R.string.could_not_save_the_report),
@@ -201,6 +217,51 @@ class ShellDiagnostics(
             AppLog.w("DiPlay", "report dialog failed", error)
             toast(activity.getString(R.string.diagnostic_report_preview_unavailable))
         }
+    }
+
+    private fun downloadHeader(session: DiagnosticDownloadServer): View {
+        val box = column().apply { gravity = Gravity.CENTER_HORIZONTAL }
+        val target = dp(200)
+        box.addView(ImageView(activity).apply {
+            setImageBitmap(qrBitmap(session.url, target))
+            contentDescription = session.url
+            layoutParams = LinearLayout.LayoutParams(target, target).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+            }
+        })
+        box.addView(label(activity.getString(R.string.report_scan_hint), 14, GlassColors.MUTED).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+        })
+        box.addView(label(session.url, 13, GlassColors.INK).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            setTextIsSelectable(true)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+        })
+        return box
+    }
+
+    private fun qrBitmap(url: String, targetPx: Int): Bitmap {
+        val qr = QrCode.encode(url.toByteArray(Charsets.UTF_8))
+        val modules = qr.size + 8
+        val scale = (targetPx / modules).coerceAtLeast(2)
+        val n = modules * scale
+        val pixels = IntArray(n * n) { 0xFFFFFFFF.toInt() }
+        for (y in 0 until qr.size) for (x in 0 until qr.size) {
+            if (!qr.dark(x, y)) continue
+            val x0 = (x + 4) * scale
+            val y0 = (y + 4) * scale
+            for (dy in 0 until scale) for (dx in 0 until scale) {
+                pixels[(y0 + dy) * n + (x0 + dx)] = 0xFF000000.toInt()
+            }
+        }
+        return Bitmap.createBitmap(pixels, 0, n, n, n, Bitmap.Config.ARGB_8888)
     }
 
     private fun reportFileName() =

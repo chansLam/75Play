@@ -97,13 +97,31 @@ internal class UsbfsNcmIo private constructor(
         private const val URB_DEPTH = 8
         private const val READ_BUFFER_BYTES = 32 * 1024
 
+        @Volatile var lastOpenFailure: String = "not attempted"
+            private set
+
         fun open(connection: SharedUsbConnection, inEndpoint: UsbEndpoint, outEndpoint: UsbEndpoint): UsbfsNcmIo? {
-            val fd = runCatching { connection.fileDescriptor }.getOrDefault(-1)
-            if (fd < 0) return null
-            val handle = runCatching {
+            val fd = runCatching { connection.fileDescriptor }.getOrElse { error ->
+                lastOpenFailure = "fd unavailable ${error.javaClass.simpleName}"
+                -1
+            }
+            if (fd < 0) {
+                if (lastOpenFailure == "not attempted") lastOpenFailure = "fd=$fd"
+                return null
+            }
+            val opened = runCatching {
                 nativeOpen(fd, inEndpoint.address, outEndpoint.address, READ_BUFFER_BYTES, URB_DEPTH)
-            }.getOrDefault(0L)
-            return handle.takeIf { it != 0L }?.let(::UsbfsNcmIo)
+            }
+            val handle = opened.getOrDefault(0L)
+            if (handle == 0L) {
+                val errno = runCatching { nativeLastOpenErrno() }.getOrDefault(-1)
+                val error = opened.exceptionOrNull()
+                lastOpenFailure = "fd=$fd errno=$errno" +
+                    (error?.let { " ${it.javaClass.simpleName}:${it.message}" } ?: "")
+                return null
+            }
+            lastOpenFailure = ""
+            return UsbfsNcmIo(handle)
         }
 
         init {
@@ -117,6 +135,8 @@ internal class UsbfsNcmIo private constructor(
             readBufferBytes: Int,
             urbDepth: Int,
         ): Long
+
+        @JvmStatic private external fun nativeLastOpenErrno(): Int
 
         @JvmStatic private external fun nativeSubmitOut(handle: Long, block: ByteArray): Boolean
         @JvmStatic private external fun nativeSubmitFrames(

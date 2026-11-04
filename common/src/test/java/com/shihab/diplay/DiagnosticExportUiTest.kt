@@ -47,12 +47,20 @@ class DiagnosticExportUiTest {
             shadowOf(Looper.getMainLooper()).idle()
             val deadline = System.nanoTime() + 5_000_000_000L
             var reports = reportDirectory(context)
-            while ((reports == null || reports.listFiles().isNullOrEmpty()) && System.nanoTime() < deadline) {
+            var saved = ShadowDialog.getLatestDialog()
+            fun dialogShowsPath(): Boolean {
+                val path = reports?.listFiles()?.singleOrNull()?.absolutePath ?: return false
+                val dialog = saved ?: return false
+                return descendants(dialog.window!!.decorView).filterIsInstance<TextView>()
+                    .any { it.text.contains(path) }
+            }
+            while (!dialogShowsPath() && System.nanoTime() < deadline) {
                 Thread.sleep(20)
                 shadowOf(Looper.getMainLooper()).idle()
                 reports = reportDirectory(context)
+                saved = ShadowDialog.getLatestDialog()
             }
-            val saved = requireNotNull(ShadowDialog.getLatestDialog())
+            saved = requireNotNull(saved)
             val file = requireNotNull(reports?.listFiles()?.singleOrNull()) { "diagnostic report was not saved" }
             assertTrue(file.name.endsWith(".txt"))
             assertTrue(file.readText().contains("Android 9 / API 28"))
