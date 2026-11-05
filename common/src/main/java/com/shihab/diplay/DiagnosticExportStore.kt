@@ -44,7 +44,13 @@ internal object DiagnosticExportStore {
     }
 
     /** Android 9 and OEMs without working Downloads storage can still export privately. */
-    fun saveWithoutPicker(context: Context, fileName: String, report: String, preferredRoot: File? = null): SavedReport {
+    fun saveWithoutPicker(
+        context: Context,
+        fileName: String,
+        report: String,
+        preferredRoot: File? = null,
+        defaultDownloadsRoot: File? = null,
+    ): SavedReport {
         if (preferredRoot != null) {
             return saveSelectedDirectory(preferredRoot, fileName, report)
         }
@@ -61,7 +67,7 @@ internal object DiagnosticExportStore {
             AppLog.w("DiagnosticExportStore", "save to MediaStore Downloads failed; trying legacy Downloads", it)
         }
 
-        val legacyDownload = runCatching { saveLegacyDownloads(fileName, report) }
+        val legacyDownload = runCatching { saveLegacyDownloads(fileName, report, defaultDownloadsRoot) }
         legacyDownload.getOrNull()?.let { return it }
         val legacyDownloadFailure = legacyDownload.exceptionOrNull()
         if (legacyDownloadFailure is DiagnosticExportCleanupException) throw legacyDownloadFailure
@@ -122,8 +128,9 @@ internal object DiagnosticExportStore {
         return roots
     }
 
-    private fun saveLegacyDownloads(fileName: String, report: String): SavedReport {
-        val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+    private fun saveLegacyDownloads(fileName: String, report: String, rootOverride: File?): SavedReport {
+        val downloads = rootOverride
+            ?: Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
         if (!downloads.isDirectory && !downloads.mkdirs()) {
             throw IOException("Downloads directory is unavailable")
         }

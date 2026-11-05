@@ -118,11 +118,16 @@ class DiagnosticExportFallbackTest {
     }
 
     @Test fun unavailableExternalStorageStillSavesPrivately() {
-        blockDownloads()
+        val blockedRoot = blockedDownloads()
         val unavailableExternal = object : ContextWrapper(context) {
             override fun getExternalFilesDir(type: String?): File? = null
         }
-        val saved = DiagnosticExportStore.saveWithoutPicker(unavailableExternal, "DiPlay-test.txt", "report")
+        val saved = DiagnosticExportStore.saveWithoutPicker(
+            unavailableExternal,
+            "DiPlay-test.txt",
+            "report",
+            defaultDownloadsRoot = blockedRoot,
+        )
         assertTrue(saved.savedInApp)
         assertNull(saved.savedPath)
         assertEquals("report", read(saved.uri))
@@ -130,38 +135,57 @@ class DiagnosticExportFallbackTest {
     }
 
     @Test fun unwritableExternalStorageStillSavesPrivately() {
-        blockDownloads()
+        val blockedRoot = blockedDownloads()
         reports.writeText("blocks directory creation")
-        val saved = DiagnosticExportStore.saveWithoutPicker(context, "DiPlay-test.txt", "report")
+        val saved = DiagnosticExportStore.saveWithoutPicker(
+            context,
+            "DiPlay-test.txt",
+            "report",
+            defaultDownloadsRoot = blockedRoot,
+        )
         assertTrue(saved.savedInApp)
         assertEquals("report", read(saved.uri))
         assertEquals("blocks directory creation", reports.readText())
     }
 
     @Test fun unavailableExternalAndPrivateStorageDoesNotReportSuccess() {
-        blockDownloads()
+        val blockedRoot = blockedDownloads()
         reports.writeText("blocks directory creation")
         privateReports.writeText("blocks directory creation")
         assertThrows(IOException::class.java) {
-            DiagnosticExportStore.saveWithoutPicker(context, "DiPlay-test.txt", "report")
+            DiagnosticExportStore.saveWithoutPicker(
+                context,
+                "DiPlay-test.txt",
+                "report",
+                defaultDownloadsRoot = blockedRoot,
+            )
         }
     }
 
     @Test fun onlyEightPrivateExportsAreRetainedWhenExternalStorageIsUnavailable() {
-        blockDownloads()
+        val blockedRoot = blockedDownloads()
         reports.writeText("blocks directory creation")
         var latest: Uri? = null
-        repeat(12) { latest = DiagnosticExportStore.saveWithoutPicker(context, "DiPlay-test.txt", "report $it").uri }
+        repeat(12) {
+            latest = DiagnosticExportStore.saveWithoutPicker(
+                context,
+                "DiPlay-test.txt",
+                "report $it",
+                defaultDownloadsRoot = blockedRoot,
+            ).uri
+        }
         assertEquals(8, privateReports.listFiles()!!.size)
         assertEquals("report 11", read(latest!!))
     }
 
     private fun read(uri: Uri) = context.contentResolver.openInputStream(uri)!!.bufferedReader().use { it.readText() }
 
-    private fun blockDownloads() {
-        downloads.deleteRecursively()
-        downloads.parentFile?.mkdirs()
-        downloads.writeText("blocks directory creation")
+    private fun blockedDownloads(): File {
+        return File(context.cacheDir, "blocked-downloads").apply {
+            deleteRecursively()
+            parentFile!!.mkdirs()
+            writeText("blocks directory creation")
+        }
     }
 
     private fun registerReportProvider() {
