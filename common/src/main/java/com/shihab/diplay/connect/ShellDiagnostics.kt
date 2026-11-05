@@ -56,7 +56,7 @@ class ShellDiagnostics(
         // Some head units omit or disable DocumentsUI. Launch itself can throw, before
         // the result callback and the background writer's exception handler ever run.
         if (exportInProgress) return
-        if (realSdkInt() < Build.VERSION_CODES.LOLLIPOP) {
+        if (realSdkInt() <= Build.VERSION_CODES.KITKAT) {
             // Use our own USB volume picker: KitKat DocumentsUI often hides vendor mounts.
             val choices = DiagnosticExportStore.availableUsbVolumes(activity.applicationContext)
             if (choices.isEmpty()) {
@@ -142,13 +142,24 @@ class ShellDiagnostics(
                     val (savedReport, report) = result.getOrThrow()
                     val msg = when {
                         savedReport.savedInApp -> activity.getString(R.string.diagnostic_report_saved_in_app)
-                        savedReport.savedPath != null -> activity.getString(R.string.diagnostic_report_saved_to_path, savedReport.savedPath) +
-                            if (savedReport.copyPaths.isEmpty()) "\n" + activity.getString(R.string.report_usb_copy_unavailable) else "\n" + activity.getString(R.string.report_usb_copy_paths, savedReport.copyPaths.joinToString("\n"))
+                        savedReport.savedPath != null -> activity.getString(R.string.diagnostic_report_saved_to_path, savedReport.savedPath)
                         uri == null -> "Downloads/DiPlay/$fileName"
                         else -> activity.getString(R.string.your_report_was_saved_to_the_selected_location)
                     }
+                    val reportAccess = Any()
+                    var qrDownloaded = false
+                    var sharing = false
                     val download = runCatching {
-                        DiagnosticDownloadServer.start(report.toByteArray(Charsets.UTF_8), fileName)
+                        DiagnosticDownloadServer.start(report.toByteArray(Charsets.UTF_8), fileName) {
+                            synchronized(reportAccess) {
+                                if (!sharing) {
+                                    qrDownloaded = savedReport.deleteAfterDownload(appContext)
+                                    if (!qrDownloaded) {
+                                        AppLog.w("DiPlay", "could not delete report after QR download")
+                                    }
+                                }
+                            }
+                        }
                     }.getOrNull()
                     val header = if (download == null) {
                         label(activity.getString(R.string.report_scan_unavailable), 14, GlassColors.MUTED)
@@ -162,13 +173,22 @@ class ShellDiagnostics(
                         activity, activity.getString(R.string.diagnostic_report_saved), msg, listOf(
                             activity.getString(R.string.view_diagnostic_report) to { showReport(report) },
                             activity.getString(R.string.share) to {
-                                runCatching {
-                                    activity.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
-                                        type = "text/plain"; putExtra(Intent.EXTRA_STREAM, savedReport.uri)
-                                        clipData = android.content.ClipData.newRawUri(activity.getString(R.string.report_clip_label), savedReport.uri)
-                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                    }, activity.getString(R.string.share_diagnostic_report)))
-                                }.onFailure { showReport(report) }
+                                val downloaded = synchronized(reportAccess) {
+                                    sharing = true
+                                    download?.close()
+                                    qrDownloaded
+                                }
+                                if (downloaded || savedReport.uri.scheme != "content") {
+                                    showReport(report)
+                                } else {
+                                    runCatching {
+                                        activity.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"; putExtra(Intent.EXTRA_STREAM, savedReport.uri)
+                                            clipData = android.content.ClipData.newRawUri(activity.getString(R.string.report_clip_label), savedReport.uri)
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }, activity.getString(R.string.share_diagnostic_report)))
+                                    }.onFailure { showReport(report) }
+                                }
                             },
                             activity.getString(R.string.done) to {},
                         ),

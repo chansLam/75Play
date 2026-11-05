@@ -5,33 +5,50 @@ import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.view.Surface
 
-/** High-API codec helpers. Callers load this class by name only after the real SDK allows it. */
+/** Optional platform codec features accessed without linking API 20+ methods or constants. */
 internal object PlatformMediaCodec {
     @JvmStatic
-    fun decoderName(codec: MediaCodec): String = codec.name
+    fun decoderName(codec: MediaCodec): String =
+        codec.javaClass.getMethod("getName").invoke(codec) as String
 
     @JvmStatic
     fun setRealtimePriority(format: MediaFormat) {
-        format.setInteger(MediaFormat.KEY_PRIORITY, 0)
+        format.setInteger("priority", 0)
     }
 
     @JvmStatic
     fun enableLowLatency(codec: MediaCodec, format: MediaFormat, mime: String) {
-        if (codec.codecInfo.getCapabilitiesForType(mime).isFeatureSupported("low-latency")) {
-            format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
+        val codecInfo = codec.javaClass.getMethod("getCodecInfo").invoke(codec)
+        val capabilities = codecInfo.javaClass
+            .getMethod("getCapabilitiesForType", String::class.java)
+            .invoke(codecInfo, mime)
+        val supported = capabilities.javaClass
+            .getMethod("isFeatureSupported", String::class.java)
+            .invoke(capabilities, "low-latency") as Boolean
+        if (supported) {
+            format.setInteger("low-latency", 1)
         }
     }
 
     @JvmStatic
+    @Suppress("DEPRECATION")
     fun softwareDecoderName(mime: String): String? =
-        MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.firstOrNull {
-            !it.isEncoder && it.isSoftwareOnly && mime in it.supportedTypes
-        }?.name
+        (0 until MediaCodecList.getCodecCount()).firstNotNullOfOrNull { index ->
+            val info = MediaCodecList.getCodecInfoAt(index)
+            info.name.takeIf {
+                !info.isEncoder && it.startsWith("OMX.google.") && mime in info.supportedTypes
+            }
+        }
 
     @JvmStatic
     fun setOutputSurface(codec: MediaCodec, surface: Surface) {
-        codec.setOutputSurface(surface)
+        codec.javaClass.getMethod("setOutputSurface", Surface::class.java).invoke(codec, surface)
     }
+
+    @JvmStatic
+    fun supportsOutputSurface(codec: MediaCodec): Boolean = runCatching {
+        codec.javaClass.getMethod("setOutputSurface", Surface::class.java)
+    }.isSuccess
 }
 
 internal fun platformMediaCodec(method: String, types: Array<out Class<*>>, vararg args: Any?): Any? =

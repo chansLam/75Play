@@ -207,7 +207,7 @@
     <string name="manual_bluetooth_input_mac_label">藍牙 MAC 位址（例如 AA:BB:CC:DD:EE:FF）：</string>
     <string name="manual_bluetooth_input_invalid_mac">無效的 MAC 位址（格式為 XX:XX:XX:XX:XX:XX）</string>
     <string name="report_no_usb_drive">未偵測到可寫入的USB隨身碟。請連接USB隨身碟後重試，或將報告儲存至車機。</string>
-    <string name="report_auto_save_locations">自動儲存至所有可寫入位置</string>
+    <string name="report_auto_save_locations">儲存至下載目錄</string>
     <string name="report_usb_location">USB隨身碟：%1$s</string>
     <string name="report_usb_copy_unavailable">USB副本：找不到可寫入的USB隨身碟</string>
     <string name="report_usb_copy_paths">其他儲存位置：\n%1$s</string>

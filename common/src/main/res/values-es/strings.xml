@@ -375,7 +375,7 @@
     <string name="first_tcp_timeout">El iPhone no se conectó a CarPlay a tiempo</string>
     <string name="wireless_startup_retries_exhausted">Se detuvieron los reintentos automáticos. Comprueba la conexión y reinténtalo manualmente.</string>
     <string name="report_no_usb_drive">No se detectó ninguna unidad USB con permisos de escritura. Conecta una unidad USB y reinténtalo, o guarda el informe en este dispositivo.</string>
-    <string name="report_auto_save_locations">Guardar automáticamente en ubicaciones con permisos de escritura</string>
+    <string name="report_auto_save_locations">Guardar en Descargas</string>
     <string name="report_usb_location">USB: %1$s</string>
     <string name="report_usb_copy_unavailable">Copia a USB: no se encontró ninguna unidad con permisos de escritura</string>
     <string name="report_usb_copy_paths">Copias adicionales:

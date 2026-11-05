@@ -162,6 +162,11 @@ class NcmUsbBridge internal constructor(
                     onDiagnostic("ncm async bulk-out ring full bytes=$blockBytes slots=${dataIo.availableOutSlots()} " + dataIo.diagnostics())
                     return@synchronized 0
                 }
+                NcmSubmit.FatalPartialSubmit -> {
+                    val line = dataIo.diagnostics()
+                    onDiagnostic("ncm bulk-out partial submit; rebuilding data plane $line")
+                    throw failSession("NCM bulk-out submitted a partial NTB")
+                }
                 is NcmSubmit.Accepted -> {
                     ncmWriteSubmittedChunks += submitted.submittedChunks
                     if (submitted.completedNow) {
@@ -333,6 +338,11 @@ class NcmUsbBridge internal constructor(
         if (snapshot.completed > ncmWriteCompletedChunks) ncmWriteCompletedChunks = snapshot.completed
         if (snapshot.successBytes > ncmWriteSuccessBytes) {
             ncmWriteSuccessBytes = snapshot.successBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        }
+        if (snapshot.fatalSubmit > 0) {
+            val line = io.diagnostics()
+            onDiagnostic("ncm bulk-out partial submit; rebuilding data plane $line")
+            throw failSession("NCM bulk-out submitted a partial NTB")
         }
         when (NcmSessionHealth.decide(snapshot)) {
             NcmOutAction.CONTINUE -> Unit

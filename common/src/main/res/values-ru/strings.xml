@@ -375,7 +375,7 @@
     <string name="first_tcp_timeout">iPhone не подключился к CarPlay вовремя</string>
     <string name="wireless_startup_retries_exhausted">Автоматические повторы остановлены. Проверьте подключение и повторите вручную.</string>
     <string name="report_no_usb_drive">Не обнаружено USB-накопителя с доступом на запись. Подключите USB-накопитель и повторите, либо сохраните отчёт на этом устройстве.</string>
-    <string name="report_auto_save_locations">Автоматически сохранять в доступные для записи места</string>
+    <string name="report_auto_save_locations">Сохранить в папку «Загрузки»</string>
     <string name="report_usb_location">USB: %1$s</string>
     <string name="report_usb_copy_unavailable">Копирование на USB: не найден накопитель с доступом на запись</string>
     <string name="report_usb_copy_paths">Дополнительные копии:

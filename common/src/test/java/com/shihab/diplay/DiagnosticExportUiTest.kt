@@ -3,6 +3,7 @@ package com.shihab.diplay
 import android.content.ActivityNotFoundException
 import android.content.pm.PackageManager
 import android.os.Looper
+import android.os.Environment
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
@@ -28,6 +29,10 @@ class DiagnosticExportUiTest {
         val controller = Robolectric.buildActivity(DiPlayActivity::class.java).setup()
         val activity = controller.get()
         val context = activity.applicationContext
+        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).apply {
+            deleteRecursively()
+            mkdirs()
+        }
         val authority = "${context.packageName}.diagnostic-reports"
         val info = context.packageManager.resolveContentProvider(authority, PackageManager.GET_META_DATA)!!
         org.robolectric.shadows.ShadowContentResolver.registerProviderInternal(
@@ -80,9 +85,11 @@ class DiagnosticExportUiTest {
     }
 
     private fun reportDirectory(context: android.content.Context): File? {
+        val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
         val external = context.getExternalFilesDir(null)?.let { File(it, "diagnostic-reports") }
         val privateDir = File(context.filesDir, "diagnostic-reports")
-        return listOfNotNull(external, privateDir).firstOrNull { it.isDirectory && it.listFiles()?.isNotEmpty() == true }
+        return listOfNotNull(downloads, external, privateDir)
+            .firstOrNull { it.isDirectory && it.listFiles()?.isNotEmpty() == true }
     }
 
     private fun descendants(view: View): Sequence<View> = sequence {

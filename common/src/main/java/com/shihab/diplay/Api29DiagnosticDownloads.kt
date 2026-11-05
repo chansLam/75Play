@@ -3,31 +3,37 @@ package com.shihab.diplay
 import android.content.ContentResolver
 import android.content.ContentValues
 import android.net.Uri
-import android.os.Environment
-import android.provider.MediaStore
 import java.io.IOException
 
-/** Loaded by name only when the real SDK is at least 29. */
+/** Optional scoped Downloads provider accessed without linking API 20+ platform symbols. */
 internal object Api29DiagnosticDownloads {
     @JvmStatic
     fun save(resolver: ContentResolver, fileName: String, report: String): Uri {
+        val downloads = Class.forName("android.provider.MediaStore\$Downloads")
+        val externalUri = downloads.getField("EXTERNAL_CONTENT_URI").get(null) as Uri
         val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, fileName)
-            put(MediaStore.Downloads.MIME_TYPE, "text/plain")
-            put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/DiPlay")
-            put(MediaStore.Downloads.IS_PENDING, 1)
+            put("_display_name", fileName)
+            put("mime_type", "text/plain")
+            put("relative_path", "Download/DiPlay")
+            put("is_pending", 1)
         }
-        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+        val uri = resolver.insert(externalUri, values)
             ?: throw IOException("Downloads could not create the report")
         try {
             DiagnosticExportStore.write(resolver, uri, report)
             val published = resolver.update(uri, ContentValues().apply {
-                put(MediaStore.Downloads.IS_PENDING, 0)
+                put("is_pending", 0)
             }, null, null)
             if (published != 1) throw IOException("Downloads could not publish the report")
             return uri
         } catch (error: Exception) {
-            runCatching { resolver.delete(uri, null, null) }
+            val removed = runCatching { resolver.delete(uri, null, null) > 0 }.getOrDefault(false)
+            if (!removed) {
+                throw DiagnosticExportCleanupException(
+                    "Downloads could not clean up the incomplete report",
+                    error,
+                )
+            }
             throw error
         }
     }

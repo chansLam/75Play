@@ -10,18 +10,45 @@ import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.URL
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicInteger
 
 class DiagnosticDownloadServerTest {
     @Test fun servesTheReportOnlyAtTheTokenPath() {
         val body = "hello report\n".toByteArray(Charsets.UTF_8)
-        val server = requireNotNull(DiagnosticDownloadServer.start(body, "75Play-test.txt", "127.0.0.1"))
+        val downloads = AtomicInteger(0)
+        val server = requireNotNull(DiagnosticDownloadServer.start(body, "75Play-test.txt", "127.0.0.1") {
+            downloads.incrementAndGet()
+        })
         try {
+            val missing = http(server.url + "nope")
+            assertEquals(404, missing.first)
+            assertEquals(0, downloads.get())
             val saved = http(server.url)
             assertEquals(200, saved.first)
             assertEquals("hello report\n", saved.second.toString(Charsets.UTF_8))
             assertTrue(saved.third.contains("filename=\"75Play-test.txt\""))
-            val missing = http(server.url + "nope")
-            assertEquals(404, missing.first)
+            waitUntil { downloads.get() == 1 }
+            assertEquals(1, downloads.get())
+        } finally {
+            server.close()
+        }
+    }
+
+    @Test fun headRequestDoesNotCompleteOrDeleteTheDownload() {
+        val downloads = AtomicInteger(0)
+        val server = requireNotNull(DiagnosticDownloadServer.start("report".toByteArray(), "report.txt", "127.0.0.1") {
+            downloads.incrementAndGet()
+        })
+        try {
+            val conn = URL(server.url).openConnection() as HttpURLConnection
+            conn.requestMethod = "HEAD"
+            assertEquals(200, conn.responseCode)
+            conn.disconnect()
+            Thread.sleep(100)
+            assertEquals(0, downloads.get())
+
+            assertEquals(200, http(server.url).first)
+            waitUntil { downloads.get() == 1 }
         } finally {
             server.close()
         }
@@ -66,6 +93,12 @@ class DiagnosticDownloadServerTest {
             }
         }
         throw last ?: IllegalStateException("no response")
+    }
+
+    private fun waitUntil(condition: () -> Boolean) {
+        val deadline = System.nanoTime() + 2_000_000_000L
+        while (!condition() && System.nanoTime() < deadline) Thread.sleep(10)
+        assertTrue(condition())
     }
 }
 

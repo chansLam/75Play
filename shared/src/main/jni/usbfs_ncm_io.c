@@ -66,6 +66,7 @@ typedef struct NcmIo {
     uint32_t nak_out;
     uint32_t no_completion;
     uint32_t reclaim_failed;
+    uint32_t fatal_submit;
     uint32_t success_bytes;
     int latency_ms;
     RxChunk rx_q[RX_QUEUE_CAP];
@@ -154,6 +155,9 @@ static int free_out_slots(NcmIo *io) {
 }
 
 /* Caller holds io->lock. A bulk stream may span URBs; only the last chunk may be short. */
+static void discard_all(NcmIo *io);
+
+/* Returns 1 on success, 0 before any URB was submitted, and -1 after a partial submit. */
 static int submit_chunks(NcmIo *io, const unsigned char *data, int length) {
     if (data == NULL || length <= 0) return 0;
     int chunks = (length + USBFS_BULK_MAX - 1) / USBFS_BULK_MAX;
@@ -163,9 +167,22 @@ static int submit_chunks(NcmIo *io, const unsigned char *data, int length) {
         int chunk = length - offset;
         if (chunk > USBFS_BULK_MAX) chunk = USBFS_BULK_MAX;
         NcmUrbSlot *slot = take_out_slot(io);
-        if (slot == NULL || !ensure_out_buffer(slot, io->out_endpoint, chunk)) return 0;
+        if (slot == NULL || !ensure_out_buffer(slot, io->out_endpoint, chunk)) {
+            if (offset == 0) return 0;
+            io->fatal_submit++;
+            LOGW("NCM bulk OUT allocation failed after %d/%d bytes; aborting data plane", offset, length);
+            discard_all(io);
+            return -1;
+        }
         memcpy(slot->buffer, data + offset, (size_t)chunk);
-        if (!submit_slot(io, slot, chunk)) return 0;
+        if (!submit_slot(io, slot, chunk)) {
+            if (offset == 0) return 0;
+            io->fatal_submit++;
+            LOGW("NCM bulk OUT submit failed after %d/%d bytes errno=%d; aborting data plane",
+                 offset, length, errno);
+            discard_all(io);
+            return -1;
+        }
         offset += chunk;
     }
     return 1;
@@ -345,27 +362,27 @@ Java_com_shilapi_xcertplay_transport_UsbfsNcmIo_nativeLastOpenErrno(
     return last_open_errno;
 }
 
-JNIEXPORT jboolean JNICALL
+JNIEXPORT jint JNICALL
 Java_com_shilapi_xcertplay_transport_UsbfsNcmIo_nativeSubmitOut(
         JNIEnv *env, jclass clazz, jlong handle, jbyteArray block) {
     (void)clazz;
     NcmIo *io = (NcmIo *)(intptr_t)handle;
-    if (io == NULL || block == NULL) return JNI_FALSE;
+    if (io == NULL || block == NULL) return 0;
     jsize length = (*env)->GetArrayLength(env, block);
-    if (length <= 0 || length > 65535) return JNI_FALSE;
+    if (length <= 0 || length > 65535) return 0;
     unsigned char *data = (unsigned char *)malloc((size_t)length);
-    if (data == NULL) return JNI_FALSE;
+    if (data == NULL) return 0;
     (*env)->GetByteArrayRegion(env, block, 0, length, (jbyte *)data);
     if ((*env)->ExceptionCheck(env)) {
         free(data);
-        return JNI_FALSE;
+        return 0;
     }
     pthread_mutex_lock(&io->lock);
     reap_ready(io);
-    int submitted = !io->aborted && submit_chunks(io, data, length);
+    int submitted = io->aborted ? 0 : submit_chunks(io, data, length);
     pthread_mutex_unlock(&io->lock);
     free(data);
-    return submitted ? JNI_TRUE : JNI_FALSE;
+    return submitted;
 }
 
 static int ntb_align(int value, int alignment) {
@@ -457,7 +474,7 @@ Java_com_shilapi_xcertplay_transport_UsbfsNcmIo_nativeSubmitFrames(
     int submitted = submit_chunks(io, block, transfer_length);
     pthread_mutex_unlock(&io->lock);
     free(block);
-    return submitted ? transfer_length : 0;
+    return submitted > 0 ? transfer_length : (submitted < 0 ? -1 : 0);
 }
 
 static int ntb_block_length(const int *lengths, int count, int alignment) {
@@ -475,8 +492,9 @@ static int ntb_block_length(const int *lengths, int count, int alignment) {
 /*
  * Called by lwIP's transmit thread in the other native library. The NcmIo pointer remains owned
  * by usbfs, so this is the only URB submitter besides the JNI entry points above.
- * Returns the submitted byte count, 0 when every OUT slot is busy, or -1 when the first frame
- * cannot fit. *accepted receives the prefix that was packed.
+ * Returns the submitted byte count, 0 when every OUT slot is busy, -1 when the first frame cannot
+ * fit, or -2 when an NTB prefix reached usbfs before a later URB failed. *accepted receives the
+ * prefix that was packed only after a complete submit.
  */
 int ncm_usbfs_submit_ethernet(
         void *handle, const unsigned char *const *frames, const int *lengths, int count,
@@ -532,7 +550,8 @@ int ncm_usbfs_submit_ethernet(
     int submitted = submit_chunks(io, block, transfer_length);
     pthread_mutex_unlock(&io->lock);
     free(block);
-    if (!submitted) return 0;
+    if (submitted < 0) return -2;
+    if (submitted == 0) return 0;
     if (accepted != NULL) *accepted = packed;
     return transfer_length;
 }
@@ -735,7 +754,17 @@ Java_com_shilapi_xcertplay_transport_UsbfsNcmIo_nativeReceiveFrames(
         if (lwip_input != NULL && length >= 14 && (frame[12] != 0x86 || frame[13] != 0xdd)) continue;
         java_index[java_count++] = i;
     }
-    if (direct_count > 0) io->direct_frames += (uint32_t)direct_count;
+    unsigned char *direct_block = NULL;
+    if (direct_count > 0) {
+        direct_block = (unsigned char *)malloc((size_t)block_length);
+        if (direct_block != NULL) {
+            memcpy(direct_block, block, (size_t)block_length);
+            io->direct_frames += (uint32_t)direct_count;
+        } else {
+            LOGW("dropping %d direct NCM frame(s): copy allocation failed", direct_count);
+            direct_count = 0;
+        }
+    }
     jobjectArray result = NULL;
     if (java_count > 0) {
         jclass byte_array_class = (*env)->FindClass(env, "[B");
@@ -757,14 +786,15 @@ Java_com_shilapi_xcertplay_transport_UsbfsNcmIo_nativeReceiveFrames(
         }
     }
     pthread_mutex_unlock(&io->lock);
-    /* The receive thread is the only mutator of the reassembly buffer, so these bytes stay
-     * stable until the discard below. lwIP must not run while the usbfs lock is held. */
+    /* OUT submission can reap IN URBs and grow or compact ntb_buffer. Use the private copy while
+     * the usbfs lock is released; lwIP must not run while that lock is held. */
     for (int i = 0; i < direct_count; i++) {
         int index = direct_index[i];
         if (lwip_input != NULL) {
-            (void)lwip_input(lwip, block + frame_offsets[index], frame_lengths[index]);
+            (void)lwip_input(lwip, direct_block + frame_offsets[index], frame_lengths[index]);
         }
     }
+    free(direct_block);
     pthread_mutex_lock(&io->lock);
     discard_ntb_prefix(io, block_length);
     if (io->ntb_size > 0 && io->ntb_buffer[io->ntb_head] == 0) discard_ntb_prefix(io, 1);
@@ -833,9 +863,9 @@ Java_com_shilapi_xcertplay_transport_UsbfsNcmIo_nativeDiagnostics(
     }
     snprintf(line, sizeof(line),
              "queued=%d submitted=%u completed=%u cancelling=%d reclaimFailed=%u stall=%u nak=%u "
-             "noCompletion=%u latencyMs=%d replug=%d successBytes=%u discarded=%u",
+             "noCompletion=%u fatalSubmit=%u latencyMs=%d replug=%d successBytes=%u discarded=%u",
              queued, io->submitted_out, io->completed_out, cancelling, io->reclaim_failed,
-             io->stall_out, io->nak_out, io->no_completion, io->latency_ms,
+             io->stall_out, io->nak_out, io->no_completion, io->fatal_submit, io->latency_ms,
              io->reclaim_failed > 0 ? 1 : 0, io->success_bytes, io->discarded);
     pthread_mutex_unlock(&io->lock);
     return (*env)->NewStringUTF(env, line);

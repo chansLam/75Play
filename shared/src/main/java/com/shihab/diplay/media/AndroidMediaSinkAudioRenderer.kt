@@ -14,7 +14,6 @@ import com.shihab.diplay.airplay.BufferedAudioStream
 import com.shihab.diplay.airplay.toHexString
 import com.shihab.diplay.compat.inputBufferCompat
 import com.shihab.diplay.compat.outputBufferCompat
-import com.shihab.diplay.compat.realSdkInt
 import java.io.Closeable
 import java.nio.ByteBuffer
 import java.util.concurrent.LinkedBlockingQueue
@@ -321,30 +320,15 @@ internal class AudioRenderer(
         AppLog.i(TAG, "audio AAC decoder fallback to software after degenerate platform output")
     }
 
-    /**
-     * Pre-Q mirror of the video path's software-decoder lookup: MediaCodecList(REGULAR_CODECS)
-     * is API 21+, so on older releases scan the legacy list for the well-known Google software
-     * decoder. Dalvik-safe: isSoftwareOnly is only touched on API 29+.
-     */
-    private fun findSoftwareDecoderName(mime: String): String? {
-        if (realSdkInt() >= Build.VERSION_CODES.Q) {
-            return runCatching {
-                platformMediaCodec("softwareDecoderName", arrayOf(String::class.java), mime) as String?
-            }.getOrNull()
-        }
-        if (realSdkInt() >= 16) {
-            @Suppress("DEPRECATION")
-            return runCatching {
-                (0 until MediaCodecList.getCodecCount()).mapNotNull { i ->
-                    @Suppress("DEPRECATION")
-                    MediaCodecList.getCodecInfoAt(i)
-                }.firstOrNull {
-                    !it.isEncoder && it.name.startsWith("OMX.google.") && mime in it.supportedTypes
-                }?.name
-            }.getOrNull()
-        }
-        return null
-    }
+    /** API 16 codec-list scan for the standard Google software decoder. */
+    @Suppress("DEPRECATION")
+    private fun findSoftwareDecoderName(mime: String): String? = runCatching {
+        (0 until MediaCodecList.getCodecCount()).mapNotNull { i ->
+            MediaCodecList.getCodecInfoAt(i)
+        }.firstOrNull {
+            !it.isEncoder && it.name.startsWith("OMX.google.") && mime in it.supportedTypes
+        }?.name
+    }.getOrNull()
 
     private fun createTrack() {
         diagnosticStage = "track-buffer-size"
@@ -833,9 +817,7 @@ internal class AudioRenderer(
             if (count > 0 && !firstPcmWriteReported) {
                 firstPcmWriteReported = true
                 report("Audio: first PCM write audioType=${format.audioType} bytes=$count api=${Build.VERSION.SDK_INT}")
-                if (realSdkInt() <= 22) {
-                    report("Audio: legacy output state " + audioFocusCoordinator.legacyOutputSnapshot(channelOverride(mappedChannel ?: AudioChannel.MEDIA)))
-                }
+                report("Audio: legacy output state " + audioFocusCoordinator.legacyOutputSnapshot(channelOverride(mappedChannel ?: AudioChannel.MEDIA)))
             }
             maxWriteMs = maxOf(maxWriteMs, (System.nanoTime() - writeStarted) / 1_000_000L)
             if (count < 0) {

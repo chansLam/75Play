@@ -16,17 +16,7 @@ internal class UsbfsNcmIo private constructor(
 
     override fun submitOut(block: ByteArray, timeoutMillis: Int): NcmSubmit {
         if (closed.get() || timeoutMillis <= 0) return NcmSubmit.Backpressured
-        return if (nativeSubmitOut(handle, block)) {
-            NcmSubmit.Accepted(
-                bytes = block.size,
-                completedNow = false,
-                submittedChunks = 1,
-                completedChunks = 0,
-                successBytes = 0,
-            )
-        } else {
-            NcmSubmit.Backpressured
-        }
+        return nativeSubmitResult(nativeSubmitOut(handle, block), block.size)
     }
 
     /**
@@ -42,17 +32,7 @@ internal class UsbfsNcmIo private constructor(
             limits.maxBlockBytes,
             limits.alignment,
         )
-        return if (bytes > 0) {
-            NcmSubmit.Accepted(
-                bytes = bytes,
-                completedNow = false,
-                submittedChunks = 1,
-                completedChunks = 0,
-                successBytes = 0,
-            )
-        } else {
-            NcmSubmit.Backpressured
-        }
+        return nativeSubmitResult(bytes, bytes.coerceAtLeast(0))
     }
 
     override fun receive(timeoutMillis: Int, maxBytes: Int): ByteArray? {
@@ -138,7 +118,7 @@ internal class UsbfsNcmIo private constructor(
 
         @JvmStatic private external fun nativeLastOpenErrno(): Int
 
-        @JvmStatic private external fun nativeSubmitOut(handle: Long, block: ByteArray): Boolean
+        @JvmStatic private external fun nativeSubmitOut(handle: Long, block: ByteArray): Int
         @JvmStatic private external fun nativeSubmitFrames(
             handle: Long,
             frames: Array<ByteArray>,
@@ -158,4 +138,16 @@ internal class UsbfsNcmIo private constructor(
         @JvmStatic private external fun nativeAbort(handle: Long)
         @JvmStatic private external fun nativeClose(handle: Long)
     }
+}
+
+internal fun nativeSubmitResult(result: Int, acceptedBytes: Int): NcmSubmit = when {
+    result > 0 -> NcmSubmit.Accepted(
+        bytes = acceptedBytes,
+        completedNow = false,
+        submittedChunks = 1,
+        completedChunks = 0,
+        successBytes = 0,
+    )
+    result < 0 -> NcmSubmit.FatalPartialSubmit
+    else -> NcmSubmit.Backpressured
 }

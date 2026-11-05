@@ -65,6 +65,7 @@ internal data class NcmOutSnapshot(
     val stall: Int,
     val nak: Int,
     val noCompletion: Int,
+    val fatalSubmit: Int,
     val latencyMs: Int,
     val replug: Boolean,
     val successBytes: Long,
@@ -83,6 +84,7 @@ internal data class NcmOutSnapshot(
                 stall = value("stall").toInt(),
                 nak = value("nak").toInt(),
                 noCompletion = value("noCompletion").toInt(),
+                fatalSubmit = value("fatalSubmit").toInt(),
                 latencyMs = value("latencyMs").toInt(),
                 replug = value("replug") != 0L,
                 successBytes = value("successBytes"),
@@ -97,7 +99,7 @@ internal enum class NcmOutAction { CONTINUE, DISCARD, REPLUG }
 internal object NcmSessionHealth {
     fun decide(snapshot: NcmOutSnapshot): NcmOutAction = when {
         snapshot.replug || snapshot.reclaimFailed > 0 -> NcmOutAction.REPLUG
-        snapshot.noCompletion > 0 -> NcmOutAction.DISCARD
+        snapshot.noCompletion > 0 || snapshot.fatalSubmit > 0 -> NcmOutAction.DISCARD
         else -> NcmOutAction.CONTINUE
     }
 

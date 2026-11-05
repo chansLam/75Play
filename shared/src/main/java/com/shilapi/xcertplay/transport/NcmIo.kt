@@ -22,6 +22,9 @@ internal sealed class NcmSubmit {
 
     object Backpressured : NcmSubmit()
 
+    /** The native stream submitted only an NTB prefix; the interface must be rebuilt. */
+    object FatalPartialSubmit : NcmSubmit()
+
     class Failed(
         val transferred: Int,
         val errno: Int,

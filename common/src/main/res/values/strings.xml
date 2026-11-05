@@ -212,7 +212,7 @@
     <string name="manual_bluetooth_input_mac_label">Bluetooth MAC Address (e.g. AA:BB:CC:DD:EE:FF):</string>
     <string name="manual_bluetooth_input_invalid_mac">Invalid MAC address (format XX:XX:XX:XX:XX:XX)</string>
     <string name="report_no_usb_drive">No writable USB drive detected. Connect a USB drive and retry, or save the report on this device.</string>
-    <string name="report_auto_save_locations">Automatically save to writable locations</string>
+    <string name="report_auto_save_locations">Save to Downloads</string>
     <string name="report_usb_location">USB: %1$s</string>
     <string name="report_usb_copy_unavailable">USB copy: no writable drive found</string>
     <string name="report_usb_copy_paths">Additional copies:\n%1$s</string>

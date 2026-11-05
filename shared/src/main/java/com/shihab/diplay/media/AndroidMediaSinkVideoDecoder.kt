@@ -219,8 +219,7 @@ internal class VideoDecoder(
         val surface = outputSurface ?: return
         val codec = config.codec
         val codecData = config.codecData
-        val mime = if (codec == VideoCodec.H265) MediaFormat.MIMETYPE_VIDEO_HEVC
-        else MediaFormat.MIMETYPE_VIDEO_AVC
+        val mime = if (codec == VideoCodec.H265) VIDEO_HEVC_MIME else VIDEO_AVC_MIME
         val csd = if (codec == VideoCodec.H265) {
             MediaCodecSupport.hevcCodecSpecificData(codecData).takeIf { it.isNotEmpty() }
                 ?.let { listOf(it) } ?: emptyList()
@@ -266,15 +265,11 @@ internal class VideoDecoder(
         }
     }
 
-    /** MediaCodec.getName() only exists on API 21+; keep that reference out of this class. */
+    /** MediaCodec.getName() is optional and reached through an API-19-safe reflection helper. */
     private fun safeDecoderName(codec: MediaCodec): String =
-        if (realSdkInt() < Build.VERSION_CODES.LOLLIPOP) {
-            "unknown"
-        } else {
-            runCatching {
-                platformMediaCodec("decoderName", arrayOf(MediaCodec::class.java), codec) as String
-            }.getOrDefault("unknown")
-        }
+        runCatching {
+            platformMediaCodec("decoderName", arrayOf(MediaCodec::class.java), codec) as String
+        }.getOrDefault("unknown")
 
     private data class DecoderAttempt(val codecName: String?, val tuned: Boolean)
 
@@ -282,10 +277,8 @@ internal class VideoDecoder(
         MediaFormat.createVideoFormat(mime, width, height).apply {
             if (tuned) {
                 setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, MAX_INPUT_SIZE)
-                if (realSdkInt() >= Build.VERSION_CODES.M) {
-                    runCatching {
-                        platformMediaCodec("setRealtimePriority", arrayOf(MediaFormat::class.java), this)
-                    }
+                runCatching {
+                    platformMediaCodec("setRealtimePriority", arrayOf(MediaFormat::class.java), this)
                 }
             }
             csd.forEachIndexed { index, bytes -> setByteBuffer("csd-$index", ByteBuffer.wrap(bytes)) }
@@ -302,7 +295,7 @@ internal class VideoDecoder(
             val format = buildFormat(mime, csd, attempt.tuned)
             val codec = attempt.codecName?.let { MediaCodec.createByCodecName(it) } ?: createDecoder(mime)
             candidate = codec
-            if (attempt.tuned && realSdkInt() >= Build.VERSION_CODES.R) {
+            if (attempt.tuned) {
                 runCatching {
                     platformMediaCodec(
                         "enableLowLatency",
@@ -330,31 +323,14 @@ internal class VideoDecoder(
     }
 
     /**
-     * Software AVC fallback. [MediaCodecList] with [MediaCodecList.REGULAR_CODECS] and
-     * `isSoftwareOnly` are API 21 / 29; KitKat scans the legacy list for `OMX.google.`.
+     * Software fallback uses the API 16 codec list and the standard `OMX.google.` prefix.
      */
-    private fun softwareDecoderName(mime: String): String? {
-        if (realSdkInt() >= Build.VERSION_CODES.Q) {
-            return runCatching {
-                platformMediaCodec("softwareDecoderName", arrayOf(String::class.java), mime) as String?
-            }.getOrNull()
-        }
-        @Suppress("DEPRECATION")
-        return runCatching {
-            (0 until MediaCodecList.getCodecCount()).firstNotNullOfOrNull { index ->
-                val info = MediaCodecList.getCodecInfoAt(index)
-                info.name.takeIf {
-                    !info.isEncoder && it.startsWith("OMX.google.") && mime in info.supportedTypes
-                }
-            }
-        }.getOrNull()
-    }
+    private fun softwareDecoderName(mime: String): String? = runCatching {
+        platformMediaCodec("softwareDecoderName", arrayOf(String::class.java), mime) as String?
+    }.getOrNull()
 
     private fun createDecoder(mime: String): MediaCodec {
-        if (realSdkInt() >= Build.VERSION_CODES.Q &&
-            mime == MediaFormat.MIMETYPE_VIDEO_HEVC &&
-            preferSoftwareHevcDecoder
-        ) {
+        if (mime == VIDEO_HEVC_MIME && preferSoftwareHevcDecoder) {
             val software = runCatching {
                 platformMediaCodec("softwareDecoderName", arrayOf(String::class.java), mime) as String?
             }.getOrNull()
@@ -385,7 +361,15 @@ internal class VideoDecoder(
                     // KitKat ImageReader rejects the codec color format (getNumPlanesFromFormat).
                     // Building a parking surface there throws and leaves the picture black on return.
                     // Release the decoder; the rebuilt SurfaceView asks for a keyframe.
-                    if (realSdkInt() < 23) {
+                    val codec = checkNotNull(decoder)
+                    val canMoveSurface = runCatching {
+                        platformMediaCodec(
+                            "supportsOutputSurface",
+                            arrayOf(MediaCodec::class.java),
+                            codec,
+                        ) as Boolean
+                    }.getOrDefault(false)
+                    if (!canMoveSurface) {
                         outcome = DetachOutcome.RELEASED
                         outputSurface = null
                         releaseDecoder()
@@ -396,7 +380,7 @@ internal class VideoDecoder(
                             platformMediaCodec(
                                 "setOutputSurface",
                                 arrayOf(MediaCodec::class.java, Surface::class.java),
-                                checkNotNull(decoder),
+                                codec,
                                 consumer.surface,
                             )
                             outputSurface = consumer.surface
@@ -437,7 +421,7 @@ internal class VideoDecoder(
             return
         }
         val codec = decoder
-        if (codec != null && realSdkInt() >= Build.VERSION_CODES.M) {
+        if (codec != null) {
             try {
                 platformMediaCodec(
                     "setOutputSurface",
@@ -468,12 +452,19 @@ internal class VideoDecoder(
     }
 
     /**
-     * Keep decoding while the host view does not exist yet. On Android 6+ the codec can move
-     * onto that view with setOutputSurface and the next frame is already a picture. KitKat has
-     * no such move, so this returns false and the view's own surface waits for a keyframe.
+     * Keep decoding while the host view does not exist only when the runtime exposes the optional
+     * surface-switch method. KitKat returns false and waits for the view's own surface.
      */
     private fun ensureParkingSurface(): Boolean {
-        if (realSdkInt() < Build.VERSION_CODES.M) return false
+        val codec = decoder ?: return false
+        val canMoveSurface = runCatching {
+            platformMediaCodec(
+                "supportsOutputSurface",
+                arrayOf(MediaCodec::class.java),
+                codec,
+            ) as Boolean
+        }.getOrDefault(false)
+        if (!canMoveSurface) return false
         return try {
             val consumer = parking ?: ParkingOutput(width, height).also { parking = it }
             outputSurface = consumer.surface
@@ -673,21 +664,21 @@ internal class VideoDecoder(
 
     private fun logOutputFormat(format: MediaFormat) {
         report("output format requested=${width}x${height} " +
-            "coded=${format.intOrNull(MediaFormat.KEY_WIDTH)}x${format.intOrNull(MediaFormat.KEY_HEIGHT)} " +
+            "coded=${format.intOrNull("width")}x${format.intOrNull("height")} " +
             "crop=${format.intOrNull("crop-left")},${format.intOrNull("crop-top")}," +
             "${format.intOrNull("crop-right")},${format.intOrNull("crop-bottom")} " +
-            "stride=${format.intOrNull(MediaFormat.KEY_STRIDE)} slice=${format.intOrNull(MediaFormat.KEY_SLICE_HEIGHT)} " +
-            "color=${format.intOrNull(MediaFormat.KEY_COLOR_STANDARD)}/${format.intOrNull(MediaFormat.KEY_COLOR_RANGE)}/${format.intOrNull(MediaFormat.KEY_COLOR_TRANSFER)}")
+            "stride=${format.intOrNull("stride")} slice=${format.intOrNull("slice-height")} " +
+            "color=${format.intOrNull("color-standard")}/${format.intOrNull("color-range")}/${format.intOrNull("color-transfer")}")
         AppLog.i(
             TAG,
             "video decoder output format " +
-                "size=${format.intOrNull(MediaFormat.KEY_WIDTH)}x" +
-                "${format.intOrNull(MediaFormat.KEY_HEIGHT)} " +
-                "stride=${format.intOrNull(MediaFormat.KEY_STRIDE)} " +
-                "slice=${format.intOrNull(MediaFormat.KEY_SLICE_HEIGHT)} " +
-                "standard=${format.intOrNull(MediaFormat.KEY_COLOR_STANDARD)} " +
-                "range=${format.intOrNull(MediaFormat.KEY_COLOR_RANGE)} " +
-                "transfer=${format.intOrNull(MediaFormat.KEY_COLOR_TRANSFER)}",
+                "size=${format.intOrNull("width")}x" +
+                "${format.intOrNull("height")} " +
+                "stride=${format.intOrNull("stride")} " +
+                "slice=${format.intOrNull("slice-height")} " +
+                "standard=${format.intOrNull("color-standard")} " +
+                "range=${format.intOrNull("color-range")} " +
+                "transfer=${format.intOrNull("color-transfer")}",
         )
     }
 
@@ -721,9 +712,10 @@ internal class VideoDecoder(
 
     private companion object {
         const val TAG = "xcertplay-usb"
+        const val VIDEO_AVC_MIME = "video/avc"
+        const val VIDEO_HEVC_MIME = "video/hevc"
         // KitKat / i.MX6: 8 MB KEY_MAX_INPUT_SIZE reservations stress 2 GB Dalvik heaps.
-        val MAX_INPUT_SIZE: Int =
-            if (realSdkInt() < 21) 3 * 1024 * 1024 else 8 * 1024 * 1024
+        const val MAX_INPUT_SIZE = 3 * 1024 * 1024
         const val INPUT_TIMEOUT_US = 10_000L
         // A paced frame more than this ahead is treated as a bad mapping and shown at once.
         const val MAX_PACING_AHEAD_NS = 1_000_000_000L

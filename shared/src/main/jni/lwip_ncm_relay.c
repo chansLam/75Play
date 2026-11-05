@@ -182,7 +182,7 @@ static int submit_usbfs_batch(LwipContext *ctx) {
     int submitted = submit(io, frames, lengths, count, max_block, alignment, &accepted);
     pthread_mutex_lock(&ctx->tx_mu);
     if (submitted > 0) pop_tx_frames(ctx, accepted);
-    else if (submitted < 0) pop_tx_frames(ctx, 1);
+    else if (submitted == -1) pop_tx_frames(ctx, 1);
     pthread_mutex_unlock(&ctx->tx_mu);
     return submitted;
 }
@@ -201,7 +201,7 @@ static void *ncm_tx_thread(void *arg) {
         }
         if (direct) {
             pthread_mutex_unlock(&ctx->tx_mu);
-            if (submit_usbfs_batch(ctx) == 0 && ctx->running) usleep(10000);
+            if (submit_usbfs_batch(ctx) <= 0 && ctx->running) usleep(10000);
             continue;
         }
         NcmTxFrame frame = ctx->tx_q[ctx->tx_head];

@@ -11,9 +11,10 @@ import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.security.SecureRandom
 import java.util.Collections
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * 只提供这一份诊断报告的短时 HTTP 服务。链接带一次性口令，窗口关闭或三分钟后停止。
+ * 只提供这一份诊断报告的短时 HTTP 服务。链接带一次性口令，下载成功、窗口关闭或三分钟后停止。
  */
 internal class DiagnosticDownloadServer private constructor(
     private val socket: ServerSocket,
@@ -21,8 +22,10 @@ internal class DiagnosticDownloadServer private constructor(
     private val fileName: String,
     private val token: String,
     val url: String,
+    private val onDownloaded: () -> Unit,
 ) {
     @Volatile private var closed = false
+    private val downloadCompleted = AtomicBoolean(false)
 
     init {
         Thread({
@@ -40,6 +43,10 @@ internal class DiagnosticDownloadServer private constructor(
                     out.write(reply.header)
                     if (reply.body != null) out.write(reply.body)
                     out.flush()
+                    if (reply.completedDownload && downloadCompleted.compareAndSet(false, true)) {
+                        runCatching { onDownloaded() }
+                        close()
+                    }
                 } catch (_: IOException) {
                 } finally {
                     runCatching { client.close() }
@@ -69,12 +76,17 @@ internal class DiagnosticDownloadServer private constructor(
         private const val LIFETIME_NANOS = 180_000_000_000L
         private const val PREFERRED_PORT = 18765
 
-        fun start(body: ByteArray, fileName: String, advertise: String? = null): DiagnosticDownloadServer? {
+        fun start(
+            body: ByteArray,
+            fileName: String,
+            advertise: String? = null,
+            onDownloaded: () -> Unit = {},
+        ): DiagnosticDownloadServer? {
             val host = advertise ?: selectLanIpv4(localIpv4())?.hostAddress ?: return null
             val token = token()
             val socket = bind()
             val port = socket.localPort
-            return DiagnosticDownloadServer(socket, body, fileName, token, "http://$host:$port/d/$token")
+            return DiagnosticDownloadServer(socket, body, fileName, token, "http://$host:$port/d/$token", onDownloaded)
         }
 
         private fun bind(): ServerSocket {
@@ -96,7 +108,11 @@ internal class DiagnosticDownloadServer private constructor(
     }
 }
 
-internal class DiagnosticHttpReply(val header: ByteArray, val body: ByteArray?)
+internal class DiagnosticHttpReply(
+    val header: ByteArray,
+    val body: ByteArray?,
+    val completedDownload: Boolean = false,
+)
 
 internal fun diagnosticHttpReply(request: String, body: ByteArray, fileName: String, token: String): DiagnosticHttpReply {
     val line = request.lineSequence().firstOrNull()?.trim().orEmpty()
@@ -120,7 +136,7 @@ internal fun diagnosticHttpReply(request: String, body: ByteArray, fileName: Str
         append("Cache-Control: no-store\r\n")
         append("\r\n")
     }.toByteArray(Charsets.US_ASCII)
-    return DiagnosticHttpReply(header, if (method == "HEAD") null else body)
+    return DiagnosticHttpReply(header, if (method == "HEAD") null else body, completedDownload = method == "GET")
 }
 
 internal fun selectLanIpv4(addresses: List<InetAddress>): Inet4Address? =

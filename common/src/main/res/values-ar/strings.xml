@@ -375,7 +375,7 @@
     <string name="first_tcp_timeout">لم يتصل iPhone بـ CarPlay في الوقت المحدد</string>
     <string name="wireless_startup_retries_exhausted">توقفت إعادة المحاولات التلقائية. تحقق من الاتصال وأعد المحاولة يدويًا.</string>
     <string name="report_no_usb_drive">لم يتم اكتشاف أي وحدة USB قابلة للكتابة. وصّل وحدة USB وأعد المحاولة، أو احفظ التقرير على هذا الجهاز.</string>
-    <string name="report_auto_save_locations">حفظ تلقائي في المواقع القابلة للكتابة</string>
+    <string name="report_auto_save_locations">الحفظ في مجلد التنزيلات</string>
     <string name="report_usb_location">USB: %1$s</string>
     <string name="report_usb_copy_unavailable">نسخ إلى USB: لم يتم العثور على وحدة قابلة للكتابة</string>
     <string name="report_usb_copy_paths">نسخ إضافية:

@@ -212,7 +212,7 @@
     <string name="manual_bluetooth_input_mac_label">蓝牙 MAC 地址（例如 AA:BB:CC:DD:EE:FF）：</string>
     <string name="manual_bluetooth_input_invalid_mac">无效的 MAC 地址（格式为 XX:XX:XX:XX:XX:XX）</string>
     <string name="report_no_usb_drive">未检测到可写入的U盘。请连接U盘后重试，或将报告保存到车机。</string>
-    <string name="report_auto_save_locations">自动保存至所有可写位置</string>
+    <string name="report_auto_save_locations">保存到下载目录</string>
     <string name="report_usb_location">U盘：%1$s</string>
     <string name="report_usb_copy_unavailable">U盘副本：未找到可写U盘</string>
     <string name="report_usb_copy_paths">另外保存到：\n%1$s</string>

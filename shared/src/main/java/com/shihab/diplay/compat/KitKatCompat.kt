@@ -59,10 +59,8 @@ object Base64Compat {
 
 /** MediaCodec#getInputBuffer(int) is API 21; the deprecated buffers array covers KitKat. */
 fun android.media.MediaCodec.inputBufferCompat(index: Int): java.nio.ByteBuffer? =
-    if (realSdkAtLeast(21)) getInputBuffer(index)
-    else @Suppress("DEPRECATION") inputBuffers?.get(index)
+    @Suppress("DEPRECATION") inputBuffers[index]
 
 /** MediaCodec#getOutputBuffer(int) is API 21; the deprecated buffers array covers KitKat. */
 fun android.media.MediaCodec.outputBufferCompat(index: Int): java.nio.ByteBuffer? =
-    if (realSdkAtLeast(21)) getOutputBuffer(index)
-    else @Suppress("DEPRECATION") outputBuffers?.get(index)
+    @Suppress("DEPRECATION") outputBuffers[index]
