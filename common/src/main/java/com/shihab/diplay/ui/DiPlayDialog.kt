@@ -14,6 +14,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
@@ -23,7 +24,11 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ImageView
+import com.shihab.diplay.AirPlayPersistence
 import com.shihab.diplay.CarAppCatalog
+import com.shihab.diplay.host.GenericSwcAction
+import com.shihab.diplay.host.GenericSwcLearn
+import com.shihab.diplay.host.GenericSwcMap
 import com.shihab.diplay.host.ImmersiveBars
 import com.shihab.diplay.host.R
 import android.widget.ProgressBar
@@ -42,6 +47,7 @@ object DiPlayDialog {
 
     /** Back closes the top dialog instead of navigating the page underneath it. */
     fun consumeBack(): Boolean {
+        if (com.shihab.diplay.host.GenericSwcLearn.disarm()) return true
         val dialog = openDialogs.mapNotNull { it.get() }.lastOrNull { it.isShowing } ?: return false
         dialog.cancel()
         return true
@@ -779,6 +785,99 @@ object DiPlayDialog {
         toast.setGravity(Gravity.CENTER, 0, 0)
         toast.show()
         ImmersiveBars.pulse(activityOf(context))
+    }
+
+    /** Learn Android key codes or this car's wheel names. The switch that uses them lives in settings. */
+    fun showSwcLearn(context: Context) {
+        val d = themed(context)
+        val shell = openShell(
+            context,
+            context.getString(R.string.settings_generic_swc_title),
+            LayoutMetrics.DialogSize.WIDE,
+        )
+        val hint = context.getString(R.string.settings_generic_swc_hint)
+        val status = body(context, hint, GlassColors.TEXT_MUTED)
+        shell.body.addView(status)
+        var bindings = AirPlayPersistence.loadGenericSwcBindings(context).toMutableMap()
+        val valueViews = mutableMapOf<GenericSwcAction, TextView>()
+        val titleViews = mutableMapOf<GenericSwcAction, TextView>()
+        fun paint() {
+            for (action in GenericSwcAction.values()) {
+                val value = valueViews[action] ?: continue
+                val title = titleViews[action] ?: continue
+                val code = bindings[action]
+                value.text = if (code == null) {
+                    context.getString(R.string.settings_generic_swc_unbound)
+                } else {
+                    KeyEvent.keyCodeToString(code)
+                }
+                val armed = GenericSwcLearn.armedAction() == action
+                title.setTextColor(if (armed) GlassColors.ACCENT else GlassColors.TEXT_BODY)
+                value.setTextColor(if (code == null) GlassColors.TEXT_MUTED else GlassColors.TEXT_PRIMARY)
+            }
+        }
+        GenericSwcLearn.setOnDisarm {
+            status.text = hint
+            paint()
+        }
+        for (action in GenericSwcAction.values()) {
+            val row = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                val pv = GlassColors.dp(context, 8)
+                setPadding(0, pv, 0, pv)
+                isClickable = true
+                isLongClickable = true
+            }
+            val title = TextView(context).apply {
+                text = action.label(context)
+                textSize = LayoutMetrics.settingsRowTextSize(context)
+                setTextColor(GlassColors.TEXT_BODY)
+            }
+            val value = TextView(context).apply {
+                textSize = LayoutMetrics.settingsRowTextSize(context)
+                setTextColor(GlassColors.TEXT_MUTED)
+            }
+            titleViews[action] = title
+            valueViews[action] = value
+            row.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            row.addView(value)
+            row.setOnClickListener {
+                status.text = context.getString(R.string.settings_generic_swc_press, action.label(context))
+                GenericSwcLearn.arm(action) { keyCode ->
+                    bindings = GenericSwcMap.assign(bindings, action, keyCode).toMutableMap()
+                    AirPlayPersistence.saveGenericSwcBindings(context, bindings)
+                    GenericSwcLearn.disarm()
+                }
+                paint()
+            }
+            row.setOnLongClickListener {
+                bindings.remove(action)
+                AirPlayPersistence.saveGenericSwcBindings(context, bindings)
+                GenericSwcLearn.disarm()
+                true
+            }
+            shell.body.addView(row)
+        }
+        paint()
+        val close = dialogButton(
+            context,
+            context.getString(R.string.dialog_ok),
+            GlassColors.btnPrimary(),
+            GlassColors.NAV_SELECTED_TEXT,
+        ) { d.dismiss() }
+        shell.setFooter(close)
+        shell.ready()
+        d.setOnKeyListener { _, keyCode, event ->
+            if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE) {
+                if (event.action == KeyEvent.ACTION_UP && GenericSwcLearn.disarm()) return@setOnKeyListener true
+                if (GenericSwcLearn.isArmed()) return@setOnKeyListener true
+                return@setOnKeyListener false
+            }
+            GenericSwcLearn.onKey(event)
+        }
+        d.setOnDismissListener { GenericSwcLearn.close() }
+        show(d, shell.panel, allowFocus = true)
     }
 }
 

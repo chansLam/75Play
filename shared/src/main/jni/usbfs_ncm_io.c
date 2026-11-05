@@ -22,6 +22,8 @@
 #define PHASE_CANCELLING 2
 #define NO_COMPLETION_MS 10000
 #define RECLAIM_MS 2000
+/* KitKat usbfs rejects a single URB longer than 16384 bytes with EINVAL. */
+#define USBFS_BULK_MAX 16384
 #define RX_QUEUE_CAP 16
 #define NTH16_SIG 0x484d434eU
 #define NDP16_SIG 0x304d434eU
@@ -130,6 +132,7 @@ static int ensure_out_buffer(NcmUrbSlot *slot, int endpoint, int length) {
 
 static int submit_slot(NcmIo *io, NcmUrbSlot *slot, int length) {
     if (slot->in_flight || slot->buffer == NULL || io->aborted) return 0;
+    if (length <= 0 || length > USBFS_BULK_MAX) return 0;
     slot->urb.actual_length = 0;
     slot->urb.status = 0;
     slot->urb.buffer_length = length;
@@ -139,6 +142,32 @@ static int submit_slot(NcmIo *io, NcmUrbSlot *slot, int length) {
     slot->phase = PHASE_SUBMITTED;
     slot->submitted_ms = mono_ms();
     if (slot->is_in) io->submitted_in++; else io->submitted_out++;
+    return 1;
+}
+
+static int free_out_slots(NcmIo *io) {
+    int free_slots = 0;
+    for (int i = 0; i < io->depth; i++) {
+        if (!io->out_slots[i].in_flight) free_slots++;
+    }
+    return free_slots;
+}
+
+/* Caller holds io->lock. A bulk stream may span URBs; only the last chunk may be short. */
+static int submit_chunks(NcmIo *io, const unsigned char *data, int length) {
+    if (data == NULL || length <= 0) return 0;
+    int chunks = (length + USBFS_BULK_MAX - 1) / USBFS_BULK_MAX;
+    if (chunks > free_out_slots(io)) return 0;
+    int offset = 0;
+    while (offset < length) {
+        int chunk = length - offset;
+        if (chunk > USBFS_BULK_MAX) chunk = USBFS_BULK_MAX;
+        NcmUrbSlot *slot = take_out_slot(io);
+        if (slot == NULL || !ensure_out_buffer(slot, io->out_endpoint, chunk)) return 0;
+        memcpy(slot->buffer, data + offset, (size_t)chunk);
+        if (!submit_slot(io, slot, chunk)) return 0;
+        offset += chunk;
+    }
     return 1;
 }
 
@@ -274,6 +303,7 @@ Java_com_shilapi_xcertplay_transport_UsbfsNcmIo_nativeOpen(
         last_open_errno = EINVAL;
         return 0;
     }
+    if (read_bytes > USBFS_BULK_MAX) read_bytes = USBFS_BULK_MAX;
     NcmIo *io = (NcmIo *)calloc(1, sizeof(NcmIo));
     if (io == NULL) {
         last_open_errno = ENOMEM;
@@ -323,19 +353,19 @@ Java_com_shilapi_xcertplay_transport_UsbfsNcmIo_nativeSubmitOut(
     if (io == NULL || block == NULL) return JNI_FALSE;
     jsize length = (*env)->GetArrayLength(env, block);
     if (length <= 0 || length > 65535) return JNI_FALSE;
+    unsigned char *data = (unsigned char *)malloc((size_t)length);
+    if (data == NULL) return JNI_FALSE;
+    (*env)->GetByteArrayRegion(env, block, 0, length, (jbyte *)data);
+    if ((*env)->ExceptionCheck(env)) {
+        free(data);
+        return JNI_FALSE;
+    }
     pthread_mutex_lock(&io->lock);
     reap_ready(io);
-    if (io->aborted) { pthread_mutex_unlock(&io->lock); return JNI_FALSE; }
-    NcmUrbSlot *slot = take_out_slot(io);
-    if (slot != NULL && ensure_out_buffer(slot, io->out_endpoint, length)) {
-        (*env)->GetByteArrayRegion(env, block, 0, length, (jbyte *)slot->buffer);
-        if (!(*env)->ExceptionCheck(env) && submit_slot(io, slot, length)) {
-            pthread_mutex_unlock(&io->lock);
-            return JNI_TRUE;
-        }
-    }
+    int submitted = !io->aborted && submit_chunks(io, data, length);
     pthread_mutex_unlock(&io->lock);
-    return JNI_FALSE;
+    free(data);
+    return submitted ? JNI_TRUE : JNI_FALSE;
 }
 
 static int ntb_align(int value, int alignment) {
@@ -390,48 +420,44 @@ Java_com_shilapi_xcertplay_transport_UsbfsNcmIo_nativeSubmitFrames(
     if (block_length > max_block_bytes || block_length > 65535 || ndp_length > 65535) return 0;
     int transfer_length = block_length % 512 == 0 ? block_length + 1 : block_length;
 
+    unsigned char *block = (unsigned char *)calloc(1, (size_t)transfer_length);
+    if (block == NULL) return 0;
+    ntb_put_u32(block, 0, 0x484d434eU);
+    ntb_put_u16(block, 4, 12);
+    ntb_put_u16(block, 6, 0);
+    ntb_put_u16(block, 8, block_length);
+    ntb_put_u16(block, 10, 12);
+    ntb_put_u32(block, 12, 0x304d434eU);
+    ntb_put_u16(block, 16, ndp_length);
+    for (jsize i = 0; i < count; i++) {
+        jbyteArray frame = (jbyteArray)(*env)->GetObjectArrayElement(env, frames, i);
+        if (frame == NULL) {
+            free(block);
+            return 0;
+        }
+        (*env)->GetByteArrayRegion(env, frame, 0, lengths[i], (jbyte *)(block + offsets[i]));
+        (*env)->DeleteLocalRef(env, frame);
+        if ((*env)->ExceptionCheck(env)) {
+            free(block);
+            return 0;
+        }
+        int entry = 20 + (int)i * 4;
+        ntb_put_u16(block, entry, offsets[i]);
+        ntb_put_u16(block, entry + 2, lengths[i]);
+    }
     pthread_mutex_lock(&io->lock);
     reap_ready(io);
     if (io->aborted) {
         pthread_mutex_unlock(&io->lock);
+        free(block);
         return 0;
     }
-    NcmUrbSlot *slot = take_out_slot(io);
-    if (slot == NULL || !ensure_out_buffer(slot, io->out_endpoint, transfer_length)) {
-        pthread_mutex_unlock(&io->lock);
-        return 0;
-    }
-    memset(slot->buffer, 0, (size_t)transfer_length);
-    ntb_put_u32(slot->buffer, 0, 0x484d434eU);
-    ntb_put_u16(slot->buffer, 4, 12);
-    ntb_put_u16(slot->buffer, 6, io->out_sequence);
+    ntb_put_u16(block, 6, io->out_sequence);
     io->out_sequence++;
-    ntb_put_u16(slot->buffer, 8, block_length);
-    ntb_put_u16(slot->buffer, 10, 12);
-    ntb_put_u32(slot->buffer, 12, 0x304d434eU);
-    ntb_put_u16(slot->buffer, 16, ndp_length);
-    for (jsize i = 0; i < count; i++) {
-        jbyteArray frame = (jbyteArray)(*env)->GetObjectArrayElement(env, frames, i);
-        if (frame == NULL) {
-            pthread_mutex_unlock(&io->lock);
-            return 0;
-        }
-        (*env)->GetByteArrayRegion(env, frame, 0, lengths[i], (jbyte *)(slot->buffer + offsets[i]));
-        (*env)->DeleteLocalRef(env, frame);
-        if ((*env)->ExceptionCheck(env)) {
-            pthread_mutex_unlock(&io->lock);
-            return 0;
-        }
-        int entry = 20 + (int)i * 4;
-        ntb_put_u16(slot->buffer, entry, offsets[i]);
-        ntb_put_u16(slot->buffer, entry + 2, lengths[i]);
-    }
-    if (submit_slot(io, slot, transfer_length)) {
-        pthread_mutex_unlock(&io->lock);
-        return transfer_length;
-    }
+    int submitted = submit_chunks(io, block, transfer_length);
     pthread_mutex_unlock(&io->lock);
-    return 0;
+    free(block);
+    return submitted ? transfer_length : 0;
 }
 
 static int ntb_block_length(const int *lengths, int count, int alignment) {
@@ -480,37 +506,33 @@ int ncm_usbfs_submit_ethernet(
     int block_length = ntb_align(cursor, alignment);
     int transfer_length = block_length % 512 == 0 ? block_length + 1 : block_length;
 
+    unsigned char *block = (unsigned char *)calloc(1, (size_t)transfer_length);
+    if (block == NULL) return 0;
+    ntb_put_u32(block, 0, 0x484d434eU);
+    ntb_put_u16(block, 4, 12);
+    ntb_put_u16(block, 8, block_length);
+    ntb_put_u16(block, 10, 12);
+    ntb_put_u32(block, 12, 0x304d434eU);
+    ntb_put_u16(block, 16, ndp_length);
+    for (int i = 0; i < packed; i++) {
+        memcpy(block + offsets[i], frames[i], (size_t)lengths[i]);
+        int entry = 20 + i * 4;
+        ntb_put_u16(block, entry, offsets[i]);
+        ntb_put_u16(block, entry + 2, lengths[i]);
+    }
     pthread_mutex_lock(&io->lock);
     reap_ready(io);
     if (io->aborted) {
         pthread_mutex_unlock(&io->lock);
+        free(block);
         return 0;
     }
-    NcmUrbSlot *slot = take_out_slot(io);
-    if (slot == NULL || !ensure_out_buffer(slot, io->out_endpoint, transfer_length)) {
-        pthread_mutex_unlock(&io->lock);
-        return 0;
-    }
-    memset(slot->buffer, 0, (size_t)transfer_length);
-    ntb_put_u32(slot->buffer, 0, 0x484d434eU);
-    ntb_put_u16(slot->buffer, 4, 12);
-    ntb_put_u16(slot->buffer, 6, io->out_sequence);
+    ntb_put_u16(block, 6, io->out_sequence);
     io->out_sequence++;
-    ntb_put_u16(slot->buffer, 8, block_length);
-    ntb_put_u16(slot->buffer, 10, 12);
-    ntb_put_u32(slot->buffer, 12, 0x304d434eU);
-    ntb_put_u16(slot->buffer, 16, ndp_length);
-    for (int i = 0; i < packed; i++) {
-        memcpy(slot->buffer + offsets[i], frames[i], (size_t)lengths[i]);
-        int entry = 20 + i * 4;
-        ntb_put_u16(slot->buffer, entry, offsets[i]);
-        ntb_put_u16(slot->buffer, entry + 2, lengths[i]);
-    }
-    if (!submit_slot(io, slot, transfer_length)) {
-        pthread_mutex_unlock(&io->lock);
-        return 0;
-    }
+    int submitted = submit_chunks(io, block, transfer_length);
     pthread_mutex_unlock(&io->lock);
+    free(block);
+    if (!submitted) return 0;
     if (accepted != NULL) *accepted = packed;
     return transfer_length;
 }

@@ -153,10 +153,46 @@ class IphoneUsbHost(
     fun requestPermission(device: UsbDevice): PermissionRequest {
         requireConfiguredDevice(device)
         if (usbManager.hasPermission(device)) return PermissionRequest.AlreadyGranted(device)
+        if (tryGrantDevicePermission(device) && usbManager.hasPermission(device)) {
+            diagnosticLog("wired iPhone USB permission granted without a dialog")
+            return PermissionRequest.AlreadyGranted(device)
+        }
 
         usbManager.requestPermission(device, permissionPendingIntent())
         return PermissionRequest.Requested(device)
     }
+
+    /**
+     * Re-enumeration gives the iPhone a new device path, so KitKat asks again.
+     * A privileged head-unit install can grant the new path itself. A normal app
+     * gets a SecurityException and falls through to the system dialog.
+     */
+    private fun tryGrantDevicePermission(device: UsbDevice): Boolean = runCatching {
+        val serviceManager = Class.forName("android.os.ServiceManager")
+        val binder = serviceManager.getMethod("getService", String::class.java)
+            .invoke(null, Context.USB_SERVICE) as? android.os.IBinder
+            ?: return false
+        val stub = Class.forName("android.hardware.usb.IUsbManager\$Stub")
+        val usb = stub.getMethod("asInterface", android.os.IBinder::class.java).invoke(null, binder)
+            ?: return false
+        val grant = usb.javaClass.methods.firstOrNull { method ->
+            method.name == "grantDevicePermission" && method.parameterTypes.size == 2
+        } ?: return false
+        grant.invoke(usb, device, android.os.Process.myUid())
+        val setPackage = usb.javaClass.methods.firstOrNull { method ->
+            method.name == "setDevicePackage" && method.parameterTypes.isNotEmpty()
+        }
+        if (setPackage != null) {
+            val args = arrayOfNulls<Any>(setPackage.parameterTypes.size)
+            args[0] = device
+            if (args.size > 1) args[1] = appContext.packageName
+            for (index in 2 until args.size) {
+                if (setPackage.parameterTypes[index] == Int::class.javaPrimitiveType) args[index] = 0
+            }
+            runCatching { setPackage.invoke(usb, *args) }
+        }
+        true
+    }.getOrDefault(false)
 
     /** Returns null for unrelated broadcasts, malformed results, or non-configured devices. */
     fun parsePermissionResult(intent: Intent): PermissionResult? {

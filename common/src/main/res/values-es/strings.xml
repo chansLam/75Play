@@ -386,4 +386,20 @@
     <string name="session_notification_text">CarPlay conexión activa</string>
     <string name="session_notification_disconnect">Desconectar</string>
     <string name="cd_temp_bar">Barra de temperatura: exterior, interior y temperatura ajustada del aire</string>
+    <string name="settings_generic_swc">Volante genérico</string>
+    <string name="settings_generic_swc_learn">Aprender teclas</string>
+    <string name="settings_generic_swc_learn_open">Aprender</string>
+    <string name="settings_generic_swc_title">Aprender teclas del volante</string>
+    <string name="settings_generic_swc_hint">Con el volante genérico activado, el aprendizaje y CarPlay en primer plano usan el código de tecla que entrega el sistema. Desactivado, se usan las teclas de este coche. Toque una función y pulse su tecla. Atrás cancela ese aprendizaje; una pulsación larga borra la fila. Un toque corto de volumen cambia el volumen del coche; mantenerlo amplía el mapa.</string>
+    <string name="settings_generic_swc_unbound">Sin aprender</string>
+    <string name="settings_generic_swc_press">Pulse: %1$s</string>
+    <string name="settings_swc_next">Pista siguiente</string>
+    <string name="settings_swc_prev">Pista anterior</string>
+    <string name="settings_swc_answer">Contestar</string>
+    <string name="settings_swc_hangup">Colgar</string>
+    <string name="settings_swc_siri">Voz</string>
+    <string name="settings_swc_vol_up">Subir volumen</string>
+    <string name="settings_swc_vol_down">Bajar volumen</string>
+    <string name="settings_swc_mute">Silencio</string>
+    <string name="settings_swc_src">Vista del mapa</string>
 </resources>

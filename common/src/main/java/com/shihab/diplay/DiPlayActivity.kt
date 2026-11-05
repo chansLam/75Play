@@ -8,6 +8,7 @@ import com.shihab.diplay.network.CarHotspotStatus
 import com.shihab.diplay.connect.ShellPhonePicker
 import com.shihab.diplay.host.CarPlayBackgroundSession
 import com.shihab.diplay.host.FloatingBall
+import com.shihab.diplay.host.GenericSwcLearn
 import com.shihab.diplay.host.ImmersiveBars
 import com.shihab.diplay.ui.shell.ShellChrome
 import com.shihab.diplay.ui.shell.ShellNavigator
@@ -38,6 +39,7 @@ import android.os.SystemClock
 import java.util.concurrent.atomic.AtomicInteger
 import android.provider.Settings
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
@@ -628,6 +630,11 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         shellChrome.discardPages()
         showPage(page)
     }
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (GenericSwcLearn.onKey(event)) return true
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onStart() {
         super.onStart()
         wifiEnableAttempts = 0

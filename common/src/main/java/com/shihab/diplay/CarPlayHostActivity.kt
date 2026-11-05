@@ -10,6 +10,7 @@ import com.shihab.diplay.host.FloatingBall
 import com.shihab.diplay.host.HostVideoSurfaces
 import com.shihab.diplay.host.HostLogView
 import com.shihab.diplay.host.HomeScreenMonitor
+import com.shihab.diplay.host.GenericSwcKeys
 import com.shihab.diplay.host.SwcCarPlayKeys
 import android.graphics.PixelFormat
 import com.shihab.diplay.host.WirelessStartupRecovery
@@ -695,9 +696,13 @@ class CarPlayHostActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         isActivityStarted = true
-        // Key-test mode swallows wheel keys while CarPlay is in front. Mapped keys go to the
-        // session. The plain KEY_CHANGED broadcast cannot stop the head unit.
-        SwcCarPlayKeys.start(this) { controller }
+        // Built-in wheel names use key-test mode. Generic steering listens for the key codes
+        // the system delivers, so that listener stays off.
+        if (AirPlayPersistence.loadGenericSwcEnabled(this)) {
+            SwcCarPlayKeys.forceOff(this)
+        } else {
+            SwcCarPlayKeys.start(this) { controller }
+        }
         logThemeState(ThemeModeDiagnostics.Source.START, resources.configuration)
         mainHandler.removeCallbacks(pollConfiguration)
         mainHandler.post(pollConfiguration)
@@ -788,6 +793,7 @@ class CarPlayHostActivity : ComponentActivity() {
             }
             return true
         }
+        if (GenericSwcKeys.dispatch(this, event, controller)) return true
         // Only the keys mapped onto CarPlay are consumed here. Model and the other wheel
         // keys fall through so the head unit keeps them.
         val media = CarPlayMediaButton.forKeyCode(event.keyCode)

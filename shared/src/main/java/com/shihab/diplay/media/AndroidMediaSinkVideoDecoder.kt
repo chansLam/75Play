@@ -382,22 +382,31 @@ internal class VideoDecoder(
             when (outcome) {
                 DetachOutcome.NOT_RENDERING -> Unit
                 DetachOutcome.PARKED -> {
-                    val consumer = parking ?: ParkingOutput(width, height).also { parking = it }
-                    try {
-                        if (realSdkInt() < 23) throw IllegalStateException("Surface parking requires Android 6")
-                        platformMediaCodec(
-                            "setOutputSurface",
-                            arrayOf(MediaCodec::class.java, Surface::class.java),
-                            checkNotNull(decoder),
-                            consumer.surface,
-                        )
-                        outputSurface = consumer.surface
-                        AppLog.i(TAG, "video decoder parked off screen")
-                    } catch (error: Exception) {
-                        AppLog.w(TAG, "video decoder could not park; releasing it", error)
+                    // KitKat ImageReader rejects the codec color format (getNumPlanesFromFormat).
+                    // Building a parking surface there throws and leaves the picture black on return.
+                    // Release the decoder; the rebuilt SurfaceView asks for a keyframe.
+                    if (realSdkInt() < 23) {
                         outcome = DetachOutcome.RELEASED
                         outputSurface = null
                         releaseDecoder()
+                        AppLog.i(TAG, "video decoder released on surface detach")
+                    } else {
+                        val consumer = parking ?: ParkingOutput(width, height).also { parking = it }
+                        try {
+                            platformMediaCodec(
+                                "setOutputSurface",
+                                arrayOf(MediaCodec::class.java, Surface::class.java),
+                                checkNotNull(decoder),
+                                consumer.surface,
+                            )
+                            outputSurface = consumer.surface
+                            AppLog.i(TAG, "video decoder parked off screen")
+                        } catch (error: Exception) {
+                            AppLog.w(TAG, "video decoder could not park; releasing it", error)
+                            outcome = DetachOutcome.RELEASED
+                            outputSurface = null
+                            releaseDecoder()
+                        }
                     }
                 }
                 DetachOutcome.RELEASED -> {

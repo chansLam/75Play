@@ -43,10 +43,13 @@ enum class SwcWheelOutcome {
      */
     MUTE,
     /**
+     * Tap the map-view control. SRC is consumed here instead of being returned to the head unit.
+     */
+    MAP_VIEW,
+    /**
      * Not a CarPlay key and not a volume key. Re-broadcast the original KEY_CHANGED notice so the
      * head unit's own consumers (e.g. WT_MusicKeyManager, which listens only to KEY_CHANGED, not
      * to KEY_CHANGED_TEST_MODE) act on it and the original function fires without a second press.
-     * Source (SRC) and every other unmapped name take this path.
      */
     RELEASE,
 }
@@ -58,10 +61,10 @@ enum class SwcWheelOutcome {
  * the key by the time it arrives, so listening there cannot stop volume, mode or source.
  * Key-test mode (`coagent_settings_key_test_mode`) is the switch that swallows the press and
  * reports it as `KEY_CHANGED_TEST_MODE`. Mapped names, including the voice key, go to the
- * session. Volume keys (VOLUP/VOLDOWN/MUTE) drive the head unit volume directly through its
- * settings service — key-test mode otherwise skips the firmware's volume interrupt, and there
- * is no KEY_CHANGED consumer for volume. Source (SRC) and every other name are re-broadcast
- * as the original KEY_CHANGED so the head unit's own consumers act on them.
+ * session. A short volume press drives the head unit volume. Holding volume pinches the
+ * CarPlay picture to zoom a map. SRC taps the map-view control. Every other unmapped name
+ * is re-broadcast as the original KEY_CHANGED so the head unit's own consumers act on it.
+ * Generic steering does not use this listener.
  */
 object SwcCarPlayKeys {
     private const val TAG = "DiPlay-SwcKeys"
@@ -74,6 +77,10 @@ object SwcCarPlayKeys {
 
     /** Same-name presses inside this window are framework repeats; run each mapped key once. */
     private const val REPEAT_WINDOW_MILLIS = 1000L
+    /** Hold at least this long before a volume key zooms instead of changing the head-unit volume. */
+    internal const val VOLUME_LONG_PRESS_MILLIS = 400L
+    private const val ZOOM_REPEAT_MILLIS = 220L
+    private const val ZOOM_MAX_MILLIS = 8_000L
 
     private var receiver: Receiver? = null
     private var appContext: Context? = null
@@ -89,6 +96,9 @@ object SwcCarPlayKeys {
         else -> null
     }
 
+    /** A volume hold shorter than [VOLUME_LONG_PRESS_MILLIS] changes the head-unit volume. */
+    internal fun volumePressIsZoom(heldMillis: Long): Boolean = heldMillis >= VOLUME_LONG_PRESS_MILLIS
+
     /** Mapped keys go to CarPlay. Volume keys drive the head unit volume; everything else is released. */
     internal fun outcomeFor(name: String?): SwcWheelOutcome? {
         when (actionFor(name)) {
@@ -103,6 +113,9 @@ object SwcCarPlayKeys {
             "VOLUP", "KEY_SWC_VOL_INC" -> return SwcWheelOutcome.VOLUME_UP
             "VOLDOWN", "KEY_SWC_VOL_DEC" -> return SwcWheelOutcome.VOLUME_DOWN
             "MUTE" -> return SwcWheelOutcome.MUTE
+        }
+        when (name?.trim()?.uppercase()) {
+            "SRC", "KEY_SWC_SRC" -> return SwcWheelOutcome.MAP_VIEW
         }
         name?.trim()?.takeIf { it.isNotEmpty() } ?: return null
         return SwcWheelOutcome.RELEASE
@@ -152,6 +165,8 @@ object SwcCarPlayKeys {
         }
         forceOff(activity)
         disarmGuard(activity.applicationContext)
+        r?.cancelHold()
+        GenericSwcKeys.cancelHold()
     }
 
     private fun armGuard(context: Context) {
@@ -193,6 +208,16 @@ object SwcCarPlayKeys {
     ) : BroadcastReceiver() {
         private var lastName: String? = null
         private var lastAt = 0L
+        private var volumeName: String? = null
+        private var volumeDownAt = 0L
+        private var volumeZooming = false
+        private var zoomRunnable: Runnable? = null
+
+        fun cancelHold() {
+            zoomRunnable?.let { handler.removeCallbacks(it) }
+            zoomRunnable = null
+            volumeZooming = false
+        }
 
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action != KEY_TEST_ACTION) return
@@ -200,25 +225,19 @@ object SwcCarPlayKeys {
             val outcome = outcomeFor(name) ?: return
             val state = intent.getStringExtra(KEY_STATE_EXTRA)
             val now = SystemClock.elapsedRealtime()
-            // Volume/mute keys act on the press edge, matching the firmware's volume/mute
-            // interrupts (they handle both NONE and DOWN). The firmware test-mode broadcast maps
-            // mKeystate: 0->NONE, 1->DOWN, 2->UP. Some SWC keys (mute in particular) surface as
-            // NONE on press rather than DOWN, so accept either NONE or DOWN. Dedup by (name, edge)
-            // so the NONE/DOWN/UP/LONG_UP sequence yields exactly one adjustment per press.
             val isVolume = outcome == SwcWheelOutcome.VOLUME_UP ||
                 outcome == SwcWheelOutcome.VOLUME_DOWN ||
                 outcome == SwcWheelOutcome.MUTE
-            val onDown = isVolume && (state == "DOWN" || state == "NONE")
-            val once = !isVolume || onDown
-            if (once && name == lastName && now - lastAt < REPEAT_WINDOW_MILLIS) return
-            if (once) {
-                lastName = name
-                lastAt = now
+            if (isVolume) {
+                handleVolume(outcome, name, state, now)
+                AppLog.i(TAG, "wheel $name/$state -> $outcome")
+                return
             }
+            if (name == lastName && now - lastAt < REPEAT_WINDOW_MILLIS) return
+            lastName = name
+            lastAt = now
             when (outcome) {
-                SwcWheelOutcome.VOLUME_UP -> if (onDown) HeadUnitVolume.volumeUp()
-                SwcWheelOutcome.VOLUME_DOWN -> if (onDown) HeadUnitVolume.volumeDown()
-                SwcWheelOutcome.MUTE -> if (onDown) HeadUnitVolume.toggleMute()
+                SwcWheelOutcome.MAP_VIEW -> controller()?.cycleMapView()
                 SwcWheelOutcome.RELEASE -> rebroadcastAsKeyChanged(intent)
                 else -> {
                     val c = controller() ?: return
@@ -232,10 +251,53 @@ object SwcCarPlayKeys {
                     }
                 }
             }
-            if (isVolume) {
-                AppLog.i(TAG, "wheel $name/$state -> $outcome")
+            AppLog.i(TAG, "wheel $name -> $outcome")
+        }
+
+        /**
+         * Firmware maps mKeystate 0/1/2 to NONE/DOWN/UP. A short press releases before
+         * [VOLUME_LONG_PRESS_MILLIS] and changes the head-unit volume. A hold pinches to zoom.
+         */
+        private fun handleVolume(outcome: SwcWheelOutcome, name: String, state: String?, now: Long) {
+            val down = state == "DOWN" || state == "NONE"
+            val up = state == "UP" || state == "LONG_UP" || state == "LONG"
+            if (down) {
+                if (volumeName == name) return
+                volumeName = name
+                volumeDownAt = now
+                volumeZooming = false
+                cancelHold()
+                if (outcome == SwcWheelOutcome.MUTE) {
+                    HeadUnitVolume.toggleMute()
+                    return
+                }
+                val startZoom = Runnable {
+                    volumeZooming = true
+                    repeatZoom(outcome, now)
+                }
+                zoomRunnable = startZoom
+                handler.postDelayed(startZoom, VOLUME_LONG_PRESS_MILLIS)
+                return
             }
-            else AppLog.i(TAG, "wheel $name -> $outcome")
+            if (!up || volumeName != name) return
+            val zoomed = volumeZooming || volumePressIsZoom(now - volumeDownAt)
+            cancelHold()
+            volumeName = null
+            if (zoomed || outcome == SwcWheelOutcome.MUTE) return
+            if (outcome == SwcWheelOutcome.VOLUME_UP) HeadUnitVolume.volumeUp()
+            else HeadUnitVolume.volumeDown()
+        }
+
+        private fun repeatZoom(outcome: SwcWheelOutcome, startedAt: Long) {
+            if (!volumeZooming) return
+            if (SystemClock.elapsedRealtime() - startedAt > ZOOM_MAX_MILLIS) {
+                volumeZooming = false
+                return
+            }
+            controller()?.zoomMap(outcome == SwcWheelOutcome.VOLUME_UP)
+            val next = Runnable { repeatZoom(outcome, startedAt) }
+            zoomRunnable = next
+            handler.postDelayed(next, ZOOM_REPEAT_MILLIS)
         }
     }
 }

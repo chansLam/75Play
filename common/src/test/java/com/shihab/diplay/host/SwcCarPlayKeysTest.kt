@@ -24,14 +24,18 @@ class SwcCarPlayKeysTest {
         assertEquals(SwcWheelOutcome.VOLUME_UP, SwcCarPlayKeys.outcomeFor("VOLUP"))
         assertEquals(SwcWheelOutcome.VOLUME_DOWN, SwcCarPlayKeys.outcomeFor("KEY_SWC_VOL_DEC"))
         assertEquals(SwcWheelOutcome.VOLUME_DOWN, SwcCarPlayKeys.outcomeFor("VOLDOWN"))
-        for (name in listOf("VOLUME_UP", "VOL_DEC", "SRC")) {
+        for (name in listOf("VOLUME_UP", "VOL_DEC")) {
             assertEquals(SwcWheelOutcome.RELEASE, SwcCarPlayKeys.outcomeFor(name))
         }
+        assertEquals(SwcWheelOutcome.MAP_VIEW, SwcCarPlayKeys.outcomeFor("SRC"))
+        assertEquals(SwcWheelOutcome.MAP_VIEW, SwcCarPlayKeys.outcomeFor("KEY_SWC_SRC"))
+        assertEquals(false, SwcCarPlayKeys.volumePressIsZoom(399))
+        assertEquals(true, SwcCarPlayKeys.volumePressIsZoom(400))
     }
 
     @Test
     fun `mode and unknown names are released`() {
-        for (name in listOf("Model", "MODE", "MODEL", "KEY_SWC_MODE", "KEY_MODE", "SRC", "MYSTERY_KEY")) {
+        for (name in listOf("Model", "MODE", "MODEL", "KEY_SWC_MODE", "KEY_MODE", "MYSTERY_KEY")) {
             assertNull(SwcCarPlayKeys.actionFor(name))
             assertEquals(SwcWheelOutcome.RELEASE, SwcCarPlayKeys.outcomeFor(name))
         }

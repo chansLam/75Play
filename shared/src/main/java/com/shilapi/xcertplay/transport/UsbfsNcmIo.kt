@@ -95,7 +95,7 @@ internal class UsbfsNcmIo private constructor(
 
     companion object {
         private const val URB_DEPTH = 8
-        private const val READ_BUFFER_BYTES = 32 * 1024
+        private const val READ_BUFFER_BYTES = 16 * 1024
 
         @Volatile var lastOpenFailure: String = "not attempted"
             private set

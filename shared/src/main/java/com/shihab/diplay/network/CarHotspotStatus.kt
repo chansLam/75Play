@@ -94,6 +94,9 @@ object CarHotspotStatus {
             }
         }
 
+    private fun unquoteWifi(value: String?): String? =
+        value?.trim()?.removeSurrounding("\"")?.takeIf { it.isNotBlank() && it != "<unknown ssid>" }
+
     private fun wifiManager(app: Context): WifiManager? =
         if (realSdkInt() >= Build.VERSION_CODES.M) {
             app.getSystemService(WifiManager::class.java)
@@ -101,6 +104,16 @@ object CarHotspotStatus {
             @Suppress("DEPRECATION")
             app.getSystemService(Context.WIFI_SERVICE) as? WifiManager
         }
+
+    /** SSID and passphrase already stored by the head unit, when the ROM exposes them. */
+    fun savedSoftAp(context: Context): SavedSoftAp? {
+        val wifi = wifiManager(context.applicationContext) ?: return null
+        val configuration = readSoftApConfiguration(wifi) ?: return null
+        val ssid = unquoteWifi(configuration.SSID) ?: return null
+        return SavedSoftAp(ssid, unquoteWifi(configuration.preSharedKey).orEmpty())
+    }
+
+    data class SavedSoftAp(val ssid: String, val passphrase: String)
 
     internal fun stateEnabled(state: Int?): Boolean? = state?.takeIf { it in 10..14 }?.let { it == WIFI_AP_STATE_ENABLED }
 

@@ -84,16 +84,25 @@ object CarPlayRuntimeConfigFactory {
         synchronized(manualHotspotLock) {
             if (AirPlayPersistence.loadWirelessHotspotMode(ctx) != WirelessHotspotMode.MANUAL) return
             if (AirPlayPersistence.loadManualHotspotSsid(ctx).isNotBlank()) return
-            val generated = ManualHotspotProvisioning.generate()
+            val adopted = com.shihab.diplay.network.CarHotspotStatus.savedSoftAp(ctx)
+            val generated = if (adopted != null) {
+                ManualHotspotProvisioning.Generated(adopted.ssid, adopted.passphrase)
+            } else {
+                ManualHotspotProvisioning.defaults()
+            }
             AirPlayPersistence.saveManualHotspotSsid(ctx, generated.ssid)
             AirPlayPersistence.saveManualHotspotPassphrase(ctx, generated.passphrase)
-            AirPlayPersistence.saveManualHotspotSecurity(ctx, ManualHotspotSecurity.WPA2)
+            AirPlayPersistence.saveManualHotspotSecurity(
+                ctx,
+                if (generated.passphrase.isEmpty()) ManualHotspotSecurity.OPEN
+                else ManualHotspotSecurity.WPA2,
+            )
         }
     }
 
     /**
      * Loads connection inputs from persistence. When manual hotspot mode has no SSID yet,
-     * [provisionManualHotspot] invents and persists seamless credentials.
+     * [provisionManualHotspot] copies the head unit SoftAP, or the built-in 75Play defaults.
      */
     fun fromPersistence(ctx: Context): CarPlayRuntimeConfigInputs {
         provisionManualHotspot(ctx)

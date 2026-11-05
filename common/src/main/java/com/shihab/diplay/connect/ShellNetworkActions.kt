@@ -34,8 +34,13 @@ object ShellNetworkActions {
         ssid: String = AirPlayPersistence.loadManualHotspotSsid(context),
         passphrase: String = AirPlayPersistence.loadManualHotspotPassphrase(context),
     ): Boolean = runCatching {
-        val apSsid = ssid.ifBlank { DEFAULT_HOTSPOT_SSID }
-        val apPass = passphrase.ifBlank { DEFAULT_HOTSPOT_PASS }
+        val rom = if (ssid.isBlank()) CarHotspotStatus.savedSoftAp(context) else null
+        val apSsid = ssid.ifBlank { rom?.ssid ?: DEFAULT_HOTSPOT_SSID }
+        val apPass = when {
+            passphrase.isNotBlank() -> passphrase
+            rom != null -> rom.passphrase
+            else -> DEFAULT_HOTSPOT_PASS
+        }
         AirPlayPersistence.saveManualHotspotSsid(context, apSsid)
         AirPlayPersistence.saveManualHotspotPassphrase(context, apPass)
         val result = CarHotspotEnable.enable(

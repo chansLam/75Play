@@ -16,7 +16,7 @@ An open-source CarPlay receiver for the factory head unit (`OS_S311-WT` · Andro
 
 - **Three wireless modes** — Wi‑Fi Direct is the default and uses IPv4 only; car hotspot and existing Wi‑Fi stay available. A failed direct link resets once
 - **Wired USB (beta)** — plug a data cable into the head unit, then connect. If an iPhone is already on USB, the session switches to wired and does not need a kernel TUN
-- **Steering-wheel keys** — voice wakes Siri, previous / next track, answer / hang up. Volume and SRC stay with the head unit
+- **Steering-wheel keys** — voice wakes Siri, previous / next track, answer / hang up. A short volume press changes the head-unit volume; holding volume zooms the map. SRC cycles the map view. A generic wheel map can be turned on in Settings (off by default) to learn key codes
 - **Fullscreen picture** — always fullscreen, SurfaceView, H.264. Frame rate 15 / 30 / 45 / 60, default 30. Medium and small sizes can show Smart Display Zoom on the iPhone
 - **Cluster and temperature** — CarPlay turn guidance is sent to the factory cluster. A top bar shows outside, cabin, and setpoint temperatures, and can be turned off under Display
 - **Settings stay on the shell** — Display & audio and About are three columns, and they are not edited on the CarPlay picture

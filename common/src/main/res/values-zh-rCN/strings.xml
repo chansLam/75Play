@@ -385,4 +385,20 @@
     <string name="cd_temp_bar">温度栏：显示室外、车内与空调设定温度</string>
     <string name="session_notification_text">CarPlay 连接已运行</string>
     <string name="session_notification_disconnect">断开连接</string>
+    <string name="settings_generic_swc">通用方控</string>
+    <string name="settings_generic_swc_learn">学习按键</string>
+    <string name="settings_generic_swc_learn_open">学习</string>
+    <string name="settings_generic_swc_title">学习方向盘按键</string>
+    <string name="settings_generic_swc_hint">打开「通用方控」后，学习和 CarPlay 前台都按系统送来的按键码响应。关闭时仍用本车原有方控。点一项功能，再按下对应键。返回取消这次学习，长按一行清除。音量短按仍调节车机音量，长按缩放地图。</string>
+    <string name="settings_generic_swc_unbound">未学习</string>
+    <string name="settings_generic_swc_press">请按下：%1$s</string>
+    <string name="settings_swc_next">下一曲</string>
+    <string name="settings_swc_prev">上一曲</string>
+    <string name="settings_swc_answer">接听</string>
+    <string name="settings_swc_hangup">挂断</string>
+    <string name="settings_swc_siri">语音</string>
+    <string name="settings_swc_vol_up">音量加</string>
+    <string name="settings_swc_vol_down">音量减</string>
+    <string name="settings_swc_mute">静音</string>
+    <string name="settings_swc_src">地图视角</string>
 </resources>

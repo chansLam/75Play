@@ -462,6 +462,49 @@ class CarPlayController(
         }
     }
 
+    /** Pinch at the centre of the CarPlay frame. Maps zoom; other screens ignore the gesture. */
+    fun zoomMap(zoomIn: Boolean) {
+        if (closed) return
+        val session = activeSession ?: return
+        touchExecutor.execute {
+            if (closed || activeSession !== session) return@execute
+            val steps = 5
+            for (step in 0..steps) {
+                val spread = if (zoomIn) 0.06 + step * 0.035 else 0.28 - step * 0.035
+                session.sendTouch(
+                    listOf(
+                        AirPlayContact(0, 0.5 - spread, 0.5, true),
+                        AirPlayContact(1, 0.5 + spread, 0.5, true),
+                    ),
+                )
+                if (!sleepTouch(20)) return@execute
+            }
+            session.sendTouch(emptyList())
+        }
+    }
+
+    /**
+     * Tap the upper-right control where CarPlay maps keep the 2D / 3D / heading button.
+     * The spot is fixed in the video frame, so a map that draws that button elsewhere will miss.
+     */
+    fun cycleMapView() {
+        if (closed) return
+        val session = activeSession ?: return
+        touchExecutor.execute {
+            if (closed || activeSession !== session) return@execute
+            session.sendTouch(listOf(AirPlayContact(0, 0.90, 0.16, true)))
+            if (!sleepTouch(50)) return@execute
+            session.sendTouch(emptyList())
+        }
+    }
+
+    private fun sleepTouch(millis: Long): Boolean = try {
+        Thread.sleep(millis)
+        !closed
+    } catch (_: InterruptedException) {
+        false
+    }
+
     /** Moves CarPlay on the main screen to its declared view area [index], for example another dock edge. */
     fun showViewArea(index: Int): Boolean {
         if (closed) return false
@@ -1193,18 +1236,42 @@ class CarPlayController(
             debugLog("wired USBMUX host opened")
             onStatus(CarPlayStatus.Pairing)
             val pairingClient = com.shilapi.xcertplay.transport.LockdownPairingClient(mux)
-            val paired = pairingClient.pair(
-                label = config.label,
-                hostId = wiredHostId,
-                systemBuid = wiredSystemBuid,
-                totalTimeoutMillis = WIRED_PAIR_TIMEOUT_MILLIS,
-                isCancelled = { closed },
-            )
-            wiredChain(7, "Lockdown pairing ok (new record)")
-            debugLog("wired created a new Lockdown pair record")
-            onStatus(CarPlayStatus.ConnectingControl)
             val carKitClient = com.shilapi.xcertplay.transport.LockdownCarKitClient(mux)
-            val carkitStream = carKitClient.open(paired, config.label)
+            val saved = com.shilapi.xcertplay.transport.WiredLockdownStore.load(appContext)
+            val carkitStream = if (saved != null) {
+                try {
+                    debugLog("wired reusing saved lockdown record")
+                    carKitClient.open(saved, config.label)
+                } catch (error: Exception) {
+                    if (closed || error is com.shilapi.xcertplay.transport.LockdownPairingException.Cancelled) {
+                        throw error
+                    }
+                    debugLog("wired saved lockdown record rejected (${error.message}); pairing again")
+                    com.shilapi.xcertplay.transport.WiredLockdownStore.clear(appContext)
+                    val paired = pairingClient.pair(
+                        label = config.label,
+                        hostId = wiredHostId,
+                        systemBuid = wiredSystemBuid,
+                        totalTimeoutMillis = WIRED_PAIR_TIMEOUT_MILLIS,
+                        isCancelled = { closed },
+                    )
+                    com.shilapi.xcertplay.transport.WiredLockdownStore.save(appContext, paired.pairRecord)
+                    carKitClient.open(paired, config.label)
+                }
+            } else {
+                val paired = pairingClient.pair(
+                    label = config.label,
+                    hostId = wiredHostId,
+                    systemBuid = wiredSystemBuid,
+                    totalTimeoutMillis = WIRED_PAIR_TIMEOUT_MILLIS,
+                    isCancelled = { closed },
+                )
+                com.shilapi.xcertplay.transport.WiredLockdownStore.save(appContext, paired.pairRecord)
+                debugLog("wired lockdown pair record created")
+                carKitClient.open(paired, config.label)
+            }
+            wiredChain(7, "Lockdown pairing ok (saved=${saved != null})")
+            onStatus(CarPlayStatus.ConnectingControl)
             wiredChain(8, "CarKit service opened")
             debugLog("wired com.apple.carkit.service stream opened")
             if (closed || wiredAborted.get()) return

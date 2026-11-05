@@ -31,7 +31,7 @@
       },
       {
         "title": "方向盘按键",
-        "text": "CarPlay 在前台时，语音唤醒 Siri，上一曲 / 下一曲，接听 / 挂断。音量和 SRC 留给车机。画面结束或应用崩溃后，按键测试会关掉。"
+        "text": "CarPlay 在前台时，语音唤醒 Siri，上一曲 / 下一曲，接听 / 挂断。音量短按调节车机音量，长按缩放地图；SRC 切换地图视角。画面结束或应用崩溃后，按键测试会关掉。设置里可打开通用方控（默认关闭）并学习按键码。"
       },
       {
         "title": "全屏画面",
@@ -103,7 +103,7 @@
       },
       {
         "title": "方向盤按鍵",
-        "text": "CarPlay 在前景時，語音喚醒 Siri，上一曲 / 下一曲，接聽 / 掛斷。音量和 SRC 留給車機。畫面結束或應用程式崩潰後，按鍵測試會關掉。"
+        "text": "CarPlay 在前景時，語音喚醒 Siri，上一曲 / 下一曲，接聽 / 掛斷。音量短按調節車機音量，長按縮放地圖；SRC 切換地圖視角。畫面結束或應用程式崩潰後，按鍵測試會關掉。設定裡可打開通用方控（預設關閉）並學習按鍵碼。"
       },
       {
         "title": "全螢幕畫面",
@@ -175,7 +175,7 @@
       },
       {
         "title": "Steering-wheel keys",
-        "text": "While CarPlay is in front: voice wakes Siri, previous / next track, answer / hang up. Volume and SRC stay with the head unit. Key-test turns off when CarPlay ends or the app crashes."
+        "text": "While CarPlay is in front: voice wakes Siri, previous / next track, answer / hang up. A short volume press changes the head-unit volume; holding volume zooms the map. SRC cycles the map view. Key-test turns off when CarPlay ends or the app crashes. A generic wheel map can be turned on in Settings (off by default) to learn key codes."
       },
       {
         "title": "Fullscreen picture",
@@ -247,7 +247,7 @@
       },
       {
         "title": "Teclas del volante",
-        "text": "Con CarPlay delante: la voz despierta a Siri, pista anterior / siguiente, contestar / colgar. Volumen y SRC se quedan en el coche. La prueba de teclas se apaga al terminar CarPlay o si la app se cierra."
+        "text": "Con CarPlay delante: la voz despierta a Siri, pista anterior / siguiente, contestar / colgar. Una pulsación corta de volumen cambia el volumen del coche; mantenerlo amplía el mapa. SRC cambia la vista del mapa. La prueba de teclas se apaga al terminar CarPlay o si la app se cierra. En Ajustes se puede activar un volante genérico (apagado por defecto) para aprender teclas."
       },
       {
         "title": "Imagen a pantalla completa",
@@ -315,7 +315,7 @@
       },
       {
         "title": "أزرار المقود",
-        "text": "عندما يكون كار بلاي في الأمام: الصوت يوقظ Siri، المقطع السابق / التالي، الرد / الإنهاء. مستوى الصوت و SRC يبقيان للسيارة. ينطفئ اختبار الأزرار عند انتهاء كار بلاي أو تعطل التطبيق."
+        "text": "عندما يكون كار بلاي في الأمام: الصوت يوقظ Siri، المقطع السابق / التالي، الرد / الإنهاء. ضغطة صوت قصيرة تغيّر صوت السيارة، والضغط المطوّل يكبّر الخريطة. SRC يبدّل وضع الخريطة. ينطفئ اختبار الأزرار عند انتهاء كار بلاي أو تعطل التطبيق. يمكن فتح أزرار مقود عامة من الإعدادات (مغلقة افتراضيًا) لتعلّم الأكواد."
       },
       {
         "title": "صورة بملء الشاشة",
@@ -383,7 +383,7 @@
       },
       {
         "title": "Кнопки руля",
-        "text": "Пока CarPlay на переднем плане: голос будит Siri, предыдущий / следующий трек, ответ / завершение. Громкость и SRC остаются у машины. Тест кнопок выключается, когда CarPlay заканчивается или приложение падает."
+        "text": "Пока CarPlay на переднем плане: голос будит Siri, предыдущий / следующий трек, ответ / завершение. Короткое нажатие громкости меняет громкость машины, долгое увеличивает карту. SRC переключает вид карты. Тест кнопок выключается, когда CarPlay заканчивается или приложение падает. В настройках можно включить универсальные кнопки руля (выключены по умолчанию) и обучить коды."
       },
       {
         "title": "Картинка на весь экран",
@@ -451,7 +451,7 @@
       },
       {
         "title": "Кнопки керма",
-        "text": "Поки CarPlay на передньому плані: голос будить Siri, попередній / наступний трек, відповідь / завершення. Гучність і SRC лишаються в машини. Тест кнопок вимикається, коли CarPlay закінчується або застосунок падає."
+        "text": "Поки CarPlay на передньому плані: голос будить Siri, попередній / наступний трек, відповідь / завершення. Коротке натискання гучності змінює гучність машини, довге збільшує карту. SRC перемикає вигляд карти. Тест кнопок вимикається, коли CarPlay закінчується або застосунок падає. У налаштуваннях можна ввімкнути універсальні кнопки керма (вимкнені за замовчуванням) і навчити коди."
       },
       {
         "title": "Зображення на весь екран",

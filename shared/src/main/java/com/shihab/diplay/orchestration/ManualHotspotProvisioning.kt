@@ -18,6 +18,9 @@ object ManualHotspotProvisioning {
 
     data class Generated(val ssid: String, val passphrase: String)
 
+    /** Used only when the head unit has no SoftAP credentials of its own. */
+    fun defaults(): Generated = Generated(ssid = "75Play", passphrase = "12345678")
+
     fun generate(random: Random = SecureRandom()): Generated = Generated(
         ssid = SSID_PREFIX + random.string(SSID_ALPHABET, SSID_SUFFIX_LENGTH),
         passphrase = random.string(PASSPHRASE_ALPHABET, PASSPHRASE_LENGTH),

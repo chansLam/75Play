@@ -18,6 +18,8 @@ import java.io.File
 import java.io.FileOutputStream
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import com.shihab.diplay.host.GenericSwcAction
+import com.shihab.diplay.host.GenericSwcMap
 import com.shihab.diplay.host.R
 
 
@@ -77,6 +79,8 @@ object AirPlayPersistence {
     private const val KEY_HARMAN_FULLSCREEN = "harman_fullscreen"
     private const val KEY_SAFE_AREA_DRAW_OUTSIDE = "safe_area_draw_outside"
     private const val KEY_AUTO_START_ON_BOOT = "auto_start_on_boot"
+    private const val KEY_GENERIC_SWC_ENABLED = "generic_swc_enabled"
+    private const val KEY_GENERIC_SWC_BINDINGS = "generic_swc_bindings"
     private const val KEY_LOCATION_REPORTING_ENABLED = "location_reporting_enabled"
     private const val KEY_MFI_TARGET = "mfi_target"
     private const val KEY_MFI_I2C_PATH = "mfi_i2c_path"
@@ -105,6 +109,27 @@ object AirPlayPersistence {
     fun saveFloatingBallEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean("floating_ball_enabled", enabled).apply()
+    }
+
+    /** Generic steering-wheel map. Off uses this car's built-in wheel names. */
+    fun loadGenericSwcEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_GENERIC_SWC_ENABLED, false)
+
+    fun saveGenericSwcEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_GENERIC_SWC_ENABLED, enabled).apply()
+    }
+
+    fun loadGenericSwcBindings(context: Context): Map<GenericSwcAction, Int> =
+        GenericSwcMap.decode(
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString(KEY_GENERIC_SWC_BINDINGS, ""),
+        )
+
+    fun saveGenericSwcBindings(context: Context, bindings: Map<GenericSwcAction, Int>) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_GENERIC_SWC_BINDINGS, GenericSwcMap.encode(bindings)).apply()
     }
 
     fun loadAmbientDelaySeconds(context: Context): Int =

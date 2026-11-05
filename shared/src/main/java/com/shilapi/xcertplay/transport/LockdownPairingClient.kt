@@ -30,6 +30,7 @@ class LockdownPairingClient(
         systemBuid: String,
         totalTimeoutMillis: Long,
         isCancelled: () -> Boolean = { false },
+        existing: LockdownPairRecord? = null,
     ): PairedRecord {
         require(label.isNotBlank()) { "label must not be blank" }
         require(hostId.isNotBlank()) { "hostId must not be blank" }
@@ -40,7 +41,7 @@ class LockdownPairingClient(
 
         val deadline = Deadline(totalTimeoutMillis)
         val startedNs = System.nanoTime()
-        var pairRecord: LockdownPairRecord? = null
+        var pairRecord: LockdownPairRecord? = existing
         var attempt = 0
         while (true) {
             checkCancelled(isCancelled)

@@ -386,4 +386,20 @@
     <string name="session_notification_text">CarPlay: соединение активно</string>
     <string name="session_notification_disconnect">Отключить</string>
     <string name="cd_temp_bar">Строка температуры: снаружи, в салоне и заданная температура кондиционера</string>
+    <string name="settings_generic_swc">Универсальные кнопки руля</string>
+    <string name="settings_generic_swc_learn">Обучение кнопок</string>
+    <string name="settings_generic_swc_learn_open">Обучить</string>
+    <string name="settings_generic_swc_title">Обучение кнопок руля</string>
+    <string name="settings_generic_swc_hint">Когда универсальные кнопки включены, обучение и CarPlay на переднем плане используют код клавиши, который присылает система. Выключено — работают кнопки этой машины. Нажмите функцию, затем её клавишу. Назад отменяет это обучение, долгое нажатие строки стирает её. Короткое нажатие громкости меняет громкость машины, долгое увеличивает карту.</string>
+    <string name="settings_generic_swc_unbound">Не изучено</string>
+    <string name="settings_generic_swc_press">Нажмите: %1$s</string>
+    <string name="settings_swc_next">Следующий трек</string>
+    <string name="settings_swc_prev">Предыдущий трек</string>
+    <string name="settings_swc_answer">Ответить</string>
+    <string name="settings_swc_hangup">Завершить</string>
+    <string name="settings_swc_siri">Голос</string>
+    <string name="settings_swc_vol_up">Громче</string>
+    <string name="settings_swc_vol_down">Тише</string>
+    <string name="settings_swc_mute">Без звука</string>
+    <string name="settings_swc_src">Вид карты</string>
 </resources>
