@@ -349,12 +349,24 @@ class NcmUsbBridge internal constructor(
         wedgedOutSinceNs = 0L
         if (interfaceReclaimAttempted) return
         interfaceReclaimAttempted = true
+        val probe = if (WiredNcmTuning.probeOutOnWedge) probeOutWritable() else PROBE_SKIPPED
         onDiagnostic(
             "ncm bulk-out wedged: submitted=${snapshot.submitted} completed=0 successBytes=0 " +
-                "while the ring is full; reclaiming the data interface",
+                "while the ring is full; sync probe=$probe " +
+                "(>0 = 端点可写，原生 async 路径可疑；-1 = 设备仍未读取该端点；-2 = 未探测); " +
+                "reclaiming the data interface",
         )
         runCatching { reclaimDataInterface() }
     }
+
+    /**
+     * 一次同步写入，用来区分"设备根本没读 OUT 端点"和"原生 async 路径有 bug"：
+     * framework bulkTransfer 返回 >0 = 端点可写（async 路径可疑），-1 = 设备在 NAK（没人读）。
+     * 只在 wedge 首次触发时跑一次；写的是无效 NTB，设备端会丢弃，不进数据流。
+     */
+    private fun probeOutWritable(): Int = runCatching {
+        sharedConnection.bulkTransfer(outEndpoint, ByteArray(OUT_PROBE_BYTES), OUT_PROBE_BYTES, OUT_PROBE_TIMEOUT_MILLIS)
+    }.getOrDefault(-1)
 
     private fun maybeObserveAsyncOut() {
         val io = dataIo as? UsbfsNcmIo ?: return
@@ -1079,6 +1091,10 @@ class NcmUsbBridge internal constructor(
         private const val INTERFACE_RESET_AT_FAILURE = 5
         /** Ring-full with zero OUT completions for this long is a wedged pipe, not a burst. */
         private const val OUT_WEDGE_RECLAIM_NANOS = 3_000_000_000L
+        /** 一次性同步探测块的字节数与超时。 */
+        private const val OUT_PROBE_BYTES = 64
+        private const val OUT_PROBE_TIMEOUT_MILLIS = 500
+        private const val PROBE_SKIPPED = -2
         /** Issue #75: consecutive failures at which the one-shot interface re-claim runs. */
         private const val INTERFACE_RECLAIM_AT_FAILURE = 12
         private const val ENDPOINT_STATUS_TIMEOUT_MILLIS = 500
@@ -1092,6 +1108,10 @@ class NcmUsbBridge internal constructor(
         private const val GET_NTB_PARAMETERS = 0x80
         private const val SET_NTB_FORMAT = 0x84
         private const val SET_CRC_MODE = 0x8a
+        /** CDC SET_ETHERNET_PACKET_FILTER, the last step of Linux cdc_ncm_setup(). */
+        private const val SET_ETHERNET_PACKET_FILTER = 0x43
+        /** DIRECTED | BROADCAST | MULTICAST: what ARP, mDNS and ICMPv6 need on this link. */
+        private const val PACKET_FILTER_DIRECTED_BROADCAST_MULTICAST = 0x001c
         /** CDC NCM 1.0: declare the host's receive-side max NTB size to the device. */
         private const val SET_NTB_INPUT_SIZE = 0x1d
         /** Matches UsbfsNcmIo.READ_BUFFER_BYTES; also the cap on what we may declare. */
@@ -1207,6 +1227,23 @@ class NcmUsbBridge internal constructor(
                     )
                 }.getOrDefault(-1)
                 log("ncm SET_CRC_MODE=off(0) iface=$controlInterface result=$setCrc")
+            }
+            // Linux cdc_ncm_setup() 的最后一步。少了它，部分 NCM 实现不会把数据接口
+            // "up" 起来，也就不会去读 host 的 bulk-OUT 端点，URB 提交后永远 completed=0
+            // （报告 2026-11-06-235001：IN 侧 ICMPv6 有来有回，OUT 侧零完成）。
+            if (WiredNcmTuning.negotiatePacketFilter) {
+                val setFilter = runCatching {
+                    connection.controlTransfer(
+                        CONTROL_OUT_CLASS_INTERFACE,
+                        SET_ETHERNET_PACKET_FILTER,
+                        PACKET_FILTER_DIRECTED_BROADCAST_MULTICAST,
+                        controlInterface,
+                        null,
+                        0,
+                        ENDPOINT_STATUS_TIMEOUT_MILLIS,
+                    )
+                }.getOrDefault(-1)
+                log("ncm SET_ETHERNET_PACKET_FILTER=0x001c iface=$controlInterface result=$setFilter")
             }
             return NcmNtbLimits.parse(paramsBuffer, paramsRead) ?: NcmNtbLimits.DEFAULT
         }

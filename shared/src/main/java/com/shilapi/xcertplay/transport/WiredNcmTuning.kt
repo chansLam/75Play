@@ -36,6 +36,25 @@ object WiredNcmTuning {
     var negotiateNtbInputSize: Boolean = true
 
     /**
+     * Send CDC SET_ETHERNET_PACKET_FILTER (class request 0x43, value 0x001C = directed + broadcast +
+     * multicast) after SET_CRC_MODE — the last step of Linux cdc_ncm_setup().
+     *
+     * This is the step that works the data interface up at the device end: report
+     * 75Play-20261106-235001 has SET_NTB_FORMAT and SET_CRC_MODE accepted, the host OUT URBs still
+     * submitted=8/completed=0, and the iPhone keeping its bulk-OUT read queue empty. Some ECM/NCM
+     * implementations only start reading that endpoint once the packet filter is armed.
+     */
+    var negotiatePacketFilter: Boolean = true
+
+    /**
+     * On the first bulk-OUT wedge, push one 64-byte block through a synchronous framework
+     * bulkTransfer and log what it returns. >0 means the endpoint is writable and the async
+     * native path is the suspect; -1 means the device is not reading the endpoint at all. The
+     * probe block is not part of the frame stream and the phone drops it.
+     */
+    var probeOutOnWedge: Boolean = true
+
+    /**
      * Treat bulk-OUT NAK timeouts during the early bring-up as "not ready" instead of counting
      * them toward the 25-failure wedge budget. The phone may keep NAKing OUT until the iAP2
      * CarPlay data channel arms, while unsolicited mDNS/ICMPv6 already flow on IN — which today
