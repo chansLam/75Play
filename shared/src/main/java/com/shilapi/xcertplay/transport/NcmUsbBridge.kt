@@ -160,6 +160,7 @@ class NcmUsbBridge internal constructor(
                 ?: dataIo.submitOut(checkNotNull(block), timeoutMillis)) {
                 NcmSubmit.Backpressured -> {
                     onDiagnostic("ncm async bulk-out ring full bytes=$blockBytes slots=${dataIo.availableOutSlots()} " + dataIo.diagnostics())
+                    maybeRecoverWedgedOut()
                     return@synchronized 0
                 }
                 NcmSubmit.FatalPartialSubmit -> {
@@ -324,6 +325,36 @@ class NcmUsbBridge internal constructor(
     }
 
     private var lastOutHealthNs = 0L
+
+    /** Wall-clock anchor for "ring full with zero completions" — the silent-wedge detector. */
+    private var wedgedOutSinceNs = 0L
+
+    /**
+     * The asynchronous ring can fill with URBs the phone never reads: submitted stays > 0 while
+     * completed and successBytes stay 0. The caller only ever sees "ring full" and the old code
+     * dropped the frame, so this wedge left no trace in reports (75Play-20261106-225501). Detect
+     * it once, then run the heavier interface re-claim, which rebuilds both sides' data pipes
+     * in place without tearing the session down.
+     */
+    private fun maybeRecoverWedgedOut() {
+        val io = dataIo as? UsbfsNcmIo ?: return
+        val snapshot = NcmOutSnapshot.parse(io.diagnostics()) ?: return
+        if (snapshot.submitted <= 0 || snapshot.completed > 0 || snapshot.successBytes > 0) {
+            wedgedOutSinceNs = 0L
+            return
+        }
+        val now = System.nanoTime()
+        if (wedgedOutSinceNs == 0L) wedgedOutSinceNs = now
+        if (now - wedgedOutSinceNs < OUT_WEDGE_RECLAIM_NANOS) return
+        wedgedOutSinceNs = 0L
+        if (interfaceReclaimAttempted) return
+        interfaceReclaimAttempted = true
+        onDiagnostic(
+            "ncm bulk-out wedged: submitted=${snapshot.submitted} completed=0 successBytes=0 " +
+                "while the ring is full; reclaiming the data interface",
+        )
+        runCatching { reclaimDataInterface() }
+    }
 
     private fun maybeObserveAsyncOut() {
         val io = dataIo as? UsbfsNcmIo ?: return
@@ -1013,6 +1044,20 @@ class NcmUsbBridge internal constructor(
             return if (implausible) "$parsed IMPLAUSIBLE raw=$hex" else "$parsed raw=$hex"
         }
 
+        /**
+         * dwNtbInMaxSize@4 from GET_NTB_PARAMETERS, clamped to our own receive buffer. CDC NCM
+         * forbids declaring more than the device advertised, and a missing/implausible reply
+         * simply keeps the local buffer size instead of inventing a value.
+         */
+        private fun ntbInMaxSize(buffer: ByteArray, read: Int): Int {
+            if (read < 8) return NTB_INPUT_SIZE_BYTES
+            val advertised = readU32(buffer, 4).toLong() and 0xffff_ffffL
+            if (advertised < MIN_NTB_INPUT_SIZE_BYTES || advertised > MAX_PLAUSIBLE_NTB_BYTES) {
+                return NTB_INPUT_SIZE_BYTES
+            }
+            return minOf(advertised, NTB_INPUT_SIZE_BYTES.toLong()).toInt()
+        }
+
         private const val READ_CHUNK_BYTES = 32 * 1024
         private const val USB_PACKET_SIZE = 512
         private const val NTH16_LENGTH = 12
@@ -1032,6 +1077,8 @@ class NcmUsbBridge internal constructor(
         private const val READ_WATCHDOG_POLL_MILLIS = 500L
         /** Issue #279: consecutive failures at which the one-shot interface reset runs. */
         private const val INTERFACE_RESET_AT_FAILURE = 5
+        /** Ring-full with zero OUT completions for this long is a wedged pipe, not a burst. */
+        private const val OUT_WEDGE_RECLAIM_NANOS = 3_000_000_000L
         /** Issue #75: consecutive failures at which the one-shot interface re-claim runs. */
         private const val INTERFACE_RECLAIM_AT_FAILURE = 12
         private const val ENDPOINT_STATUS_TIMEOUT_MILLIS = 500
@@ -1045,6 +1092,12 @@ class NcmUsbBridge internal constructor(
         private const val GET_NTB_PARAMETERS = 0x80
         private const val SET_NTB_FORMAT = 0x84
         private const val SET_CRC_MODE = 0x8a
+        /** CDC NCM 1.0: declare the host's receive-side max NTB size to the device. */
+        private const val SET_NTB_INPUT_SIZE = 0x1d
+        /** Matches UsbfsNcmIo.READ_BUFFER_BYTES; also the cap on what we may declare. */
+        private const val NTB_INPUT_SIZE_BYTES = 16 * 1024
+        /** CDC NCM 1.0 requires at least a 2048-byte NTB for the NTB16 format. */
+        private const val MIN_NTB_INPUT_SIZE_BYTES = 2048L
         private const val NTB16_FORMAT = 0x00
         private const val CRC_NOT_APPENDED = 0x00
         private const val CONTROL_OUT_CLASS_INTERFACE =
@@ -1114,6 +1167,32 @@ class NcmUsbBridge internal constructor(
                     )
                 }.getOrDefault(-1)
                 log("ncm SET_NTB_FORMAT=NTB16(0) iface=$controlInterface result=$setFormat")
+            }
+            // CDC NCM requires the host to announce its receive-side NTB size, and Linux cdc_ncm
+            // sends this between SET_NTB_FORMAT and SET_CRC_MODE. Skipping it leaves iOS with the
+            // host bulk-OUT endpoint permanently NAKed (report 2026-11-06-225501: submitted=8,
+            // completed=0, successBytes=0 while inbound mDNS/ICMPv6 kept flowing) — the wired
+            // black screen. wLength=4 little-endian; never exceed the phone's dwNtbInMaxSize.
+            if (WiredNcmTuning.negotiateNtbInputSize) {
+                val declared = ntbInMaxSize(paramsBuffer, paramsRead)
+                val payload = byteArrayOf(
+                    (declared and 0xff).toByte(),
+                    ((declared shr 8) and 0xff).toByte(),
+                    ((declared shr 16) and 0xff).toByte(),
+                    ((declared shr 24) and 0xff).toByte(),
+                )
+                val setInputSize = runCatching {
+                    connection.controlTransfer(
+                        CONTROL_OUT_CLASS_INTERFACE,
+                        SET_NTB_INPUT_SIZE,
+                        0,
+                        controlInterface,
+                        payload,
+                        payload.size,
+                        ENDPOINT_STATUS_TIMEOUT_MILLIS,
+                    )
+                }.getOrDefault(-1)
+                log("ncm SET_NTB_INPUT_SIZE=$declared iface=$controlInterface result=$setInputSize")
             }
             if (WiredNcmTuning.negotiateCrcMode) {
                 val setCrc = runCatching {

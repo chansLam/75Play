@@ -24,6 +24,18 @@ object WiredNcmTuning {
     var negotiateCrcMode: Boolean = true
 
     /**
+     * Send CDC NCM SET_NTB_INPUT_SIZE (class request 0x1d) declaring the host's receive-side NTB
+     * size, between SET_NTB_FORMAT and SET_CRC_MODE — the order Linux cdc_ncm uses.
+     *
+     * Without it iOS never arms its NCM data pipes for host-to-device traffic: inbound ICMPv6/mDNS
+     * keeps arriving on bulk-IN while every host bulk-OUT URB stays NAKed forever
+     * (submitted>0, completed=0, successBytes=0), so mDNS replies and TCP ACKs never leave the
+     * head unit and CarPlay's video stream stays QUEUED — the "wired black screen" in report
+     * 75Play-20261106-225501. Disable only if a phone rejects the request (result<0 in the log).
+     */
+    var negotiateNtbInputSize: Boolean = true
+
+    /**
      * Treat bulk-OUT NAK timeouts during the early bring-up as "not ready" instead of counting
      * them toward the 25-failure wedge budget. The phone may keep NAKing OUT until the iAP2
      * CarPlay data channel arms, while unsolicited mDNS/ICMPv6 already flow on IN — which today
