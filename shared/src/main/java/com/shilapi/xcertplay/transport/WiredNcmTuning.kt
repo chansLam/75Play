@@ -46,6 +46,16 @@ object WiredNcmTuning {
     var negotiateNtbInputSize8Byte: Boolean = true
 
     /**
+     * Repeat the OUT-data-stage requests (SET_MAX_DATAGRAM_SIZE, SET_NTB_INPUT_SIZE,
+     * SET_ETHERNET_PACKET_FILTER) once the data interface is already at alt=1.
+     *
+     * Report 75Play-20261107-011616: every request carrying an OUT data stage returns -1 when it
+     * is sent at alt=0, while every zero-length one returns 0. macOS drives the same phone with
+     * these requests after the pipe is selected, so the ordering is the difference worth testing.
+     */
+    var renegotiateAfterAltSelection: Boolean = true
+
+    /**
      * Send CDC SET_ETHERNET_PACKET_FILTER (class request 0x43, value 0x001C = directed + broadcast +
      * multicast) after SET_CRC_MODE — the last step of Linux cdc_ncm_setup().
      *

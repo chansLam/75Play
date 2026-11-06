@@ -1305,6 +1305,104 @@ class NcmUsbBridge internal constructor(
             return NcmNtbLimits.parse(paramsBuffer, paramsRead) ?: NcmNtbLimits.DEFAULT
         }
 
+        /**
+         * Re-send the data-stage requests after alt=1 has been selected.
+         *
+         * Every class request that carries an OUT data stage is refused (result=-1) when it is
+         * sent while the data interface still sits at alt=0 — SET_MAX_DATAGRAM_SIZE and both
+         * NTB_INPUT_SIZE lengths (report 75Play-20261107-011616), while the zero-length ones
+         * (SET_NTB_FORMAT, SET_CRC_MODE, SET_ETHERNET_PACKET_FILTER) all return 0. macOS sends
+         * the same requests to the same phone after the pipe is selected. Repeat them here and
+         * log each result with a post-alt prefix so one live run shows which ordering lands.
+         */
+        private fun renegotiateAfterAltSelection(
+            connection: SharedUsbConnection,
+            controlInterface: Int,
+            log: (String) -> Unit,
+        ) {
+            val paramsBuffer = ByteArray(NTB_PARAMETERS_LENGTH)
+            val paramsRead = runCatching {
+                connection.controlTransfer(
+                    UsbConstants.USB_DIR_IN or UsbConstants.USB_TYPE_CLASS or INTERFACE_RECIPIENT,
+                    GET_NTB_PARAMETERS,
+                    0,
+                    controlInterface,
+                    paramsBuffer,
+                    paramsBuffer.size,
+                    ENDPOINT_STATUS_TIMEOUT_MILLIS,
+                )
+            }.getOrDefault(-1)
+            val declared = if (paramsRead >= 8) ntbInMaxSize(paramsBuffer, paramsRead) else NTB_INPUT_SIZE_BYTES
+            log("ncm post-alt GET_NTB_PARAMETERS iface=$controlInterface read=$paramsRead declared=$declared")
+
+            if (WiredNcmTuning.negotiateMaxDatagramSize) {
+                val setMaxDatagram = runCatching {
+                    connection.controlTransfer(
+                        CONTROL_OUT_CLASS_INTERFACE,
+                        SET_MAX_DATAGRAM_SIZE,
+                        0,
+                        controlInterface,
+                        byteArrayOf(
+                            (MAX_DATAGRAM_BYTES and 0xff).toByte(),
+                            ((MAX_DATAGRAM_BYTES shr 8) and 0xff).toByte(),
+                        ),
+                        2,
+                        ENDPOINT_STATUS_TIMEOUT_MILLIS,
+                    )
+                }.getOrDefault(-1)
+                log("ncm post-alt SET_MAX_DATAGRAM_SIZE=$MAX_DATAGRAM_BYTES iface=$controlInterface result=$setMaxDatagram")
+            }
+            if (WiredNcmTuning.negotiateNtbInputSize) {
+                val fourBytes = byteArrayOf(
+                    (declared and 0xff).toByte(),
+                    ((declared shr 8) and 0xff).toByte(),
+                    ((declared shr 16) and 0xff).toByte(),
+                    ((declared shr 24) and 0xff).toByte(),
+                )
+                val setFour = runCatching {
+                    connection.controlTransfer(
+                        CONTROL_OUT_CLASS_INTERFACE,
+                        SET_NTB_INPUT_SIZE,
+                        0,
+                        controlInterface,
+                        fourBytes,
+                        fourBytes.size,
+                        ENDPOINT_STATUS_TIMEOUT_MILLIS,
+                    )
+                }.getOrDefault(-1)
+                log("ncm post-alt SET_NTB_INPUT_SIZE=$declared (4-byte) iface=$controlInterface result=$setFour")
+                if (setFour < 0 && WiredNcmTuning.negotiateNtbInputSize8Byte) {
+                    val eightBytes = fourBytes + fourBytes
+                    val setEight = runCatching {
+                        connection.controlTransfer(
+                            CONTROL_OUT_CLASS_INTERFACE,
+                            SET_NTB_INPUT_SIZE,
+                            0,
+                            controlInterface,
+                            eightBytes,
+                            eightBytes.size,
+                            ENDPOINT_STATUS_TIMEOUT_MILLIS,
+                        )
+                    }.getOrDefault(-1)
+                    log("ncm post-alt SET_NTB_INPUT_SIZE=$declared (8-byte) iface=$controlInterface result=$setEight")
+                }
+            }
+            if (WiredNcmTuning.negotiatePacketFilter) {
+                val setFilter = runCatching {
+                    connection.controlTransfer(
+                        CONTROL_OUT_CLASS_INTERFACE,
+                        SET_ETHERNET_PACKET_FILTER,
+                        PACKET_FILTER_DIRECTED_BROADCAST_MULTICAST,
+                        controlInterface,
+                        null,
+                        0,
+                        ENDPOINT_STATUS_TIMEOUT_MILLIS,
+                    )
+                }.getOrDefault(-1)
+                log("ncm post-alt SET_ETHERNET_PACKET_FILTER=0x001c iface=$controlInterface result=$setFilter")
+            }
+        }
+
         /** Claims NCM while retaining the caller's shared USB connection. */
         internal fun open(
             sharedConnection: SharedUsbConnection,
@@ -1422,6 +1520,9 @@ class NcmUsbBridge internal constructor(
                         "Android could not select the NCM data alternate setting" +
                             (altSelection.errno?.let { " (usbfs errno $it)" } ?: ""),
                     )
+                }
+                if (WiredNcmTuning.renegotiateAfterAltSelection) {
+                    renegotiateAfterAltSelection(connection, function.control.id, ::log)
                 }
                 Log.i(
                     IphoneCarPlayConfiguration.TAG,
