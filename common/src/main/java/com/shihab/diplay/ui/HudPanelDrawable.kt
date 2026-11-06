@@ -7,10 +7,12 @@ import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.RectF
 import android.graphics.drawable.Drawable
+import com.shihab.diplay.ui.theme.ShellShape
 
-/** 一块圆角玻璃。暗色和浅色同一浓度，底图从填充里透出来，不再描边。 */
+/** Filled tonal panel shared by all shell columns. */
 class HudPanelDrawable(context: Context) : Drawable() {
-    private val radius = GlassColors.dp(context, 22).toFloat()
+    private val radius = GlassColors.dp(context, ShellShape.LARGE).toFloat()
+    private val rim = context.resources.displayMetrics.density.coerceAtLeast(1f)
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rect = RectF()
 
@@ -18,7 +20,7 @@ class HudPanelDrawable(context: Context) : Drawable() {
         val b = bounds
         if (b.width() <= 0 || b.height() <= 0) return
         rect.set(b)
-        GlassPlate.draw(canvas, rect, radius.coerceAtMost(rect.height() / 2f), fill)
+        GlassPlate.draw(canvas, rect, radius.coerceAtMost(rect.height() / 2f), fill, rim)
     }
 
     override fun setAlpha(alpha: Int) {

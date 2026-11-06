@@ -1,8 +1,8 @@
 package com.shihab.diplay.ui
 
 /**
- * Contract the host Activity (DiPlayActivity) implements so the glass-morphism
- * Fragments can reach business actions without touching the view layer.
+ * Contract implemented by DiPlayActivity so shell Fragments can invoke business actions without
+ * owning Activity behavior.
  */
 interface DiPlayHost {
     fun dp(value: Int): Int

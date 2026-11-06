@@ -390,7 +390,7 @@
     <string name="settings_generic_swc_learn">Learn keys</string>
     <string name="settings_generic_swc_learn_open">Learn</string>
     <string name="settings_generic_swc_title">Learn steering-wheel keys</string>
-    <string name="settings_generic_swc_hint">With generic steering wheel on, learning and CarPlay in front use the key codes the system delivers. While it is off, this car’s own wheel keys are used. Tap a function, then press its key. Back cancels that learn; long-press a row to clear it. A short volume press still changes the head-unit volume; holding volume zooms the map.</string>
+    <string name="settings_generic_swc_hint">With generic steering wheel on, learning and CarPlay in front accept Android key codes and the steering-wheel names this head unit broadcasts. While it is off, this car’s own wheel keys are used. Tap a function, then press its key. Back cancels that learn; long-press a row to clear it. A short volume press still changes the head-unit volume; holding volume zooms the map.</string>
     <string name="settings_generic_swc_unbound">Not learned</string>
     <string name="settings_generic_swc_press">Press: %1$s</string>
     <string name="settings_swc_next">Next track</string>
@@ -402,4 +402,12 @@
     <string name="settings_swc_vol_down">Volume down</string>
     <string name="settings_swc_mute">Mute</string>
     <string name="settings_swc_src">Map view</string>
+    <string name="shell_nav_dashboard">Dashboard</string>
+    <string name="shell_nav_control_center">Control center</string>
+    <string name="shell_nav_vehicle_device">Vehicle &amp; device</string>
+    <string name="shell_category_picture_theme">Picture &amp; theme</string>
+    <string name="shell_category_vehicle_controls">Vehicle controls</string>
+    <string name="shell_category_maintenance">Maintenance</string>
+    <string name="shell_category_product">Product</string>
+    <string name="shell_category_hardware">System &amp; hardware</string>
 </resources>

@@ -30,13 +30,11 @@ internal enum class SettingsSection {
 }
 
 /**
- * Maps glass shell pages to setting sections (matches live columns as of v2.0.2+).
+ * Maps the liquid-glass shell pages to their task groups.
  *
  * - Home: connection centre + app grid ([com.shihab.diplay.ui.FragmentHome])
- * - Settings: display, audio, then picture with the other behavior rows under it
- *   ([com.shihab.diplay.ui.FragmentSetting] → Display, Audio, Video + Vehicle)
- * - About: app notes, update and diagnostics, then hardware facts
- *   ([com.shihab.diplay.ui.FragmentAbout] → three columns)
+ * - Settings: display, audio, advanced media, and vehicle controls shown together
+ * - About: maintenance, product details, and hardware shown together
  */
 internal object SettingsInformationArchitecture {
     val sectionsByPage: Map<SettingsShellPage, Set<SettingsSection>> = mapOf(

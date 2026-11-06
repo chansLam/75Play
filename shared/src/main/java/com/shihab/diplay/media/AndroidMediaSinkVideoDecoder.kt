@@ -65,6 +65,13 @@ internal class VideoDecoder(
     private var feedScratch = ByteArray(0)
     private val referenceChain = VideoReferenceChain()
     private var lastKeyFrameRequestNs = 0L
+    /**
+     * A new surface reconfigures the codec before the iPhone's opening IDR arrives.
+     * Requesting a keyframe in that gap makes iOS reset the encoder; the IDR already on the
+     * wire is the picture, and everything after it trickles in. Hold the request so a fresh
+     * SETUP can play, and let a reused mid-GOP ask once this window passes.
+     */
+    @Volatile private var holdInitialKeyFrameUntilNs = 0L
     private var consecutiveInputWithoutOutput = 0
     private val stallRebuildTracker = DecoderStallRebuildTracker()
     private var lastOutputRenderedNs = 0L
@@ -87,6 +94,9 @@ internal class VideoDecoder(
     }
 
     fun setSurface(surface: Surface?) {
+        // Arm the hold before the worker runs, so a keyframe ask queued in the same
+        // surface-created turn cannot reset the iPhone's opening IDR.
+        if (surface != null) holdInitialKeyFrameUntilNs = System.nanoTime() + INITIAL_PICTURE_GRACE_NS
         queue.offer(VideoJob.SurfaceChanged(surface))
     }
 
@@ -159,8 +169,13 @@ internal class VideoDecoder(
                         // Once per new surface, so it skips the rate limit an earlier request may still hold.
                         // Ask even before the codec exists: the keyframe can be the first thing it decodes.
                         is VideoJob.RefreshPicture -> {
-                            lastKeyFrameRequestNs = System.nanoTime()
-                            requestKeyFrame()
+                            // Surface attach asks immediately, then changeSurface holds the first
+                            // second so that request does not reset an opening IDR.
+                            if (holdInitialKeyFrameUntilNs == 0L || System.nanoTime() >= holdInitialKeyFrameUntilNs) {
+                                holdInitialKeyFrameUntilNs = 0L
+                                lastKeyFrameRequestNs = System.nanoTime()
+                                requestKeyFrame()
+                            }
                         }
                         is VideoJob.Resync -> recoverBacklog("video queue overflow")
                         null -> Unit
@@ -442,11 +457,11 @@ internal class VideoDecoder(
         val pending = lastConfig
         if (pending != null) {
             configureDecoder(pending)
-            // A freshly configured codec has no reference frames. Ask immediately; waiting for
-            // the next P-frame left the new surface black for a whole GOP.
+            // A freshly configured codec has no reference frames. A reused stream is mid-GOP and
+            // needs a keyframe, but a stream that just started is already sending one. Asking in
+            // this gap resets the iPhone encoder and the picture sticks on that first frame.
             if (decoder != null) {
-                lastKeyFrameRequestNs = System.nanoTime()
-                requestKeyFrame()
+                holdInitialKeyFrameUntilNs = System.nanoTime() + INITIAL_PICTURE_GRACE_NS
             }
         }
     }
@@ -569,6 +584,7 @@ internal class VideoDecoder(
 
     private fun recover(reason: String) {
         AppLog.w(TAG, "Video recovery: $reason; waiting for keyframe")
+        holdInitialKeyFrameUntilNs = 0L
         stats.onRecovery()
         report("recovery: $reason; waiting for keyframe")
         // Recreate with codec-specific data: flush can discard CSD before the first output.
@@ -580,6 +596,7 @@ internal class VideoDecoder(
     /** Clear backlog and request an I-frame without destroying MediaCodec (avoids black-screen loops). */
     private fun recoverBacklog(reason: String) {
         AppLog.w(TAG, "Video backlog recovery: $reason; requesting keyframe without destroying decoder")
+        holdInitialKeyFrameUntilNs = 0L
         stats.onRecovery()
         report("backlog: $reason; requesting keyframe")
         referenceChain.reset()
@@ -588,6 +605,10 @@ internal class VideoDecoder(
 
     private fun requestKeyFrameIfDue() {
         val now = System.nanoTime()
+        if (holdInitialKeyFrameUntilNs != 0L) {
+            if (now < holdInitialKeyFrameUntilNs) return
+            holdInitialKeyFrameUntilNs = 0L
+        }
         if (lastKeyFrameRequestNs != 0L && now - lastKeyFrameRequestNs < 1_000_000_000L) return
         lastKeyFrameRequestNs = now
         requestKeyFrame()
@@ -728,6 +749,9 @@ internal class VideoDecoder(
         const val PAUSE_HELD_FRAMES = 3
         const val MIN_OUTPUT_STALL_NS = 1_500_000_000L
         const val SURFACE_WARMUP_NS = 3_500_000_000L
+        // Long enough for the opening IDR of a fresh SETUP to be queued (this car delivered it
+        // about 300 ms after the decoder came up) and short enough that a reused GOP still asks.
+        const val INITIAL_PICTURE_GRACE_NS = 1_000_000_000L
         const val MAX_FRAME_AGE_NS = 800_000_000L
         const val CATCH_UP_LATENESS_NS = 80_000_000L
         val START_CODE = byteArrayOf(0x00, 0x00, 0x00, 0x01)

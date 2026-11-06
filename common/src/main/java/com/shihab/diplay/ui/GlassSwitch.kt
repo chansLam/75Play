@@ -3,15 +3,15 @@ package com.shihab.diplay.ui
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.RectF
-import android.graphics.Shader
 import android.view.View
 import android.widget.LinearLayout
+import com.shihab.diplay.ui.theme.ShellMotion
+import com.shihab.diplay.ui.theme.ShellSpacing
 
 /**
- * 圆角开关：开=系统蓝轨道，关=透底玻璃轨道，圆钮是白的。
+ * Tonal switch: the active track uses primary; the inactive track uses a surface container.
  * API 19 用 RectF 版 drawRoundRect；不依赖系统 Switch。
  * [compact] 保留兼容；车机短屏尺寸改由 [LayoutMetrics] 统一放大。
  */
@@ -24,8 +24,9 @@ class GlassSwitch @JvmOverloads constructor(
     private val knob = Paint(Paint.ANTI_ALIAS_FLAG)
     // switchW/H/Knob 为 dp；短屏走车机放大尺寸。
     private val w = GlassColors.dp(context, LayoutMetrics.switchW(context).let { if (!LayoutMetrics.isShort(context) && compact) 40 else it })
-    private val h = GlassColors.dp(context, LayoutMetrics.switchH(context).let { if (!LayoutMetrics.isShort(context) && compact) 22 else it })
-    private val knobD = GlassColors.dp(context, LayoutMetrics.switchKnob(context).let { if (!LayoutMetrics.isShort(context) && compact) 16 else it })
+    private val trackH = GlassColors.dp(context, LayoutMetrics.switchH(context))
+    private val knobD = GlassColors.dp(context, LayoutMetrics.switchKnob(context))
+    private val touchH = GlassColors.dp(context, ShellSpacing.MIN_TOUCH_TARGET)
     private var progress = 0f // 0=关, 1=开
     private var animator: ValueAnimator? = null
     private var checked = false
@@ -39,7 +40,7 @@ class GlassSwitch @JvmOverloads constructor(
     var onCheckedChangeListener: ((GlassSwitch, Boolean) -> Unit)? = null
 
     init {
-        layoutParams = LinearLayout.LayoutParams(w, h)
+        layoutParams = LinearLayout.LayoutParams(w, touchH)
         isClickable = true
         isFocusable = true
         setOnClickListener { setChecked(!checked, animate = true) }
@@ -66,32 +67,24 @@ class GlassSwitch @JvmOverloads constructor(
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        setMeasuredDimension(w, h)
+        setMeasuredDimension(w, touchH)
     }
 
     override fun onDraw(canvas: Canvas) {
-        val r = h / 2f
-        val rect = RectF(0f, 0f, w.toFloat(), h.toFloat())
+        val top = (touchH - trackH) / 2f
+        val bottom = top + trackH
+        val r = trackH / 2f
+        val rect = RectF(0f, top, w.toFloat(), bottom)
         track.style = Paint.Style.FILL
-        track.shader = LinearGradient(
-            0f, 0f, 0f, h.toFloat(),
-            blend(offTop(), GlassColors.ACCENT_LIFT, progress),
-            blend(offBottom(), GlassColors.ACCENT_DEEP, progress),
-            Shader.TileMode.CLAMP,
-        )
-        canvas.drawRoundRect(rect, r, r, track)
         track.shader = null
-        track.style = Paint.Style.FILL
-        val cy = h / 2f
+        track.color = blend(GlassColors.CARD, GlassColors.ACCENT, progress)
+        canvas.drawRoundRect(rect, r, r, track)
+        val cy = touchH / 2f
         val cx = knobD / 2f + (w - knobD) * progress
         val kr = knobD / 2f
         knob.style = Paint.Style.FILL
-        knob.color = 0x33000000
-        canvas.drawCircle(cx, cy + 1.5f, kr, knob)
-        knob.color = 0xFFFFFFFF.toInt()
+        knob.color = blend(GlassColors.MUTED, GlassColors.CONTROL_HANDLE, progress)
         canvas.drawCircle(cx, cy, kr, knob)
-        knob.color = 0x66FFFFFF
-        canvas.drawCircle(cx - kr * 0.22f, cy - kr * 0.28f, kr * 0.36f, knob)
     }
 
     private fun blend(from: Int, to: Int, t: Float): Int {
@@ -104,14 +97,10 @@ class GlassSwitch @JvmOverloads constructor(
         return (channel(24) shl 24) or (channel(16) shl 16) or (channel(8) shl 8) or channel(0)
     }
 
-    private fun offTop(): Int = if (GlassColors.isDark) 0x47FFFFFF else 0x24000000
-
-    private fun offBottom(): Int = if (GlassColors.isDark) 0x28FFFFFF else 0x14000000
-
     private fun animateTo(target: Float) {
         animator?.cancel()
         animator = ValueAnimator.ofFloat(progress, target).apply {
-            duration = 160
+            duration = ShellMotion.STATE
             addUpdateListener {
                 progress = it.animatedValue as Float
                 invalidate()

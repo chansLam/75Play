@@ -19,6 +19,7 @@ import java.io.FileOutputStream
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import com.shihab.diplay.host.GenericSwcAction
+import com.shihab.diplay.host.GenericSwcCode
 import com.shihab.diplay.host.GenericSwcMap
 import com.shihab.diplay.host.R
 
@@ -121,13 +122,13 @@ object AirPlayPersistence {
             .putBoolean(KEY_GENERIC_SWC_ENABLED, enabled).apply()
     }
 
-    fun loadGenericSwcBindings(context: Context): Map<GenericSwcAction, Int> =
+    fun loadGenericSwcBindings(context: Context): Map<GenericSwcAction, GenericSwcCode> =
         GenericSwcMap.decode(
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .getString(KEY_GENERIC_SWC_BINDINGS, ""),
         )
 
-    fun saveGenericSwcBindings(context: Context, bindings: Map<GenericSwcAction, Int>) {
+    fun saveGenericSwcBindings(context: Context, bindings: Map<GenericSwcAction, GenericSwcCode>) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString(KEY_GENERIC_SWC_BINDINGS, GenericSwcMap.encode(bindings)).apply()
     }

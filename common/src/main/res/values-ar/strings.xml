@@ -390,7 +390,7 @@
     <string name="settings_generic_swc_learn">تعلّم الأزرار</string>
     <string name="settings_generic_swc_learn_open">تعلّم</string>
     <string name="settings_generic_swc_title">تعلّم أزرار المقود</string>
-    <string name="settings_generic_swc_hint">عند تشغيل الأزرار العامة، يستخدم التعلّم وCarPlay في الأمام رمز الزر الذي يرسله النظام. عند الإيقاف تُستخدم أزرار هذه السيارة. اضغط وظيفة ثم الزر المقابل. الرجوع يلغي هذا التعلّم، والضغط المطوّل على الصف يمسحه. ضغطة الصوت القصيرة تغيّر صوت السيارة، والمطوّلة تكبّر الخريطة.</string>
+    <string name="settings_generic_swc_hint">عند تشغيل الأزرار العامة، يقبل التعلّم وCarPlay في الأمام رمز زر أندرويد واسم الزر الذي تبثه الوحدة. عند الإيقاف تُستخدم أزرار هذه السيارة. اضغط وظيفة ثم الزر المقابل. الرجوع يلغي هذا التعلّم، والضغط المطوّل على الصف يمسحه. ضغطة الصوت القصيرة تغيّر صوت السيارة، والمطوّلة تكبّر الخريطة.</string>
     <string name="settings_generic_swc_unbound">غير متعلَّم</string>
     <string name="settings_generic_swc_press">اضغط: %1$s</string>
     <string name="settings_swc_next">المقطع التالي</string>
@@ -402,4 +402,12 @@
     <string name="settings_swc_vol_down">خفض الصوت</string>
     <string name="settings_swc_mute">كتم</string>
     <string name="settings_swc_src">وضع الخريطة</string>
+    <string name="shell_nav_dashboard">لوحة القيادة</string>
+    <string name="shell_nav_control_center">مركز التحكم</string>
+    <string name="shell_nav_vehicle_device">المركبة والجهاز</string>
+    <string name="shell_category_picture_theme">الصورة والمظهر</string>
+    <string name="shell_category_vehicle_controls">عناصر تحكم المركبة</string>
+    <string name="shell_category_maintenance">الصيانة</string>
+    <string name="shell_category_product">معلومات التطبيق</string>
+    <string name="shell_category_hardware">النظام والأجهزة</string>
 </resources>

@@ -356,6 +356,7 @@ class CarPlayController(
             )
             if (
                 config.transport == CarPlayTransport.WIRELESS &&
+                phase == Phase.WIRELESS &&
                 !closed &&
                 activeSession === session &&
                 isBluetoothHandoffCommand(type) &&

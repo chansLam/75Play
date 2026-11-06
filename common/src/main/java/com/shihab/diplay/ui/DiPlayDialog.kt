@@ -4,8 +4,11 @@ import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.app.Activity
 import android.app.Dialog
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
@@ -27,17 +30,22 @@ import android.widget.ImageView
 import com.shihab.diplay.AirPlayPersistence
 import com.shihab.diplay.CarAppCatalog
 import com.shihab.diplay.host.GenericSwcAction
+import com.shihab.diplay.host.GenericSwcCode
 import com.shihab.diplay.host.GenericSwcLearn
 import com.shihab.diplay.host.GenericSwcMap
+import com.shihab.diplay.host.HeadUnitKeyEvents
 import com.shihab.diplay.host.ImmersiveBars
 import com.shihab.diplay.host.R
+import com.shihab.diplay.ui.theme.ShellMotion
+import com.shihab.diplay.ui.theme.ShellShape
+import com.shihab.diplay.ui.theme.ShellType
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 
 /**
- * Glass dialog toolkit for the DiPlay UI. API 19 safe (no Material3 / RenderEffect).
- * Window is always fullscreen + overlay; the glass panel is centered inside so the
+ * Tonal dialog toolkit for the DiPlay UI using API 19 View APIs only.
+ * Window is always fullscreen + overlay; the filled panel is centered inside so the
  * head-unit side navigation bar is never uncovered by a partial dialog window.
  * Panel width follows [LayoutMetrics.DialogSize] (Material-aligned 320 / 448 / 560dp caps).
  */
@@ -202,15 +210,15 @@ object DiPlayDialog {
         ).apply { topMargin = GlassColors.dp(context, 4); bottomMargin = GlassColors.dp(context, 4) }
     }
 
-    private fun checkGradient(context: Context, on: Boolean): android.graphics.drawable.GradientDrawable =
+    private fun checkMarkDrawable(context: Context, on: Boolean): android.graphics.drawable.GradientDrawable =
         android.graphics.drawable.GradientDrawable().apply {
-            cornerRadius = GlassColors.dp(context, 6).toFloat()
+            setCornerRadius(GlassColors.dp(context, ShellShape.EXTRA_SMALL).toFloat())
             if (on) {
                 setColor(GlassColors.ACCENT)
-                setStroke(0, android.graphics.Color.TRANSPARENT)
+                setStroke(0, GlassColors.TRANSPARENT)
             } else {
                 setColor(GlassColors.CARD)
-                setStroke(0, android.graphics.Color.TRANSPARENT)
+                setStroke(0, GlassColors.TRANSPARENT)
             }
         }
 
@@ -240,7 +248,7 @@ object DiPlayDialog {
         setOnClickListener { listener() }
         // 方向盘确定键可触发；聚焦叠青描边（主/危险钮圆角 16，次级 12）。
         isFocusable = true
-        FocusSupport.attachStrokeOverlay(this, cornerRadiusDp = 14)
+        FocusSupport.attachStrokeOverlay(this, cornerRadiusDp = ShellShape.SMALL)
     }
 
     /**
@@ -256,7 +264,7 @@ object DiPlayDialog {
                 if (dialog.isShowing) runCatching { dialog.cancel() }
             }
         }
-        // Absorb clicks on the glass panel so they don't dismiss via the scrim.
+        // Absorb clicks on the panel so they do not dismiss through the scrim.
         panel.isClickable = true
         val plp = panel.layoutParams
         val w = when {
@@ -272,14 +280,14 @@ object DiPlayDialog {
         val window = dialog.window ?: return
         // 无窗口动画：部分车机 ROM 在 enter 动画期间重新评估导航栏。
         window.setWindowAnimations(0)
-        window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+        window.setBackgroundDrawable(ColorDrawable(GlassColors.TRANSPARENT))
         window.setDimAmount(0f)
         window.addFlags(
             android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN or
                 android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
                 android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
         )
-        window.decorView.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+        window.decorView.setBackgroundDrawable(ColorDrawable(GlassColors.TRANSPARENT))
         track(dialog)
         dialog.setContentView(
             root,
@@ -309,7 +317,7 @@ object DiPlayDialog {
         val confirmBtn = dialogButton(
             context, confirm,
             if (danger) GlassColors.btnDanger() else GlassColors.btnPrimary(),
-            if (danger) GlassColors.WARNING else GlassColors.NAV_SELECTED_TEXT,
+            if (danger) GlassColors.BTN_DANGER_TEXT else GlassColors.NAV_SELECTED_TEXT,
         ) { applied = true; d.dismiss(); onConfirm() }
         shell.setFooter(buttonRow(context, cancelBtn, confirmBtn))
         shell.ready()
@@ -366,7 +374,7 @@ object DiPlayDialog {
         ).apply { topMargin = GlassColors.dp(context, 8); bottomMargin = GlassColors.dp(context, 4) })
         val error = TextView(context).apply {
             setTextColor(GlassColors.WARNING)
-            textSize = 13f
+            textSize = ShellType.CAPTION
             visibility = View.GONE
             setPadding(0, GlassColors.dp(context, 4), 0, 0)
         }
@@ -420,10 +428,10 @@ object DiPlayDialog {
             row.addView(label, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             if (index == current) {
                 row.addView(View(context).apply {
-                    background = android.graphics.drawable.GradientDrawable(
-                        android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
-                        intArrayOf(GlassColors.ACCENT_LIFT, GlassColors.ACCENT_DEEP),
-                    ).apply { cornerRadius = GlassColors.dp(context, 2).toFloat() }
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        setColor(GlassColors.ACCENT)
+                        setCornerRadius(GlassColors.dp(context, ShellShape.EXTRA_SMALL).toFloat())
+                    }
                     layoutParams = LinearLayout.LayoutParams(GlassColors.dp(context, 4), GlassColors.dp(context, 16))
                 })
             }
@@ -453,8 +461,7 @@ object DiPlayDialog {
                 text = option
                 isChecked = state.contains(index)
                 setTextColor(GlassColors.TEXT_BODY)
-                buttonTintList = android.content.res.ColorStateList.valueOf(GlassColors.ACCENT)
-                setMinimumHeight(GlassColors.dp(context, 44))
+                setMinimumHeight(LayoutMetrics.rowMinH(context))
                 setOnCheckedChangeListener { _, isChecked ->
                     if (isChecked) state.add(index) else state.remove(index)
                 }
@@ -515,7 +522,7 @@ object DiPlayDialog {
         spinner.addView(ProgressRing(context))
         spinner.addView(TextView(context).apply {
             text = "75Play"
-            textSize = 14f
+            textSize = ShellType.LABEL
             setTextColor(GlassColors.ACCENT)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             gravity = Gravity.CENTER
@@ -523,7 +530,7 @@ object DiPlayDialog {
         shell.body.addView(spinner)
         shell.body.addView(TextView(context).apply {
             this.text = description
-            textSize = 15f
+            textSize = ShellType.LABEL
             setTextColor(GlassColors.TEXT_MUTED)
             gravity = Gravity.CENTER
             setPadding(0, GlassColors.dp(context, 6), 0, 0)
@@ -531,14 +538,14 @@ object DiPlayDialog {
         if (footer != null) {
             shell.body.addView(TextView(context).apply {
                 this.text = footer
-                textSize = 13f
+                textSize = ShellType.CAPTION
                 setTextColor(GlassColors.DIM)
                 gravity = Gravity.CENTER
                 setPadding(0, GlassColors.dp(context, 6), 0, 0)
             })
         }
         val stageView = TextView(context).apply {
-            textSize = 20f
+            textSize = ShellType.TITLE
             setTextColor(GlassColors.ACCENT2)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             gravity = Gravity.CENTER
@@ -546,9 +553,9 @@ object DiPlayDialog {
         }
         shell.body.addView(stageView)
         val diagView = TextView(context).apply {
-            textSize = 13f
-            setTypeface(Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
-            setTextColor(0xFFFFB95C.toInt())
+            textSize = ShellType.CAPTION
+            typeface = Typeface.create(ShellType.MONO_FAMILY, Typeface.BOLD)
+            setTextColor(GlassColors.WARNING)
             gravity = Gravity.CENTER
             setPadding(0, GlassColors.dp(context, 6), 0, GlassColors.dp(context, 8))
         }
@@ -580,7 +587,7 @@ object DiPlayDialog {
         shell.addHeaderExtra(TextView(context).apply {
             text = context.getString(R.string.dialog_manage_apps_hint)
             setTextColor(GlassColors.TEXT_MUTED)
-            textSize = 12f
+            textSize = ShellType.CAPTION
             setPadding(0, GlassColors.dp(context, 2), 0, GlassColors.dp(context, 4))
         })
         val state = mutableMapOf<String, Boolean>()
@@ -588,10 +595,10 @@ object DiPlayDialog {
 
         fun checkbox(on: Boolean): TextView = TextView(context).apply {
             gravity = Gravity.CENTER
-            textSize = 13f
+            textSize = ShellType.CAPTION
             text = if (on) "✓" else ""
-            setTextColor(if (on) GlassColors.NAV_SELECTED_TEXT else android.graphics.Color.TRANSPARENT)
-            background = checkGradient(context, on)
+            setTextColor(if (on) GlassColors.NAV_SELECTED_TEXT else GlassColors.TRANSPARENT)
+            background = checkMarkDrawable(context, on)
         }
 
         val iconSize = GlassColors.dp(context, 26)
@@ -623,7 +630,7 @@ object DiPlayDialog {
                 row.addView(TextView(context).apply {
                     text = app.label
                     setTextColor(GlassColors.TEXT_PRIMARY)
-                    textSize = 14f
+                    textSize = ShellType.LABEL
                     maxLines = 1
                     ellipsize = android.text.TextUtils.TruncateAt.END
                 }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -649,8 +656,8 @@ object DiPlayDialog {
         val categoryMarks = mutableListOf<Pair<TextView, () -> Boolean>>()
         fun paintMark(cb: TextView, on: Boolean) {
             cb.text = if (on) "✓" else ""
-            cb.setTextColor(if (on) GlassColors.NAV_SELECTED_TEXT else android.graphics.Color.TRANSPARENT)
-            cb.background = checkGradient(context, on)
+            cb.setTextColor(if (on) GlassColors.NAV_SELECTED_TEXT else GlassColors.TRANSPARENT)
+            cb.background = checkMarkDrawable(context, on)
         }
         refreshCategoryMarks = {
             categoryMarks.forEach { (cb, on) -> paintMark(cb, on()) }
@@ -672,7 +679,7 @@ object DiPlayDialog {
             cell.addView(TextView(context).apply {
                 text = name
                 setTextColor(GlassColors.TEXT_BODY)
-                textSize = 13f
+                textSize = ShellType.CAPTION
                 setPadding(GlassColors.dp(context, 6), 0, 0, 0)
             })
             cell.setOnClickListener {
@@ -742,7 +749,7 @@ object DiPlayDialog {
         if (header != null) shell.body.addView(header)
         if (message != null) {
             shell.body.addView(body(context, message).apply {
-                if (LayoutMetrics.isShort(context)) textSize = 14f
+                if (LayoutMetrics.isShort(context)) textSize = ShellType.LABEL
             })
         }
         val btns = buttons.mapIndexed { index, (text, action) ->
@@ -762,12 +769,12 @@ object DiPlayDialog {
         return d
     }
 
-    /** Glass toast：替代系统 Toast，走同一套玻璃风格。长文请用 [showInfo]，勿塞进 Toast。 */
+    /** In-app toast. Long messages belong in [showInfo]. */
     fun toast(context: Context, message: String, long: Boolean = false) {
         val tv = TextView(context).apply {
             text = message
             setTextColor(GlassColors.TEXT_PRIMARY)
-            textSize = 15f
+            textSize = ShellType.LABEL
             setLineSpacing(0f, 1.15f)
             gravity = Gravity.START or Gravity.CENTER_VERTICAL
             setBackgroundResource(GlassColors.toastBg())
@@ -806,11 +813,7 @@ object DiPlayDialog {
                 val value = valueViews[action] ?: continue
                 val title = titleViews[action] ?: continue
                 val code = bindings[action]
-                value.text = if (code == null) {
-                    context.getString(R.string.settings_generic_swc_unbound)
-                } else {
-                    KeyEvent.keyCodeToString(code)
-                }
+                value.text = code?.label() ?: context.getString(R.string.settings_generic_swc_unbound)
                 val armed = GenericSwcLearn.armedAction() == action
                 title.setTextColor(if (armed) GlassColors.ACCENT else GlassColors.TEXT_BODY)
                 value.setTextColor(if (code == null) GlassColors.TEXT_MUTED else GlassColors.TEXT_PRIMARY)
@@ -844,8 +847,8 @@ object DiPlayDialog {
             row.addView(value)
             row.setOnClickListener {
                 status.text = context.getString(R.string.settings_generic_swc_press, action.label(context))
-                GenericSwcLearn.arm(action) { keyCode ->
-                    bindings = GenericSwcMap.assign(bindings, action, keyCode).toMutableMap()
+                GenericSwcLearn.arm(action) { code ->
+                    bindings = GenericSwcMap.assign(bindings, action, code).toMutableMap()
                     AirPlayPersistence.saveGenericSwcBindings(context, bindings)
                     GenericSwcLearn.disarm()
                 }
@@ -876,7 +879,24 @@ object DiPlayDialog {
             }
             GenericSwcLearn.onKey(event)
         }
-        d.setOnDismissListener { GenericSwcLearn.close() }
+        val learnReceiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context, intent: Intent) {
+                val press = HeadUnitKeyEvents.parse(intent) ?: return
+                if (!press.pressed) return
+                if (GenericSwcLearn.onName(press.token)) {
+                    // The learn sink saved the name and disarmed. Refresh is via setOnDisarm.
+                }
+            }
+        }
+        val learnFilter = IntentFilter().apply {
+            HeadUnitKeyEvents.learnActions().forEach { addAction(it) }
+        }
+        val learnContext = context.applicationContext
+        runCatching { learnContext.registerReceiver(learnReceiver, learnFilter) }
+        d.setOnDismissListener {
+            runCatching { learnContext.unregisterReceiver(learnReceiver) }
+            GenericSwcLearn.close()
+        }
         show(d, shell.panel, allowFocus = true)
     }
 }
@@ -922,7 +942,7 @@ class ProgressRing(context: Context) : View(context) {
     private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = stroke
-        color = 0x33FFFFFF.toInt()
+        color = GlassColors.DIVIDER
     }
     private val arc = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -931,12 +951,22 @@ class ProgressRing(context: Context) : View(context) {
         color = GlassColors.ACCENT
     }
 
-    init {
-        val anim = ObjectAnimator.ofFloat(this, "rotation", 0f, 360f)
-        anim.duration = 1100
-        anim.repeatCount = ValueAnimator.INFINITE
-        anim.interpolator = LinearInterpolator()
-        anim.start()
+    private var animator: ObjectAnimator? = null
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        animator = ObjectAnimator.ofFloat(this, "rotation", 0f, 360f).apply {
+            duration = ShellMotion.MODAL * 2
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = LinearInterpolator()
+            start()
+        }
+    }
+
+    override fun onDetachedFromWindow() {
+        animator?.cancel()
+        animator = null
+        super.onDetachedFromWindow()
     }
 
     override fun onDraw(canvas: Canvas) {

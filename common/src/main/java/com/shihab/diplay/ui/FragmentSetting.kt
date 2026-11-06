@@ -9,15 +9,11 @@ import androidx.fragment.app.Fragment
 import com.shihab.diplay.host.R
 import com.shihab.diplay.ui.settings.AudioSettingsColumn
 import com.shihab.diplay.ui.settings.DisplaySettingsColumn
-import com.shihab.diplay.ui.settings.GlassSettingsColumn
-import com.shihab.diplay.ui.settings.GlassSettingsRows
+import com.shihab.diplay.ui.settings.GlassSettingsPage
 import com.shihab.diplay.ui.settings.VehicleColumn
 import com.shihab.diplay.ui.settings.VideoSettingsColumn
 
-/**
- * Settings page: three cockpit columns. Picture and the former “other” rows share the last
- * column so a short card does not leave a hole over the wallpaper.
- */
+/** Control centre: every settings group is visible in one full-width workbench. */
 class FragmentSetting : Fragment() {
 
     private val displayColumn = DisplaySettingsColumn(this)
@@ -30,27 +26,27 @@ class FragmentSetting : Fragment() {
         val pad = LayoutMetrics.pagePad(ctx)
         val root = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(0)
+            setBackgroundColor(GlassColors.TRANSPARENT)
             setPadding(pad, pad, pad, pad)
         }
-        val cols = GlassSettingsColumn.columns(
+        val page = GlassSettingsPage.create(
             ctx,
             listOf(
-                ctx.getString(R.string.settings_display) to { card: LinearLayout ->
+                GlassSettingsPage.Section(ctx.getString(R.string.settings_display)) { card: LinearLayout ->
                     displayColumn.fill(card)
                 },
-                ctx.getString(R.string.audio) to { card: LinearLayout ->
+                GlassSettingsPage.Section(ctx.getString(R.string.audio)) { card: LinearLayout ->
                     audioColumn.fill(card)
                 },
-                ctx.getString(R.string.settings_advanced) to { card: LinearLayout ->
+                GlassSettingsPage.Section(ctx.getString(R.string.shell_category_picture_theme)) { card: LinearLayout ->
                     videoColumn.fill(card)
-                    card.addView(GlassSettingsRows.divider(card.context))
-                    GlassSettingsRows.cardTitle(card, ctx.getString(R.string.about_title_vehicle))
+                },
+                GlassSettingsPage.Section(ctx.getString(R.string.shell_category_vehicle_controls)) { card: LinearLayout ->
                     vehicleColumn.fill(card)
                 },
             ),
         )
-        root.addView(cols, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        root.addView(page, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         return root
     }
 

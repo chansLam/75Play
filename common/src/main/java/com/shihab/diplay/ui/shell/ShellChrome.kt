@@ -19,16 +19,20 @@ import com.shihab.diplay.ui.FragmentAbout
 import com.shihab.diplay.ui.FragmentHome
 import com.shihab.diplay.ui.FragmentSetting
 import com.shihab.diplay.ui.GlassColors
+import com.shihab.diplay.ui.HudPanelDrawable
 import com.shihab.diplay.ui.HudNavDrawable
 import com.shihab.diplay.ui.LayoutMetrics
 import com.shihab.diplay.ui.SpindleDivider
+import com.shihab.diplay.ui.theme.ShellShape
+import com.shihab.diplay.ui.theme.ShellSpacing
+import com.shihab.diplay.ui.theme.ShellStroke
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /**
  * 壳层左侧窄导航、顶栏和 Fragment 容器。
- * 宽屏左轨和页面之间、顶栏和内容之间，各有一条两头尖的分割线。
+ * 宽屏左轨和页面之间、顶栏和内容之间使用同一层级分隔线。
  * 顶栏右侧分成连接状态、无线电、日期时钟三组。竖屏目的地在底栏，选中同样是胶囊。
  * 页 id 仍由 [ShellNavigator] 持有。三页各留一个 Fragment，切换时 show/hide，避免拆掉滚动和扫描列表。
  */
@@ -89,12 +93,16 @@ class ShellChrome(
             root.addView(header, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, LayoutMetrics.statusBarH(activity),
             ))
-            val body = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }
+            val body = LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                val inset = LayoutMetrics.pagePad(activity)
+                setPadding(inset, 0, inset, inset)
+            }
             body.addView(buildLeftNav(withMark = false), LinearLayout.LayoutParams(
                 LayoutMetrics.navWidth(activity), ViewGroup.LayoutParams.MATCH_PARENT,
             ))
-            body.addView(SpindleDivider(activity).apply { vertical = true }, LinearLayout.LayoutParams(
-                dp(12), ViewGroup.LayoutParams.MATCH_PARENT,
+            body.addView(View(activity), LinearLayout.LayoutParams(
+                LayoutMetrics.colGap(activity), ViewGroup.LayoutParams.MATCH_PARENT,
             ))
             body.addView(container, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
             root.addView(body, LinearLayout.LayoutParams(
@@ -106,7 +114,7 @@ class ShellChrome(
                 ViewGroup.LayoutParams.MATCH_PARENT, LayoutMetrics.statusBarH(activity),
             ))
             content.addView(SpindleDivider(activity), LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(14),
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(ShellSpacing.LARGE),
             ))
             content.addView(container, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f,
@@ -134,7 +142,7 @@ class ShellChrome(
         chip.text = label
         chip.setTextColor(color)
         statusBackground?.setColor(fill)
-        statusBackground?.setStroke(0, 0)
+        statusBackground?.setStroke(maxOf(1, dp(ShellStroke.HAIRLINE)), GlassColors.GLASS_RIM)
         statusDot?.setColor(color)
     }
 
@@ -186,7 +194,7 @@ class ShellChrome(
         var first = true
         listOf(signal, wifi, hotspot, bluetooth).forEach { icon ->
             val lp = icon.layoutParams as? LinearLayout.LayoutParams ?: return@forEach
-            val start = if (icon.visibility == View.VISIBLE && !first) dp(7) else 0
+            val start = if (icon.visibility == View.VISIBLE && !first) dp(ShellSpacing.SMALL) else 0
             if (icon.visibility == View.VISIBLE) first = false
             if (lp.marginStart != start) {
                 lp.marginStart = start
@@ -273,15 +281,15 @@ class ShellChrome(
     private fun pageTitle(target: String): String {
         if (!LayoutMetrics.isWide(activity)) {
             return when (target) {
-                ShellNavigator.HOME -> activity.getString(R.string.diplay_nav_home)
-                ShellNavigator.ABOUT -> activity.getString(R.string.settings_vehicle)
-                else -> activity.getString(R.string.settings)
+                ShellNavigator.HOME -> activity.getString(R.string.shell_nav_dashboard)
+                ShellNavigator.ABOUT -> activity.getString(R.string.shell_nav_vehicle_device)
+                else -> activity.getString(R.string.shell_nav_control_center)
             }
         }
         return when (target) {
-            ShellNavigator.HOME -> activity.getString(R.string.diplay_nav_home)
-            ShellNavigator.ABOUT -> activity.getString(R.string.diplay_nav_vehicle_system)
-            else -> activity.getString(R.string.diplay_nav_display_audio)
+            ShellNavigator.HOME -> activity.getString(R.string.shell_nav_dashboard)
+            ShellNavigator.ABOUT -> activity.getString(R.string.shell_nav_vehicle_device)
+            else -> activity.getString(R.string.shell_nav_control_center)
         }
     }
 
@@ -312,11 +320,16 @@ class ShellChrome(
         row.addView(statusTitle, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
             marginEnd = dp(if (wide) 12 else 8)
         })
-        statusBackground = rounded(GlassColors.GLASS_CHIP, 0, dp(13), 0)
+        statusBackground = rounded(
+            GlassColors.GLASS_CHIP,
+            GlassColors.GLASS_RIM,
+            dp(ShellShape.SMALL),
+            ShellStroke.HAIRLINE,
+        )
         val dot = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             setColor(GlassColors.TEXT_MUTED)
-            val s = dp(6)
+            val s = dp(ShellSpacing.SMALL)
             setSize(s, s)
         }
         statusDot = dot
@@ -330,8 +343,8 @@ class ShellChrome(
             ellipsize = android.text.TextUtils.TruncateAt.END
             includeFontPadding = false
             gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = dp(26)
-            compoundDrawablePadding = dp(6)
+            minimumHeight = dp(ShellSpacing.DOUBLE_EXTRA_LARGE)
+            compoundDrawablePadding = dp(ShellSpacing.SMALL)
             setCompoundDrawablesRelativeWithIntrinsicBounds(dot, null, null, null)
             setPadding(
                 LayoutMetrics.statusPillPadH(activity),
@@ -343,10 +356,10 @@ class ShellChrome(
         }
         row.addView(status, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { marginEnd = dp(8) })
+        ).apply { marginEnd = dp(ShellSpacing.SMALL) })
         row.addView(radioCluster(), LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { marginEnd = dp(12) })
+        ).apply { marginEnd = dp(ShellSpacing.MEDIUM) })
         row.addView(clockCluster(showDate = wide))
         bar.addView(row, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
@@ -371,9 +384,9 @@ class ShellChrome(
         cluster.addView(View(activity).apply {
             setBackgroundColor(GlassColors.DIM)
             visibility = if (showDate) View.VISIBLE else View.GONE
-        }, LinearLayout.LayoutParams(maxOf(1, dp(1)), dp(12)).apply {
-            marginStart = if (showDate) dp(10) else 0
-            marginEnd = if (showDate) dp(10) else 0
+        }, LinearLayout.LayoutParams(maxOf(1, dp(ShellStroke.HAIRLINE)), dp(ShellSpacing.MEDIUM)).apply {
+            marginStart = if (showDate) dp(ShellSpacing.MEDIUM) else 0
+            marginEnd = if (showDate) dp(ShellSpacing.MEDIUM) else 0
             gravity = Gravity.CENTER_VERTICAL
         })
         statusClock = TextView(activity).apply {
@@ -393,12 +406,17 @@ class ShellChrome(
         val cluster = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            val py = dp(4)
-            minimumHeight = dp(26)
-            setPadding(dp(8), py, dp(8), py)
-            background = rounded(GlassColors.GLASS_CHIP, 0, dp(13), 0)
+            val py = dp(ShellSpacing.EXTRA_SMALL)
+            minimumHeight = dp(ShellSpacing.DOUBLE_EXTRA_LARGE)
+            setPadding(dp(ShellSpacing.SMALL), py, dp(ShellSpacing.SMALL), py)
+            background = rounded(
+                GlassColors.GLASS_CHIP,
+                GlassColors.GLASS_RIM,
+                dp(ShellShape.SMALL),
+                ShellStroke.HAIRLINE,
+            )
         }
-        val size = dp(15)
+        val size = dp(ShellSpacing.LARGE)
         fun slot(glyph: ShellStatusIconDrawable, description: String, visible: Boolean): ImageView =
             ImageView(activity).apply {
                 setImageDrawable(glyph)
@@ -426,7 +444,7 @@ class ShellChrome(
     private fun buildLeftNav(withMark: Boolean): View {
         val nav = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundResource(GlassColors.dockBg())
+            background = HudPanelDrawable(activity)
         }
         if (withMark) {
             nav.addView(railMark(), LinearLayout.LayoutParams(
@@ -435,8 +453,8 @@ class ShellChrome(
         }
         val destinations = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
-            val pad = dp(4)
-            setPadding(pad, dp(6), pad, pad)
+            val pad = dp(ShellSpacing.EXTRA_SMALL)
+            setPadding(pad, dp(ShellSpacing.SMALL), pad, pad)
         }
         addDestinations(destinations, rail = true)
         nav.addView(destinations, LinearLayout.LayoutParams(
@@ -449,7 +467,7 @@ class ShellChrome(
             textSize = LayoutMetrics.navVersionSize(activity)
             gravity = Gravity.CENTER
             maxLines = 1
-            setPadding(dp(4), 0, dp(4), LayoutMetrics.pagePad(activity))
+            setPadding(dp(ShellSpacing.EXTRA_SMALL), 0, dp(ShellSpacing.EXTRA_SMALL), LayoutMetrics.pagePad(activity))
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         return nav
     }
@@ -480,7 +498,7 @@ class ShellChrome(
             setBackgroundResource(GlassColors.dockBg())
         }
         shell.addView(SpindleDivider(activity), LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(10),
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(ShellSpacing.MEDIUM),
         ))
         val nav = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -492,9 +510,9 @@ class ShellChrome(
     }
 
     private fun addDestinations(nav: LinearLayout, rail: Boolean) {
-        navEntry(nav, "home", activity.getString(R.string.diplay_nav_home), activity.getString(R.string.diplay_nav_home), R.drawable.ic_dp_overview, rail)
-        navEntry(nav, "settings", activity.getString(R.string.settings), activity.getString(R.string.diplay_nav_display_audio), R.drawable.ic_dp_settings, rail)
-        navEntry(nav, "about", activity.getString(R.string.settings_vehicle), activity.getString(R.string.diplay_nav_vehicle_system), R.drawable.ic_dp_vehicle, rail)
+        navEntry(nav, "home", activity.getString(R.string.shell_nav_dashboard), activity.getString(R.string.shell_nav_dashboard), R.drawable.ic_dp_overview, rail)
+        navEntry(nav, "settings", activity.getString(R.string.shell_nav_control_center), activity.getString(R.string.shell_nav_control_center), R.drawable.ic_dp_settings, rail)
+        navEntry(nav, "about", activity.getString(R.string.shell_nav_vehicle_device), activity.getString(R.string.shell_nav_vehicle_device), R.drawable.ic_dp_vehicle, rail)
     }
 
     /**
@@ -532,10 +550,10 @@ class ShellChrome(
             textSize = LayoutMetrics.navLabelSize(activity)
             setTextColor(GlassColors.NAV_UNSELECTED)
             gravity = Gravity.CENTER
-            maxLines = 1
+            maxLines = if (rail) 2 else 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             includeFontPadding = false
-            setPadding(dp(4), dp(2), dp(4), 0)
+            setPadding(dp(ShellSpacing.EXTRA_SMALL), dp(ShellSpacing.EXTRA_SMALL), dp(ShellSpacing.EXTRA_SMALL), 0)
         }
         shell.addView(itemIcon, LinearLayout.LayoutParams(iconSize, iconSize).apply {
             gravity = Gravity.CENTER_HORIZONTAL
@@ -560,14 +578,14 @@ class ShellChrome(
         statusTitle?.text = pageTitle(selected)
         navEntries.forEach { (target, entry) ->
             val on = target == selected
-            entry.label.setTextColor(if (on) GlassColors.INK else GlassColors.NAV_UNSELECTED)
+            entry.label.setTextColor(if (on) GlassColors.NAV_SELECTED_CONTAINER_TEXT else GlassColors.NAV_UNSELECTED)
             entry.label.setTypeface(null, if (on) Typeface.BOLD else Typeface.NORMAL)
-            entry.icon.setColorFilter(if (on) GlassColors.ACCENT else GlassColors.NAV_UNSELECTED)
+            entry.icon.setColorFilter(if (on) GlassColors.NAV_SELECTED_CONTAINER_TEXT else GlassColors.NAV_UNSELECTED)
             renderNavRow(target)
         }
     }
 
-    /** 焦点、按下或换页后重算背景：选中是蓝色玻璃胶囊，方向盘焦点和按下是一块浅玻璃。 */
+    /** Recompute tonal selected, focus, and press states after navigation changes. */
     private fun renderNavRow(target: String) {
         val entry = navEntries[target] ?: return
         val on = target == shown
@@ -581,7 +599,7 @@ class ShellChrome(
 
     private fun rounded(fill: Int, stroke: Int, radiusPx: Int, strokeDp: Int = 1): GradientDrawable =
         GradientDrawable().apply {
-            cornerRadius = radiusPx.toFloat()
+            setCornerRadius(radiusPx.toFloat())
             setColor(fill)
             if (strokeDp > 0) setStroke(maxOf(1, dp(strokeDp)), stroke)
         }

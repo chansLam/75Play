@@ -18,6 +18,9 @@ import com.shihab.diplay.connect.ShellNetworkActions
 import com.shihab.diplay.host.R
 import com.shihab.diplay.orchestration.WirelessHotspotMode
 import com.shihab.diplay.ui.settings.GlassSettingsRows
+import com.shihab.diplay.ui.theme.ShellShape
+import com.shihab.diplay.ui.theme.ShellSpacing
+import com.shihab.diplay.ui.theme.ShellStroke
 import com.shihab.diplay.util.AppLog
 
 /**
@@ -94,28 +97,36 @@ class FragmentHome : Fragment() {
             setBackgroundColor(0)
             setPadding(pad, pad, pad, pad)
         }
+        val wide = LayoutMetrics.isWide(ctx)
         val below = LinearLayout(ctx).apply {
-            orientation = if (LayoutMetrics.isWide(ctx)) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+            orientation = if (wide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
         }
-        val modeLp = if (LayoutMetrics.isWide(ctx)) {
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
+        val modeLp = if (wide) {
+            LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                1f,
+            )
         } else {
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
         }
         below.addView(buildModeCard(ctx), modeLp)
-        below.addView(SpindleDivider(ctx).apply { vertical = LayoutMetrics.isWide(ctx) }, if (LayoutMetrics.isWide(ctx)) {
+        below.addView(SpindleDivider(ctx).apply { vertical = wide }, if (wide) {
             LinearLayout.LayoutParams(gap, ViewGroup.LayoutParams.MATCH_PARENT)
         } else {
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, gap)
         })
-        val appsLp = if (LayoutMetrics.isWide(ctx)) {
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                gravity = Gravity.CENTER_VERTICAL
-            }
+        val appsLp = if (wide) {
+            LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                1f,
+            )
         } else {
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-            }
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                LayoutMetrics.homeAppsStripH(ctx),
+            )
         }
         below.addView(appGridUi.buildAppListCard(ctx), appsLp)
         root.addView(below, LinearLayout.LayoutParams(
@@ -200,9 +211,8 @@ class FragmentHome : Fragment() {
     private fun bluetoothDeviceLabel(): String =
         host.connectedBluetoothDeviceName().ifBlank { host.chooseIphoneTitle() }
 
-    /** 左侧连接舱：主按钮、蓝牙，然后才是连接方式。宽屏在左，竖屏在应用格上面。 */
+    /** 左侧连接舱：主操作在上、连接方式与详情在下，不再拆成左右两个子面板。 */
     private fun buildModeCard(ctx: android.content.Context): View {
-        // 还原 fe916d7 去掉的连接中心玻璃外框（圆角玻璃底 + 统一卡片内边距）；区内大标题「连接中心」按要求去掉。
         val content = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             clipChildren = true
@@ -214,9 +224,9 @@ class FragmentHome : Fragment() {
             )
         }
         val heroGap = LayoutMetrics.heroGap(ctx)
-        val heroBlock = LinearLayout(ctx).apply {
+        val heroPane = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
+            gravity = Gravity.CENTER
         }
         val orbSize = LayoutMetrics.connectOrbSize(ctx)
         heroBtn = ConnectOrb(ctx).apply {
@@ -230,49 +240,60 @@ class FragmentHome : Fragment() {
                 }
             }
         }
-        heroBlock.addView(heroBtn, LinearLayout.LayoutParams(orbSize, orbSize).apply {
+        heroPane.addView(heroBtn, LinearLayout.LayoutParams(orbSize, orbSize).apply {
             gravity = Gravity.CENTER_HORIZONTAL
-            topMargin = heroGap
         })
-        flowView = ConnectFlowView(ctx).apply { visibility = View.GONE }
-        heroBlock.addView(flowView, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+        val btView = label(
+            ctx,
+            ctx.getString(R.string.home_loading),
+            LayoutMetrics.heroMainSize(ctx),
+            GlassColors.TEXT_PRIMARY,
+            bold = true,
+        ).apply {
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            gravity = Gravity.CENTER
+        }.also { bluetoothDeviceText = it }
+        heroPane.addView(btView, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply { topMargin = heroGap })
-        heroMain = label(ctx, "", LayoutMetrics.heroSubSize(ctx), GlassColors.ACCENT).apply {
+        heroMain = label(
+            ctx,
+            ctx.getString(R.string.home_tap_to_connect),
+            LayoutMetrics.heroSubSize(ctx),
+            GlassColors.TEXT_MUTED,
+        ).apply {
             gravity = Gravity.CENTER
             maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
-            visibility = View.INVISIBLE
-            minimumHeight = dp(22)
+            minimumHeight = dp(ShellSpacing.DOUBLE_EXTRA_LARGE)
         }
-        heroBlock.addView(heroMain, LinearLayout.LayoutParams(
+        heroPane.addView(heroMain, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = dp(ShellSpacing.SMALL) })
+        heroPane.addView(
+            GlassSettingsRows.ghostButton(
+                ctx,
+                ctx.getString(R.string.home_choose_device),
+                cornerRadiusDp = ShellShape.SMALL,
+            ) { host.choosePhone() },
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = heroGap },
+        )
+        flowView = ConnectFlowView(ctx).apply { visibility = View.GONE }
+        heroPane.addView(flowView, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply { topMargin = heroGap })
-        val topHalf = LinearLayout(ctx).apply {
+
+        val modePane = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            addView(heroBlock, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-            ))
+            clipChildren = true
+            clipToPadding = true
         }
-        content.addView(topHalf, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 0.75f,
-        ))
-        topHalf.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ -> fitConnectOrb(v) }
-        val bottomHalf = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        val btRow = LinearLayout(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = LayoutMetrics.rowMinH(ctx)
-            setPadding(0, LayoutMetrics.rowPadV(ctx) / 2, 0, 0)
-        }
-        val btView = label(ctx, ctx.getString(R.string.home_loading), LayoutMetrics.homeBodyTextSize(ctx), GlassColors.MUTED).apply {
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        }.also { bluetoothDeviceText = it }
-        btRow.addView(btView, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        btRow.addView(GlassSettingsRows.ghostButton(ctx, ctx.getString(R.string.home_choose_device), cornerRadiusDp = 14) { host.choosePhone() })
-        bottomHalf.addView(btRow)
         val modeRadius = LayoutMetrics.modeTabRadiusDp(ctx)
         val modeRow = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -291,7 +312,7 @@ class FragmentHome : Fragment() {
             ctx.getString(R.string.home_mode_car_hotspot),
             ctx.getString(R.string.home_mode_lan),
         )
-        val tabInset = dp(3)
+        val tabInset = dp(ShellSpacing.EXTRA_SMALL)
         modeKeys.forEachIndexed { index, key ->
             val tab = modeTab(ctx, modeLabels[index]) { switchTab(key) }
             tabButtons[key] = tab
@@ -299,8 +320,7 @@ class FragmentHome : Fragment() {
                 setMargins(tabInset, tabInset, tabInset, tabInset)
             })
         }
-        bottomHalf.addView(modeRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, LayoutMetrics.modeTabMinH(ctx)).apply {
-            topMargin = heroGap
+        modePane.addView(modeRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, LayoutMetrics.modeTabMinH(ctx)).apply {
             bottomMargin = heroGap
         })
 
@@ -320,19 +340,30 @@ class FragmentHome : Fragment() {
         }
         // Weight + height 0 so the scroll area shrinks and the disconnect row stays pinned
         // at the bottom of the card (WRAP_CONTENT used to push it below the clip edge).
-        bottomHalf.addView(tabScroll, LinearLayout.LayoutParams(
+        modePane.addView(tabScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f,
         ))
 
         disconnectDivider = divider(ctx)
         disconnectDivider.visibility = View.GONE
-        bottomHalf.addView(disconnectDivider)
+        modePane.addView(disconnectDivider)
 
         disconnectBtn = glassButton(ctx, ctx.getString(R.string.home_disconnect), false) { host.disconnectSession() }
         disconnectBtn.visibility = View.GONE
-        bottomHalf.addView(disconnectBtn, lpFull(ctx, LayoutMetrics.disconnectBtnH(ctx)))
-        content.addView(bottomHalf, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.25f,
+        modePane.addView(disconnectBtn, lpFull(ctx, LayoutMetrics.disconnectBtnH(ctx)))
+
+        content.addView(heroPane, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ))
+        content.addView(SpindleDivider(ctx), LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            heroGap,
+        ))
+        content.addView(modePane, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            0,
+            1f,
         ))
 
         val startTab = when (AirPlayPersistence.loadWirelessHotspotMode(requireContext())) {
@@ -344,9 +375,7 @@ class FragmentHome : Fragment() {
         return content
     }
 
-    /**
-     * 连接方式分段：轨道是玻璃槽，选中项是一颗系统蓝胶囊，字是白的。
-     */
+    /** Connection mode segmented control using the selected container role. */
     private fun modeTab(ctx: android.content.Context, text: String, click: () -> Unit): View {
         val label = TextView(ctx).apply {
             this.text = text
@@ -356,7 +385,7 @@ class FragmentHome : Fragment() {
             setTextColor(GlassColors.NAV_UNSELECTED)
             includeFontPadding = false
             val pv = LayoutMetrics.modeTabPadV(ctx)
-            setPadding(dp(4), pv, dp(4), pv)
+            setPadding(dp(ShellSpacing.EXTRA_SMALL), pv, dp(ShellSpacing.EXTRA_SMALL), pv)
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
         }
@@ -383,7 +412,7 @@ class FragmentHome : Fragment() {
         ctx: android.content.Context,
         on: Boolean,
     ): android.graphics.drawable.GradientDrawable = modeTabBg(ctx, on).apply {
-        setStroke(dp(2), GlassColors.ACCENT)
+        setStroke(dp(ShellStroke.FOCUS), GlassColors.ACCENT)
     }
 
     private fun modeTabBg(
@@ -392,16 +421,14 @@ class FragmentHome : Fragment() {
     ): android.graphics.drawable.GradientDrawable {
         val r = dp(LayoutMetrics.modeTabRadiusDp(ctx)).toFloat()
         return if (on) {
-            android.graphics.drawable.GradientDrawable(
-                android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(GlassColors.ACCENT_LIFT, GlassColors.ACCENT_DEEP),
-            ).apply {
-                cornerRadius = r
+            android.graphics.drawable.GradientDrawable().apply {
+                setColor(GlassColors.NAV_SELECTED)
+                setCornerRadius(r)
             }
         } else {
             android.graphics.drawable.GradientDrawable().apply {
-                setColor(android.graphics.Color.TRANSPARENT)
-                cornerRadius = r
+                setColor(GlassColors.TRANSPARENT)
+                setCornerRadius(r)
             }
         }
     }
@@ -451,7 +478,7 @@ class FragmentHome : Fragment() {
             val visual = btn.tag as? ModeTabVisual ?: return@forEach
             visual.on = active
             visual.label.setTextColor(
-                if (active) GlassColors.NAV_SELECTED_TEXT else GlassColors.NAV_UNSELECTED,
+                if (active) GlassColors.NAV_SELECTED_CONTAINER_TEXT else GlassColors.NAV_UNSELECTED,
             )
             btn.background = if (btn.isFocused) modeTabFocusedBg(ctx, active) else modeTabBg(ctx, active)
         }
@@ -477,8 +504,9 @@ class FragmentHome : Fragment() {
                 heroBtn.setSpinning(false)
                 flowView.showIdle()
                 flowView.visibility = View.GONE
-                heroMain.text = ""
-                heroMain.visibility = View.INVISIBLE
+                heroMain.text = ctx.getString(R.string.open_carplay)
+                heroMain.setTextColor(GlassColors.SUCCESS)
+                heroMain.visibility = View.VISIBLE
             }
             connecting -> {
                 val stage = host.connectStageLabel().ifBlank { ctx.getString(R.string.connecting_to_your_iphone) }
@@ -498,8 +526,9 @@ class FragmentHome : Fragment() {
                 heroBtn.setSpinning(false)
                 flowView.showIdle()
                 flowView.visibility = View.GONE
-                heroMain.text = ""
-                heroMain.visibility = View.INVISIBLE
+                heroMain.text = ctx.getString(R.string.home_tap_to_connect)
+                heroMain.setTextColor(GlassColors.TEXT_MUTED)
+                heroMain.visibility = View.VISIBLE
             }
         }
         bluetoothDeviceText?.text = bluetoothDeviceLabel()
@@ -515,7 +544,6 @@ class FragmentHome : Fragment() {
             },
         )
         if (::disconnectDivider.isInitialized) disconnectDivider.visibility = showDisconnect
-        (heroBtn.parent?.parent as? View)?.let { top -> top.post { fitConnectOrb(top) } }
     }
 
     /** 连接钮放大时给五步说明和当前阶段句留出高度，避免被下半区盖住。上下权重不动。 */
@@ -589,7 +617,7 @@ class FragmentHome : Fragment() {
 
     private fun divider(ctx: android.content.Context): View = SpindleDivider(ctx).apply {
         val g = LayoutMetrics.dividerGap(ctx)
-        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(8)).apply {
+        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(ShellSpacing.SMALL)).apply {
             topMargin = g
             bottomMargin = g
         }
@@ -612,7 +640,7 @@ class FragmentHome : Fragment() {
             minimumHeight = h
             setPadding(LayoutMetrics.ghostPadH(ctx), LayoutMetrics.ghostPadV(ctx), LayoutMetrics.ghostPadH(ctx), LayoutMetrics.ghostPadV(ctx))
             setOnClickListener { click() }
-            FocusSupport.attachStrokeOverlay(this, cornerRadiusDp = 14)
+            FocusSupport.attachStrokeOverlay(this, cornerRadiusDp = ShellShape.SMALL)
         }
 
     /** 连接方式分段项的可视状态：label、形状、是否选中。tag 持有者。 */

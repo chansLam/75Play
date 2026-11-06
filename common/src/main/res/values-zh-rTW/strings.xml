@@ -388,7 +388,7 @@
     <string name="settings_generic_swc_learn">學習按鍵</string>
     <string name="settings_generic_swc_learn_open">學習</string>
     <string name="settings_generic_swc_title">學習方向盤按鍵</string>
-    <string name="settings_generic_swc_hint">打開「通用方控」後，學習和 CarPlay 前景都按系統送來的按鍵碼響應。關閉時仍用本車原有方控。點一項功能，再按下對應鍵。返回取消這次學習，長按一行清除。音量短按仍調節車機音量，長按縮放地圖。</string>
+    <string name="settings_generic_swc_hint">打開「通用方控」後，學習和 CarPlay 前景會收下系統按鍵碼，以及車機廣播的方向盤鍵名。關閉時仍用本車原有方控。點一項功能，再按下對應鍵。返回取消這次學習，長按一行清除。音量短按仍調節車機音量，長按縮放地圖。</string>
     <string name="settings_generic_swc_unbound">未學習</string>
     <string name="settings_generic_swc_press">請按下：%1$s</string>
     <string name="settings_swc_next">下一曲</string>
@@ -400,4 +400,12 @@
     <string name="settings_swc_vol_down">音量減</string>
     <string name="settings_swc_mute">靜音</string>
     <string name="settings_swc_src">地圖視角</string>
+    <string name="shell_nav_dashboard">駕駛台</string>
+    <string name="shell_nav_control_center">控制中心</string>
+    <string name="shell_nav_vehicle_device">車輛與裝置</string>
+    <string name="shell_category_picture_theme">畫面與主題</string>
+    <string name="shell_category_vehicle_controls">車輛控制</string>
+    <string name="shell_category_maintenance">維護與診斷</string>
+    <string name="shell_category_product">應用資訊</string>
+    <string name="shell_category_hardware">系統與硬體</string>
 </resources>

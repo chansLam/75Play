@@ -10,6 +10,7 @@ import com.shihab.diplay.host.FloatingBall
 import com.shihab.diplay.host.HostVideoSurfaces
 import com.shihab.diplay.host.HostLogView
 import com.shihab.diplay.host.HomeScreenMonitor
+import com.shihab.diplay.host.GenericSwcBroadcast
 import com.shihab.diplay.host.GenericSwcKeys
 import com.shihab.diplay.host.SwcCarPlayKeys
 import android.graphics.PixelFormat
@@ -696,11 +697,13 @@ class CarPlayHostActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         isActivityStarted = true
-        // Built-in wheel names use key-test mode. Generic steering listens for the key codes
-        // the system delivers, so that listener stays off.
+        // Built-in wheel names use key-test mode. Generic steering uses the same switch so a
+        // learned broadcast name is not also handled by the head unit.
         if (AirPlayPersistence.loadGenericSwcEnabled(this)) {
             SwcCarPlayKeys.forceOff(this)
+            GenericSwcBroadcast.start(this) { controller }
         } else {
+            GenericSwcBroadcast.stop(this)
             SwcCarPlayKeys.start(this) { controller }
         }
         logThemeState(ThemeModeDiagnostics.Source.START, resources.configuration)
@@ -845,6 +848,7 @@ class CarPlayHostActivity : ComponentActivity() {
         closePicturePanel()
         // The controller, USB/iAP2 link, and wireless listener intentionally outlive the UI.
         isActivityStarted = false
+        GenericSwcBroadcast.stop(this)
         SwcCarPlayKeys.stop(this)
         logThemeState(ThemeModeDiagnostics.Source.STOP, resources.configuration)
         mainHandler.removeCallbacks(pollConfiguration)
@@ -883,6 +887,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        GenericSwcBroadcast.stop(this)
         SwcCarPlayKeys.stop(this)
         NaviClusterBroadcast.detach()
         notePicture(false)
@@ -1533,6 +1538,7 @@ class CarPlayHostActivity : ComponentActivity() {
         sessionShutdown(terminateProcess, reason, completion)
 
     internal fun sessionShutdown(terminateProcess: Boolean, reason: String, completion: () -> Unit = {}) {
+        GenericSwcBroadcast.stop(this)
         SwcCarPlayKeys.stop(this)
         if (!shuttingDown.compareAndSet(false, true)) { completion(); return }
         sessionTeardownStarted.set(true)

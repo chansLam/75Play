@@ -390,7 +390,7 @@
     <string name="settings_generic_swc_learn">Aprender teclas</string>
     <string name="settings_generic_swc_learn_open">Aprender</string>
     <string name="settings_generic_swc_title">Aprender teclas del volante</string>
-    <string name="settings_generic_swc_hint">Con el volante genérico activado, el aprendizaje y CarPlay en primer plano usan el código de tecla que entrega el sistema. Desactivado, se usan las teclas de este coche. Toque una función y pulse su tecla. Atrás cancela ese aprendizaje; una pulsación larga borra la fila. Un toque corto de volumen cambia el volumen del coche; mantenerlo amplía el mapa.</string>
+    <string name="settings_generic_swc_hint">Con el volante genérico activado, el aprendizaje y CarPlay en primer plano aceptan el código de tecla de Android y el nombre que la unidad emite por broadcast. Desactivado, se usan las teclas de este coche. Toque una función y pulse su tecla. Atrás cancela ese aprendizaje; una pulsación larga borra la fila. Un toque corto de volumen cambia el volumen del coche; mantenerlo amplía el mapa.</string>
     <string name="settings_generic_swc_unbound">Sin aprender</string>
     <string name="settings_generic_swc_press">Pulse: %1$s</string>
     <string name="settings_swc_next">Pista siguiente</string>
@@ -402,4 +402,12 @@
     <string name="settings_swc_vol_down">Bajar volumen</string>
     <string name="settings_swc_mute">Silencio</string>
     <string name="settings_swc_src">Vista del mapa</string>
+    <string name="shell_nav_dashboard">Panel</string>
+    <string name="shell_nav_control_center">Centro de control</string>
+    <string name="shell_nav_vehicle_device">Vehículo y dispositivo</string>
+    <string name="shell_category_picture_theme">Imagen y tema</string>
+    <string name="shell_category_vehicle_controls">Controles del vehículo</string>
+    <string name="shell_category_maintenance">Mantenimiento</string>
+    <string name="shell_category_product">Producto</string>
+    <string name="shell_category_hardware">Sistema y hardware</string>
 </resources>

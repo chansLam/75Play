@@ -16,12 +16,13 @@ import com.shihab.diplay.ui.GlassColors
 import com.shihab.diplay.ui.GlassDropdown
 import com.shihab.diplay.ui.GlassSwitch
 import com.shihab.diplay.ui.LayoutMetrics
+import com.shihab.diplay.ui.theme.ShellShape
 
 internal abstract class AboutColumnKit(page: Fragment) : SettingsColumnKit(page) {
     protected fun capVal(ctx: android.content.Context, text: String, color: Int = GlassColors.CAP_TEXT) =
         GlassSettingsRows.capVal(ctx, text, color)
     protected fun ghostButton(ctx: android.content.Context, text: String, click: () -> Unit) =
-        GlassSettingsRows.ghostButton(ctx, text, cornerRadiusDp = 14, click)
+        GlassSettingsRows.ghostButton(ctx, text, cornerRadiusDp = ShellShape.SMALL, click = click)
     protected fun glassSwitchRow(
         ctx: android.content.Context,
         title: String,

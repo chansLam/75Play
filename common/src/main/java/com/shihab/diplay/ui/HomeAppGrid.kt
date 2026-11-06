@@ -22,6 +22,8 @@ import com.shihab.diplay.OemSettingsIntents
 import com.shihab.diplay.compat.waitForMillis
 import com.shihab.diplay.host.R
 import com.shihab.diplay.ui.settings.GlassSettingsRows
+import com.shihab.diplay.ui.theme.ShellShape
+import com.shihab.diplay.ui.theme.ShellSpacing
 
 /**
  * 主页右侧车机应用网格：枚举 / 隐藏·排序 prefs / 拖拽换位 / 管理弹窗 / 启动与卸载。
@@ -84,53 +86,15 @@ internal class HomeAppGrid(
     private fun dp(v: Int) = GlassColors.dp(fragment.requireContext(), v)
 
     fun buildAppListCard(ctx: android.content.Context): LinearLayout {
-        val icon = dp(LayoutMetrics.appIconDp(ctx))
-        val inset = icon / 2 + icon / 4
-        val card = object : LinearLayout(ctx) {
-            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-                val widthLimit = boundedSize(widthMeasureSpec, appFrameMaxWidth(ctx))
-                val heightFallback = if (LayoutMetrics.isWide(ctx)) Int.MAX_VALUE / 4 else LayoutMetrics.homeAppsStripH(ctx)
-                val heightLimit = boundedSize(heightMeasureSpec, heightFallback)
-                val innerW = (widthLimit - paddingLeft - paddingRight).coerceAtLeast(0)
-                val header = if (childCount > 0) getChildAt(0) else null
-                val tick = if (childCount > 1) getChildAt(1) else null
-                val scroll = appScroll
-                val flow = appGrid
-                val unspecified = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
-                val innerWidthSpec = MeasureSpec.makeMeasureSpec(innerW, MeasureSpec.AT_MOST)
-                header?.measure(innerWidthSpec, unspecified)
-                flow?.measure(innerWidthSpec, unspecified)
-                val flowW = (flow?.measuredWidth ?: 0).coerceAtLeast(1)
-                val contentW = maxOf(header?.measuredWidth ?: 0, flowW)
-                val tickH = (tick?.layoutParams?.height ?: 0).coerceAtLeast(0)
-                tick?.measure(
-                    MeasureSpec.makeMeasureSpec(contentW, MeasureSpec.EXACTLY),
-                    MeasureSpec.makeMeasureSpec(tickH, MeasureSpec.EXACTLY),
-                )
-                val width = (contentW + paddingLeft + paddingRight).coerceAtMost(widthLimit)
-                var chrome = paddingTop + paddingBottom
-                chrome += verticalMargins(header) + (header?.measuredHeight ?: 0)
-                chrome += verticalMargins(tick) + (tick?.measuredHeight ?: 0)
-                chrome += verticalMargins(scroll)
-                val flowH = flow?.measuredHeight ?: 0
-                val wanted = chrome + flowH
-                val height = wanted.coerceAtMost(heightLimit)
-                val scrollH = if (wanted > height) (height - chrome).coerceAtLeast(0) else flowH
-                scroll?.measure(
-                    MeasureSpec.makeMeasureSpec(flowW, MeasureSpec.EXACTLY),
-                    MeasureSpec.makeMeasureSpec(scrollH, MeasureSpec.EXACTLY),
-                )
-                setMeasuredDimension(width.coerceAtLeast(suggestedMinimumWidth), height.coerceAtLeast(suggestedMinimumHeight))
-            }
-
-            private fun verticalMargins(child: View?): Int {
-                val lp = child?.layoutParams as? MarginLayoutParams ?: return 0
-                return lp.topMargin + lp.bottomMargin
-            }
-        }.apply {
+        val card = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             background = HudPanelDrawable(ctx)
-            setPadding(inset, inset, inset, inset)
+            setPadding(
+                LayoutMetrics.cardPadH(ctx),
+                LayoutMetrics.cardPadV(ctx),
+                LayoutMetrics.cardPadH(ctx),
+                LayoutMetrics.cardPadV(ctx),
+            )
         }
         val headRow = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -139,7 +103,7 @@ internal class HomeAppGrid(
         headRow.addView(label(ctx, ctx.getString(R.string.home_head_unit_apps), LayoutMetrics.cardTitleSize(ctx), GlassColors.TEXT_PRIMARY, true).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         val manageBtn = Button(ctx).apply {
             text = ctx.getString(R.string.home_manage)
             textSize = LayoutMetrics.manageBtnTextSize(ctx)
@@ -154,11 +118,11 @@ internal class HomeAppGrid(
             setPadding(LayoutMetrics.ghostPadH(ctx), LayoutMetrics.ghostPadV(ctx), LayoutMetrics.ghostPadH(ctx), LayoutMetrics.ghostPadV(ctx))
             setOnClickListener { showManageDialog(ctx) }
         }
-        FocusSupport.attachStrokeOverlay(manageBtn, cornerRadiusDp = 16)
+        FocusSupport.attachStrokeOverlay(manageBtn, cornerRadiusDp = ShellShape.MEDIUM)
         headRow.addView(manageBtn, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { leftMargin = dp(8) })
+        ).apply { leftMargin = dp(ShellSpacing.SMALL) })
         card.addView(headRow)
         val tick = GlassSettingsRows.titleTick(ctx)
         (tick.layoutParams as? LinearLayout.LayoutParams)?.width = ViewGroup.LayoutParams.MATCH_PARENT
@@ -166,35 +130,21 @@ internal class HomeAppGrid(
         val grid = AppFlow(ctx)
         appGrid = grid
         grid.addView(label(ctx, ctx.getString(R.string.home_loading), LayoutMetrics.homeMutedTextSize(ctx), GlassColors.TEXT_BODY).apply {
-            setPadding(0, dp(8), 0, 0)
+            setPadding(0, dp(ShellSpacing.SMALL), 0, 0)
         })
         val scroll = ScrollView(ctx).apply {
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
             isFillViewport = false
-            addView(grid, ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            addView(grid, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
         appScroll = scroll
         card.addView(scroll, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            0,
+            1f,
         ).apply { topMargin = LayoutMetrics.cardTitleGap(ctx) })
         reloadAppGrid()
         return card
-    }
-
-    /** 宽屏时一行最宽停在原来的应用栏比例上，装不下就换行，应用少就再收。 */
-    private fun appFrameMaxWidth(ctx: android.content.Context): Int {
-        val screen = ctx.resources.displayMetrics.widthPixels
-        if (!LayoutMetrics.isWide(ctx)) return screen
-        val apps = LayoutMetrics.homeAppsWeight(ctx)
-        val connect = LayoutMetrics.homeConnectWeight(ctx)
-        return (screen * apps / (apps + connect)).toInt().coerceAtLeast(dp(120))
-    }
-
-    private fun boundedSize(spec: Int, fallback: Int): Int {
-        val mode = View.MeasureSpec.getMode(spec)
-        val size = View.MeasureSpec.getSize(spec)
-        return if (mode == View.MeasureSpec.UNSPECIFIED) fallback else size.coerceAtMost(fallback)
     }
 
     /** 重新枚举并按当前隐藏集合重绘右侧应用网格。 */
@@ -224,7 +174,7 @@ internal class HomeAppGrid(
         // 隐藏项过滤 + 自定义排序（用户拖动保存的顺序优先，未排序的按原字母序）
         visibleApps = sortApps(apps.filterNot { isHidden(it.packageName) })
         if (visibleApps.isEmpty()) {
-            grid.addView(label(ctx, ctx.getString(R.string.app_launcher_no_apps), 14f, GlassColors.TEXT_MUTED).apply { setPadding(0, dp(10), 0, 0) })
+            grid.addView(label(ctx, ctx.getString(R.string.app_launcher_no_apps), LayoutMetrics.homeMutedTextSize(ctx), GlassColors.TEXT_MUTED).apply { setPadding(0, dp(ShellSpacing.MEDIUM), 0, 0) })
             return
         }
         renderAppRows(grid)
@@ -283,7 +233,7 @@ internal class HomeAppGrid(
             maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
             includeFontPadding = false
-            setPadding(0, dp(6), 0, 0)
+            setPadding(0, dp(ShellSpacing.SMALL), 0, 0)
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -334,7 +284,7 @@ internal class HomeAppGrid(
                 }
                 moveDragFloat(e.rawX, e.rawY)
                 // 落点跟浮起的图标，不跟被图标挡住的指尖。格子先不动，避免拆掉当前触摸目标。
-                val target = indexUnderFinger(grid, e.rawX, e.rawY - dp(28))
+                val target = indexUnderFinger(grid, e.rawX, e.rawY - dp(ShellSpacing.TRIPLE_EXTRA_LARGE))
                 if (target >= 0) {
                     hoverIndex = target
                     highlightDrop(grid, target)
@@ -369,10 +319,10 @@ internal class HomeAppGrid(
     }
 
     private fun startDragFloat(source: View) =
-        dragFloat.show(source, lastRawX, lastRawY, dp(28))
+        dragFloat.show(source, lastRawX, lastRawY, dp(ShellSpacing.TRIPLE_EXTRA_LARGE))
 
     private fun moveDragFloat(rawX: Float, rawY: Float) =
-        dragFloat.move(rawX, rawY, dp(28))
+        dragFloat.move(rawX, rawY, dp(ShellSpacing.TRIPLE_EXTRA_LARGE))
 
     private fun dismissDragFloat() = dragFloat.dismiss()
 

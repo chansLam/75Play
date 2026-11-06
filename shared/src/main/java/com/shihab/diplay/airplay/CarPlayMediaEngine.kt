@@ -146,11 +146,10 @@ class CarPlayMediaEngine(
         sink.setVideoRecoveryHandler(type) {
             if (streams[streamKey] === screen) {
                 // The cluster asks for a keyframe of its own screen; the plain command is the main screen's.
-                val command = if (type == STREAM_TYPE_ALT_SCREEN) {
-                    mapOf("type" to "forceKeyFrame", "params" to mapOf("uuid" to AirPlayInfoPlist.ALT_UUID))
-                } else {
-                    mapOf("type" to "forceKeyFrame")
-                }
+                // A reused screen is mid-GOP. iOS ignores a bare forceKeyFrame and the new
+                // surface stays black; the display uuid is what the alt screen already sends.
+                val uuid = if (type == STREAM_TYPE_ALT_SCREEN) AirPlayInfoPlist.ALT_UUID else AirPlayInfoPlist.MAIN_UUID
+                val command = mapOf("type" to "forceKeyFrame", "params" to mapOf("uuid" to uuid))
                 val sent = session.sendCommand(command)
                 session.logDebug("Video recovery: requested keyframe sent=$sent")
             }

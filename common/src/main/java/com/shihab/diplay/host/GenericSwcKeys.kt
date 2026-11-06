@@ -20,11 +20,12 @@ object GenericSwcKeys {
     private const val ZOOM_MAX_MILLIS = 8_000L
 
     private val handler by lazy { Handler(Looper.getMainLooper()) }
-    private var volumeCode = Int.MIN_VALUE
+    private var volumeId = ""
     private var volumeDownAt = 0L
     private var volumeZooming = false
     private var zoomRunnable: Runnable? = null
     private var zoomController: (() -> CarPlayController?)? = null
+    private val broadcastRepeatGate = SwcBroadcastRepeatGate()
 
     /** True when [event] was a learned key and should not reach the head unit. */
     fun dispatch(context: Context, event: KeyEvent, controller: CarPlayController?): Boolean {
@@ -33,15 +34,42 @@ object GenericSwcKeys {
             AirPlayPersistence.loadGenericSwcBindings(context),
             event.keyCode,
         ) ?: return false
+        return apply(action, "k:${event.keyCode}", event.action == KeyEvent.ACTION_DOWN, event.action == KeyEvent.ACTION_UP, event.repeatCount, controller)
+    }
+
+    /**
+     * A learned head-unit key name. [pressed] is the broadcast's down edge.
+     * True when the name was learned.
+     */
+    fun dispatchName(context: Context, name: String, pressed: Boolean, controller: CarPlayController?): Boolean {
+        if (!AirPlayPersistence.loadGenericSwcEnabled(context)) return false
+        val action = GenericSwcMap.actionForName(
+            AirPlayPersistence.loadGenericSwcBindings(context),
+            name,
+        ) ?: return false
+        val normalizedName = name.trim().uppercase()
+        if (pressed && !action.isVolume() &&
+            !broadcastRepeatGate.allow(normalizedName, SystemClock.elapsedRealtime())
+        ) return true
+        val down = pressed
+        val up = !pressed
+        return apply(action, "n:$normalizedName", down, up, repeatCount = 0, controller)
+    }
+
+    private fun apply(
+        action: GenericSwcAction,
+        holdId: String,
+        down: Boolean,
+        up: Boolean,
+        repeatCount: Int,
+        controller: CarPlayController?,
+    ): Boolean {
         val outcome = action.toOutcome()
-        val isVolume = outcome == SwcWheelOutcome.VOLUME_UP ||
-            outcome == SwcWheelOutcome.VOLUME_DOWN ||
-            outcome == SwcWheelOutcome.MUTE
-        if (isVolume) {
-            handleVolume(outcome, event, controller)
+        if (action.isVolume()) {
+            handleVolume(outcome, holdId, down, up, controller)
             return true
         }
-        if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0) return true
+        if (!down || repeatCount != 0) return true
         when (outcome) {
             SwcWheelOutcome.MAP_VIEW -> controller?.cycleMapView()
             SwcWheelOutcome.TRACK_NEXT -> controller?.sendMediaButton(CarPlayMediaButton.NEXT)
@@ -51,7 +79,7 @@ object GenericSwcKeys {
             SwcWheelOutcome.SIRI -> controller?.requestSiri()
             else -> Unit
         }
-        AppLog.i(TAG, "learned key ${event.keyCode} -> $outcome")
+        AppLog.i(TAG, "learned key $holdId -> $outcome")
         return true
     }
 
@@ -59,15 +87,26 @@ object GenericSwcKeys {
         zoomRunnable?.let { handler.removeCallbacks(it) }
         zoomRunnable = null
         volumeZooming = false
-        volumeCode = Int.MIN_VALUE
+        volumeId = ""
         zoomController = null
     }
 
-    private fun handleVolume(outcome: SwcWheelOutcome, event: KeyEvent, controller: CarPlayController?) {
+    fun reset() {
+        cancelHold()
+        broadcastRepeatGate.reset()
+    }
+
+    private fun handleVolume(
+        outcome: SwcWheelOutcome,
+        holdId: String,
+        down: Boolean,
+        up: Boolean,
+        controller: CarPlayController?,
+    ) {
         val now = SystemClock.elapsedRealtime()
-        if (event.action == KeyEvent.ACTION_DOWN) {
-            if (volumeCode == event.keyCode) return
-            volumeCode = event.keyCode
+        if (down) {
+            if (volumeId == holdId) return
+            volumeId = holdId
             volumeDownAt = now
             volumeZooming = false
             zoomRunnable?.let { handler.removeCallbacks(it) }
@@ -85,7 +124,7 @@ object GenericSwcKeys {
             handler.postDelayed(startZoom, SwcCarPlayKeys.VOLUME_LONG_PRESS_MILLIS)
             return
         }
-        if (event.action != KeyEvent.ACTION_UP || volumeCode != event.keyCode) return
+        if (!up || volumeId != holdId) return
         val zoomed = volumeZooming || SwcCarPlayKeys.volumePressIsZoom(now - volumeDownAt)
         cancelHold()
         if (zoomed || outcome == SwcWheelOutcome.MUTE) return
@@ -103,5 +142,29 @@ object GenericSwcKeys {
         val next = Runnable { repeatZoom(outcome, startedAt) }
         zoomRunnable = next
         handler.postDelayed(next, ZOOM_REPEAT_MILLIS)
+    }
+}
+
+private fun GenericSwcAction.isVolume(): Boolean = when (this) {
+    GenericSwcAction.VOLUME_UP, GenericSwcAction.VOLUME_DOWN, GenericSwcAction.MUTE -> true
+    else -> false
+}
+
+internal class SwcBroadcastRepeatGate(
+    private val repeatWindowMillis: Long = 1_000L,
+) {
+    private var lastName: String? = null
+    private var lastAt = 0L
+
+    fun allow(name: String, now: Long): Boolean {
+        if (name == lastName && now - lastAt in 0 until repeatWindowMillis) return false
+        lastName = name
+        lastAt = now
+        return true
+    }
+
+    fun reset() {
+        lastName = null
+        lastAt = 0L
     }
 }

@@ -68,12 +68,12 @@ enum class SwcWheelOutcome {
  */
 object SwcCarPlayKeys {
     private const val TAG = "DiPlay-SwcKeys"
-    private const val KEY_TEST_ACTION = "com.coagent.intent.action.KEY_CHANGED_TEST_MODE"
-    private const val KEY_CHANGED_ACTION = "com.coagent.intent.action.KEY_CHANGED"
-    private const val KEY_TEST_EXTRA = "Key_code"
-    private const val KEY_STATE_EXTRA = "Key_state"
+    private const val KEY_TEST_ACTION = HeadUnitKeyEvents.ACTION_KEY_TEST
+    private const val KEY_CHANGED_ACTION = HeadUnitKeyEvents.ACTION_KEY_CHANGED
+    private const val KEY_TEST_EXTRA = HeadUnitKeyEvents.EXTRA_CODE
+    private const val KEY_STATE_EXTRA = HeadUnitKeyEvents.EXTRA_STATE
     private const val KEY_SOURCE_EXTRA = "Key_Source"
-    private const val KEY_TEST_SETTING = "coagent_settings_key_test_mode"
+    private const val KEY_TEST_SETTING = HeadUnitKeyEvents.KEY_TEST_SETTING
 
     /** Same-name presses inside this window are framework repeats; run each mapped key once. */
     private const val REPEAT_WINDOW_MILLIS = 1000L

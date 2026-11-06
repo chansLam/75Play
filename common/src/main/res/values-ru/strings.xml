@@ -390,7 +390,7 @@
     <string name="settings_generic_swc_learn">Обучение кнопок</string>
     <string name="settings_generic_swc_learn_open">Обучить</string>
     <string name="settings_generic_swc_title">Обучение кнопок руля</string>
-    <string name="settings_generic_swc_hint">Когда универсальные кнопки включены, обучение и CarPlay на переднем плане используют код клавиши, который присылает система. Выключено — работают кнопки этой машины. Нажмите функцию, затем её клавишу. Назад отменяет это обучение, долгое нажатие строки стирает её. Короткое нажатие громкости меняет громкость машины, долгое увеличивает карту.</string>
+    <string name="settings_generic_swc_hint">Когда универсальные кнопки включены, обучение и CarPlay на переднем плане принимают код клавиши Android и имя кнопки из рассылки головного устройства. Выключено — работают кнопки этой машины. Нажмите функцию, затем её клавишу. Назад отменяет это обучение, долгое нажатие строки стирает её. Короткое нажатие громкости меняет громкость машины, долгое увеличивает карту.</string>
     <string name="settings_generic_swc_unbound">Не изучено</string>
     <string name="settings_generic_swc_press">Нажмите: %1$s</string>
     <string name="settings_swc_next">Следующий трек</string>
@@ -402,4 +402,12 @@
     <string name="settings_swc_vol_down">Тише</string>
     <string name="settings_swc_mute">Без звука</string>
     <string name="settings_swc_src">Вид карты</string>
+    <string name="shell_nav_dashboard">Панель</string>
+    <string name="shell_nav_control_center">Центр управления</string>
+    <string name="shell_nav_vehicle_device">Авто и устройство</string>
+    <string name="shell_category_picture_theme">Экран и тема</string>
+    <string name="shell_category_vehicle_controls">Управление автомобилем</string>
+    <string name="shell_category_maintenance">Обслуживание</string>
+    <string name="shell_category_product">О приложении</string>
+    <string name="shell_category_hardware">Система и оборудование</string>
 </resources>

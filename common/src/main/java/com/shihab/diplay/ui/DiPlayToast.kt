@@ -13,7 +13,7 @@ import com.shihab.diplay.host.ImmersiveBars
 import com.shihab.diplay.host.R
 
 /**
- * Dark-glass toast for the UI refactor. Left accent bar encodes status:
+ * Tonal in-app toast. The left accent bar encodes status:
  * success = green, warning = orange, info = blue.
  */
 object DiPlayToast {

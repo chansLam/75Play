@@ -19,6 +19,8 @@ import com.shihab.diplay.host.R
 import com.shihab.diplay.network.WifiP2pChannels
 import com.shihab.diplay.orchestration.WirelessHotspotMode
 import com.shihab.diplay.ui.settings.GlassSettingsRows
+import com.shihab.diplay.ui.theme.ShellShape
+import com.shihab.diplay.ui.theme.ShellSpacing
 import com.shihab.diplay.util.AppLog
 
 /**
@@ -120,7 +122,7 @@ internal class HomeConnectionTabs(
         val textSize = LayoutMetrics.homeBodyTextSize(ctx)
         val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         if (!host.isCarHotspotEnabled()) {
-            col.addView(GlassSettingsRows.ghostButton(ctx, ctx.getString(R.string.home_open_car_hotspot), cornerRadiusDp = 14) {
+            col.addView(GlassSettingsRows.ghostButton(ctx, ctx.getString(R.string.home_open_car_hotspot), cornerRadiusDp = ShellShape.SMALL) {
                 Thread({
                     host.openCarHotspot()
                     home.view?.post { if (home.isAdded) refresh() }
@@ -244,7 +246,7 @@ internal class HomeConnectionTabs(
             wifiRow.addView(GlassSettingsRows.capVal(ctx, cur, if (connecting) GlassColors.CAP_TEXT else GlassColors.SUCCESS))
             col.addView(wifiRow)
             col.addView(
-                GlassSettingsRows.ghostButton(ctx, ctx.getString(R.string.home_choose_other_wifi), cornerRadiusDp = 14) {
+                GlassSettingsRows.ghostButton(ctx, ctx.getString(R.string.home_choose_other_wifi), cornerRadiusDp = ShellShape.SMALL) {
                     showWifiPickerDialog(excludeSsid = systemSsid.ifBlank { cur })
                 },
                 lpFull(ctx, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
@@ -267,7 +269,7 @@ internal class HomeConnectionTabs(
         val list = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         list.addView(
             label(ctx, ctx.getString(R.string.home_scanning), LayoutMetrics.homeMutedTextSize(ctx), GlassColors.TEXT_BODY).apply {
-                setPadding(0, dp(4), 0, dp(4))
+                setPadding(0, dp(ShellSpacing.EXTRA_SMALL), 0, dp(ShellSpacing.EXTRA_SMALL))
             },
         )
         val dialog = DiPlayDialog.showCustom(
@@ -283,7 +285,7 @@ internal class HomeConnectionTabs(
             if (networks.isEmpty()) {
                 list.addView(
                     label(ctx, ctx.getString(R.string.home_no_wifi_networks), LayoutMetrics.homeMutedTextSize(ctx), GlassColors.TEXT_MUTED).apply {
-                        setPadding(0, dp(8), 0, dp(8))
+                        setPadding(0, dp(ShellSpacing.SMALL), 0, dp(ShellSpacing.SMALL))
                     },
                 )
             } else {
@@ -301,7 +303,7 @@ internal class HomeConnectionTabs(
         val list = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         list.addView(
             label(ctx, ctx.getString(R.string.home_scanning), LayoutMetrics.homeMutedTextSize(ctx), GlassColors.TEXT_BODY).apply {
-                setPadding(0, dp(8), 0, 0)
+                setPadding(0, dp(ShellSpacing.SMALL), 0, 0)
             },
         )
         val listScroll = ScrollView(ctx).apply {
@@ -325,7 +327,7 @@ internal class HomeConnectionTabs(
             if (networks.isEmpty()) {
                 list.addView(
                     label(ctx, ctx.getString(R.string.home_no_wifi_networks), LayoutMetrics.homeMutedTextSize(ctx), GlassColors.TEXT_MUTED).apply {
-                        setPadding(0, dp(8), 0, 0)
+                        setPadding(0, dp(ShellSpacing.SMALL), 0, 0)
                     },
                 )
             } else {
@@ -388,20 +390,14 @@ internal class HomeConnectionTabs(
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(10), 0, dp(10))
+            setPadding(0, dp(ShellSpacing.MEDIUM), 0, dp(ShellSpacing.MEDIUM))
             isClickable = true
             isFocusable = true
             setOnClickListener { onClick() }
             FocusSupport.attachRow(this)
         }
-        row.addView(label(ctx, net.ssid, LayoutMetrics.homeBodyTextSize(ctx), GlassColors.INK).apply { setPadding(0, 0, dp(8), 0) },
+        row.addView(label(ctx, net.ssid, LayoutMetrics.homeBodyTextSize(ctx), GlassColors.INK).apply { setPadding(0, 0, dp(ShellSpacing.SMALL), 0) },
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        if (net.secured) {
-            // 锁图标是装饰性提示，不进无障碍遍历（SSID 与「点按连接」文案已自解释）。
-            row.addView(label(ctx, "🔒", 13f, GlassColors.TEXT_MUTED).apply {
-                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            })
-        }
         row.addView(label(ctx, ctx.getString(R.string.home_tap_to_connect), LayoutMetrics.homeMutedTextSize(ctx), GlassColors.CAP_TEXT))
         return row
     }
@@ -478,5 +474,5 @@ internal class HomeConnectionTabs(
     private fun lpFull(ctx: android.content.Context, h: Int): LinearLayout.LayoutParams =
         LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, h)
 
-    // NU-04：cap / ghostButton / rowWrap 已抽到 [GlassSettingsRows]（ghostButton 圆角 14 参数化）。
+    // Shared value, secondary-button, and row containers live in GlassSettingsRows.
 }

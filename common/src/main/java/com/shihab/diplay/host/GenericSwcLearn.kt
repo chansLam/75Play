@@ -3,11 +3,11 @@ package com.shihab.diplay.host
 import android.view.KeyEvent
 
 /**
- * Captures the next Android key code while the shell learn dialog is waiting.
- * The head unit's key-test broadcast is not used here.
+ * Captures the next Android key code, or a steering-wheel name from the head unit
+ * broadcast, while the shell learn dialog is waiting.
  */
 object GenericSwcLearn {
-    private var sink: ((Int) -> Unit)? = null
+    private var sink: ((GenericSwcCode) -> Unit)? = null
     private var armed: GenericSwcAction? = null
     private var onDisarm: (() -> Unit)? = null
 
@@ -25,7 +25,7 @@ object GenericSwcLearn {
         onDisarm = block
     }
 
-    fun arm(action: GenericSwcAction, onCode: (Int) -> Unit) {
+    fun arm(action: GenericSwcAction, onCode: (GenericSwcCode) -> Unit) {
         armed = action
         sink = onCode
     }
@@ -48,7 +48,15 @@ object GenericSwcLearn {
         if (event.keyCode == KeyEvent.KEYCODE_BACK || event.keyCode == KeyEvent.KEYCODE_ESCAPE) return false
         if (event.keyCode == KeyEvent.KEYCODE_UNKNOWN) return false
         if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0) return true
-        current(event.keyCode)
+        current(GenericSwcCode.Android(event.keyCode))
+        return true
+    }
+
+    /** A steering-wheel name from the head unit broadcast. Consumed the same way as an Android key. */
+    fun onName(name: String): Boolean {
+        val current = sink ?: return false
+        val token = name.trim().uppercase().takeIf { it.isNotEmpty() } ?: return false
+        current(GenericSwcCode.Name(token))
         return true
     }
 }

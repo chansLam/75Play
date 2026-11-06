@@ -16,9 +16,13 @@ import com.shihab.diplay.ui.GlassColors
 import com.shihab.diplay.ui.GlassSwitch
 import com.shihab.diplay.ui.LayoutMetrics
 import com.shihab.diplay.ui.SpindleDivider
+import com.shihab.diplay.ui.theme.ShellShape
+import com.shihab.diplay.ui.theme.ShellSpacing
+import com.shihab.diplay.ui.theme.ShellStroke
+import com.shihab.diplay.ui.theme.ShellComponentSize
 
 /**
- * Shared glass settings row/cap helpers for shell Fragments (Setting / About).
+ * Shared tonal settings row/cap helpers for shell Fragments (Setting / About).
  * Keeps visual language aligned with [GlassColors], [LayoutMetrics], [GlassSwitch].
  */
 object GlassSettingsRows {
@@ -40,14 +44,13 @@ object GlassSettingsRows {
         card.addView(space(ctx, LayoutMetrics.cardTitleGap(ctx)))
     }
 
-    /** 栏目标题下的发丝线，两头淡出。 */
+    /** Section title divider. */
     fun titleTick(ctx: Context): View {
-        val density = ctx.resources.displayMetrics.density
         return SpindleDivider(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(
-                (density * 160).toInt(),
-                maxOf(8, (density * 10).toInt()),
-            ).apply { topMargin = dp(ctx, if (LayoutMetrics.isCockpit(ctx)) 6 else 8) }
+                dp(ctx, ShellComponentSize.TITLE_DIVIDER_WIDTH),
+                dp(ctx, ShellSpacing.SMALL),
+            ).apply { topMargin = dp(ctx, ShellSpacing.SMALL) }
         }
     }
 
@@ -59,7 +62,7 @@ object GlassSettingsRows {
         val g = LayoutMetrics.dividerGap(ctx)
         layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(ctx, 8),
+            dp(ctx, ShellSpacing.SMALL),
         ).apply {
             topMargin = g
             bottomMargin = g
@@ -137,7 +140,7 @@ object GlassSettingsRows {
         }
 
     /** Secondary `.ghostbtn` at head-unit scale. 圆角 10dp。 */
-    fun ghostButton(ctx: Context, text: String, cornerRadiusDp: Int = 14, click: () -> Unit): View =
+    fun ghostButton(ctx: Context, text: String, cornerRadiusDp: Int = ShellShape.SMALL, click: () -> Unit): View =
         TextView(ctx).apply {
             this.text = text
             textSize = LayoutMetrics.ghostTextSize(ctx)
@@ -187,7 +190,7 @@ object GlassSettingsRows {
                 includeFontPadding = false
                 maxLines = if (LayoutMetrics.isCockpit(ctx) || !short) 2 else 1
                 ellipsize = TextUtils.TruncateAt.END
-                setPadding(0, 0, dp(ctx, if (short) 6 else 8), 0)
+                setPadding(0, 0, dp(ctx, ShellSpacing.SMALL), 0)
             },
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
         )
@@ -253,16 +256,18 @@ object GlassSettingsRows {
             setPadding(0, pv, 0, pv)
         }
 
-    /** 胶囊底：半透系统蓝。方向盘焦点才加一圈蓝。 */
+    /** Filled value container; steering-wheel focus adds a primary outline. */
     private fun pillDrawable(ctx: Context, focused: Boolean): GradientDrawable =
-        capFill(ctx, if (focused) GlassColors.ACCENT else 0, if (focused) 2 else 0)
+        capFill(
+            ctx,
+            if (focused) GlassColors.ACCENT else GlassColors.TRANSPARENT,
+            if (focused) ShellStroke.FOCUS else 0,
+        )
 
     private fun capFill(ctx: Context, stroke: Int, strokeDp: Int): GradientDrawable =
-        GradientDrawable(
-            GradientDrawable.Orientation.TOP_BOTTOM,
-            intArrayOf(GlassColors.ACCENT_SOFT_FILL, GlassColors.ACCENT_CAP_FILL),
-        ).apply {
+        GradientDrawable().apply {
+            setColor(GlassColors.ACCENT_CAP_FILL)
             if (strokeDp > 0) setStroke(dp(ctx, strokeDp), stroke)
-            cornerRadius = dp(ctx, 14).toFloat()
+            setCornerRadius(dp(ctx, ShellShape.SMALL).toFloat())
         }
 }
