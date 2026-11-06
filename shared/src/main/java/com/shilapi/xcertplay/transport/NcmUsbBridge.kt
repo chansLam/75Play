@@ -1122,6 +1122,10 @@ class NcmUsbBridge internal constructor(
         private const val GET_NTB_PARAMETERS = 0x80
         private const val SET_NTB_FORMAT = 0x84
         private const val SET_CRC_MODE = 0x8a
+        /** CDC SET_MAX_DATAGRAM_SIZE: the largest single datagram the host will pack into an NTB. */
+        private const val SET_MAX_DATAGRAM_SIZE = 0x1e
+        /** Ethernet MTU plus header, i.e. what a 1514-byte frame needs. */
+        private const val MAX_DATAGRAM_BYTES = 1514
         /** CDC SET_ETHERNET_PACKET_FILTER, the last step of Linux cdc_ncm_setup(). */
         private const val SET_ETHERNET_PACKET_FILTER = 0x43
         /** DIRECTED | BROADCAST | MULTICAST: what ARP, mDNS and ICMPv6 need on this link. */
@@ -1208,32 +1212,6 @@ class NcmUsbBridge internal constructor(
                 }.getOrDefault(-1)
                 log("ncm SET_NTB_FORMAT=NTB16(0) iface=$controlInterface result=$setFormat")
             }
-            // CDC NCM requires the host to announce its receive-side NTB size, and Linux cdc_ncm
-            // sends this between SET_NTB_FORMAT and SET_CRC_MODE. Skipping it leaves iOS with the
-            // host bulk-OUT endpoint permanently NAKed (report 2026-11-06-225501: submitted=8,
-            // completed=0, successBytes=0 while inbound mDNS/ICMPv6 kept flowing) — the wired
-            // black screen. wLength=4 little-endian; never exceed the phone's dwNtbInMaxSize.
-            if (WiredNcmTuning.negotiateNtbInputSize) {
-                val declared = ntbInMaxSize(paramsBuffer, paramsRead)
-                val payload = byteArrayOf(
-                    (declared and 0xff).toByte(),
-                    ((declared shr 8) and 0xff).toByte(),
-                    ((declared shr 16) and 0xff).toByte(),
-                    ((declared shr 24) and 0xff).toByte(),
-                )
-                val setInputSize = runCatching {
-                    connection.controlTransfer(
-                        CONTROL_OUT_CLASS_INTERFACE,
-                        SET_NTB_INPUT_SIZE,
-                        0,
-                        controlInterface,
-                        payload,
-                        payload.size,
-                        ENDPOINT_STATUS_TIMEOUT_MILLIS,
-                    )
-                }.getOrDefault(-1)
-                log("ncm SET_NTB_INPUT_SIZE=$declared iface=$controlInterface result=$setInputSize")
-            }
             if (WiredNcmTuning.negotiateCrcMode) {
                 val setCrc = runCatching {
                     connection.controlTransfer(
@@ -1247,6 +1225,65 @@ class NcmUsbBridge internal constructor(
                     )
                 }.getOrDefault(-1)
                 log("ncm SET_CRC_MODE=off(0) iface=$controlInterface result=$setCrc")
+            }
+            // macOS 的 NCM 抓包里这一条就排在 SET_CRC_MODE 之后、SET_NTB_INPUT_SIZE 之前，
+            // 我们从来没发过（NCM 1.1 §6.2.9：告诉设备 host 的 NTB 里单个 datagram 上限）。
+            if (WiredNcmTuning.negotiateMaxDatagramSize) {
+                val setMaxDatagram = runCatching {
+                    connection.controlTransfer(
+                        CONTROL_OUT_CLASS_INTERFACE,
+                        SET_MAX_DATAGRAM_SIZE,
+                        0,
+                        controlInterface,
+                        byteArrayOf(
+                            (MAX_DATAGRAM_BYTES and 0xff).toByte(),
+                            ((MAX_DATAGRAM_BYTES shr 8) and 0xff).toByte(),
+                        ),
+                        2,
+                        ENDPOINT_STATUS_TIMEOUT_MILLIS,
+                    )
+                }.getOrDefault(-1)
+                log("ncm SET_MAX_DATAGRAM_SIZE=$MAX_DATAGRAM_BYTES iface=$controlInterface result=$setMaxDatagram")
+            }
+            // SET_NTB_INPUT_SIZE 的 wLength 由 NCM 功能描述符 bmNetworkCapabilities 的 D5 位
+            // ("8-byte ntb input size") 决定：D5=1 时 dwNtbInMaxSize 必须按 8 字节发，发 4 字节
+            // 设备只能 STALL —— 三份实车日志里它一律回 -1，我们此前只试过 4 字节。这里两种
+            // 长度都试，日志会打出哪一种是设备认的。
+            if (WiredNcmTuning.negotiateNtbInputSize) {
+                val declared = ntbInMaxSize(paramsBuffer, paramsRead)
+                val fourBytes = byteArrayOf(
+                    (declared and 0xff).toByte(),
+                    ((declared shr 8) and 0xff).toByte(),
+                    ((declared shr 16) and 0xff).toByte(),
+                    ((declared shr 24) and 0xff).toByte(),
+                )
+                val setInputSize = runCatching {
+                    connection.controlTransfer(
+                        CONTROL_OUT_CLASS_INTERFACE,
+                        SET_NTB_INPUT_SIZE,
+                        0,
+                        controlInterface,
+                        fourBytes,
+                        fourBytes.size,
+                        ENDPOINT_STATUS_TIMEOUT_MILLIS,
+                    )
+                }.getOrDefault(-1)
+                log("ncm SET_NTB_INPUT_SIZE=$declared (4-byte) iface=$controlInterface result=$setInputSize")
+                if (setInputSize < 0 && WiredNcmTuning.negotiateNtbInputSize8Byte) {
+                    val eightBytes = fourBytes + fourBytes
+                    val setInputSize8 = runCatching {
+                        connection.controlTransfer(
+                            CONTROL_OUT_CLASS_INTERFACE,
+                            SET_NTB_INPUT_SIZE,
+                            0,
+                            controlInterface,
+                            eightBytes,
+                            eightBytes.size,
+                            ENDPOINT_STATUS_TIMEOUT_MILLIS,
+                        )
+                    }.getOrDefault(-1)
+                    log("ncm SET_NTB_INPUT_SIZE=$declared (8-byte) iface=$controlInterface result=$setInputSize8")
+                }
             }
             // Linux cdc_ncm_setup() 的最后一步。少了它，部分 NCM 实现不会把数据接口
             // "up" 起来，也就不会去读 host 的 bulk-OUT 端点，URB 提交后永远 completed=0

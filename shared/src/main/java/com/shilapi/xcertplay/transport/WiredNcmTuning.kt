@@ -36,6 +36,16 @@ object WiredNcmTuning {
     var negotiateNtbInputSize: Boolean = true
 
     /**
+     * Retry SET_NTB_INPUT_SIZE with wLength=8 when the 4-byte form is refused.
+     *
+     * NCM 1.0 §6.2.7 makes the length depend on bmNetworkCapabilities D5 ("8-byte ntb input
+     * size"): when D5 is set the host must send dwNtbInMaxSize as a 64-bit little-endian value,
+     * and a 4-byte request is answered with STALL. iOS keeps returning -1 to the 4-byte form in
+     * reports 235001/001909/005516, which is exactly the symptom of that length mismatch.
+     */
+    var negotiateNtbInputSize8Byte: Boolean = true
+
+    /**
      * Send CDC SET_ETHERNET_PACKET_FILTER (class request 0x43, value 0x001C = directed + broadcast +
      * multicast) after SET_CRC_MODE — the last step of Linux cdc_ncm_setup().
      *
@@ -45,6 +55,18 @@ object WiredNcmTuning {
      * implementations only start reading that endpoint once the packet filter is armed.
      */
     var negotiatePacketFilter: Boolean = true
+
+    /**
+     * Send CDC SET_MAX_DATAGRAM_SIZE (class request 0x1E, wLength=2, value 1514) right before
+     * SET_NTB_INPUT_SIZE.
+     *
+     * macOS sends it in exactly that slot when it brings up an iPhone's NCM data pipe (macOS is
+     * the reference host that works), and this stack has never sent it: reports 225501/235001/001909
+     * only contain GET_NTB_PARAMETERS, SET_NTB_FORMAT, SET_NTB_INPUT_SIZE, SET_CRC_MODE and
+     * SET_ETHERNET_PACKET_FILTER. NCM 1.1 6.2.9 makes it the request that tells the device how
+     * large a single datagram inside a host NTB may be, i.e. the OUT-side layout contract.
+     */
+    var negotiateMaxDatagramSize: Boolean = true
 
     /**
      * On the first bulk-OUT wedge, push one 64-byte block through a synchronous framework
