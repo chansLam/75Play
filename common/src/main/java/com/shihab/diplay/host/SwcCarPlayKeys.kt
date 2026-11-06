@@ -61,9 +61,11 @@ enum class SwcWheelOutcome {
  * the key by the time it arrives, so listening there cannot stop volume, mode or source.
  * Key-test mode (`coagent_settings_key_test_mode`) is the switch that swallows the press and
  * reports it as `KEY_CHANGED_TEST_MODE`. Mapped names, including the voice key, go to the
- * session. A short volume press drives the head unit volume. Holding volume pinches the
- * CarPlay picture to zoom a map. SRC taps the map-view control. Every other unmapped name
- * is re-broadcast as the original KEY_CHANGED so the head unit's own consumers act on it.
+ * session. Volume on its own is the head unit's: short or long, it changes the head-unit volume.
+ * With SRC held, one volume press steps the CarPlay map zoom once — a modifier gesture, never a
+ * timed hold that runs away. SRC released without a volume press still taps the map-view control.
+ * Every other unmapped name is re-broadcast as the original KEY_CHANGED so the head unit's own
+ * consumers act on it.
  * Generic steering does not use this listener.
  */
 object SwcCarPlayKeys {
@@ -77,10 +79,11 @@ object SwcCarPlayKeys {
 
     /** Same-name presses inside this window are framework repeats; run each mapped key once. */
     private const val REPEAT_WINDOW_MILLIS = 1000L
-    /** Hold at least this long before a volume key zooms instead of changing the head-unit volume. */
-    internal const val VOLUME_LONG_PRESS_MILLIS = 400L
-    private const val ZOOM_REPEAT_MILLIS = 220L
-    private const val ZOOM_MAX_MILLIS = 8_000L
+    /**
+     * 按住 SRC 的有效窗口。音量键在这个窗口内点按时算缩放，超出则算单独按音量交给车机。
+     * 这个窗口也兜住只报 DOWN、不报 UP 的固件：窗口过去后 SRC 仍按单击处理。
+     */
+    internal const val SRC_HOLD_WINDOW_MILLIS = 2_000L
 
     private var receiver: Receiver? = null
     private var appContext: Context? = null
@@ -96,8 +99,8 @@ object SwcCarPlayKeys {
         else -> null
     }
 
-    /** A volume hold shorter than [VOLUME_LONG_PRESS_MILLIS] changes the head-unit volume. */
-    internal fun volumePressIsZoom(heldMillis: Long): Boolean = heldMillis >= VOLUME_LONG_PRESS_MILLIS
+    /** SRC 按住时音量键缩地图；单独按音量仍交给车机处理。 */
+    internal fun volumePressIsZoom(srcHeld: Boolean): Boolean = srcHeld
 
     /** Mapped keys go to CarPlay. Volume keys drive the head unit volume; everything else is released. */
     internal fun outcomeFor(name: String?): SwcWheelOutcome? {
@@ -209,14 +212,21 @@ object SwcCarPlayKeys {
         private var lastName: String? = null
         private var lastAt = 0L
         private var volumeName: String? = null
-        private var volumeDownAt = 0L
-        private var volumeZooming = false
-        private var zoomRunnable: Runnable? = null
+        /** 本次音量按压是否已作为缩放用掉；UP 到来时就不再改车机音量。 */
+        private var volumeAsZoom = false
+        /** SRC 按下的时刻；0 表示未按住。 */
+        private var srcDownAt = 0L
+        /** SRC 这一轮按住期间已经缩放过，抬起时不再切地图视图。 */
+        private var srcConsumedByZoom = false
+        private var srcFallback: Runnable? = null
 
         fun cancelHold() {
-            zoomRunnable?.let { handler.removeCallbacks(it) }
-            zoomRunnable = null
-            volumeZooming = false
+            srcFallback?.let { handler.removeCallbacks(it) }
+            srcFallback = null
+            volumeName = null
+            volumeAsZoom = false
+            srcDownAt = 0L
+            srcConsumedByZoom = false
         }
 
         override fun onReceive(context: Context, intent: Intent) {
@@ -233,11 +243,14 @@ object SwcCarPlayKeys {
                 AppLog.i(TAG, "wheel $name/$state -> $outcome")
                 return
             }
+            if (outcome == SwcWheelOutcome.MAP_VIEW) {
+                handleSrc(name, state, now)
+                return
+            }
             if (name == lastName && now - lastAt < REPEAT_WINDOW_MILLIS) return
             lastName = name
             lastAt = now
             when (outcome) {
-                SwcWheelOutcome.MAP_VIEW -> controller()?.cycleMapView()
                 SwcWheelOutcome.RELEASE -> rebroadcastAsKeyChanged(intent)
                 else -> {
                     val c = controller() ?: return
@@ -255,8 +268,10 @@ object SwcCarPlayKeys {
         }
 
         /**
-         * Firmware maps mKeystate 0/1/2 to NONE/DOWN/UP. A short press releases before
-         * [VOLUME_LONG_PRESS_MILLIS] and changes the head-unit volume. A hold pinches to zoom.
+         * Firmware maps mKeystate 0/1/2 to NONE/DOWN/UP.
+         *
+         * 音量单独按：交给车机调音量（长按也一样，不再有按住即连续缩放）。
+         * 按住 SRC 时按音量：这一次按压算缩放一步，抬起后不再调音量。
          */
         private fun handleVolume(outcome: SwcWheelOutcome, name: String, state: String?, now: Long) {
             val down = state == "DOWN" || state == "NONE"
@@ -264,40 +279,61 @@ object SwcCarPlayKeys {
             if (down) {
                 if (volumeName == name) return
                 volumeName = name
-                volumeDownAt = now
-                volumeZooming = false
-                cancelHold()
+                volumeAsZoom = false
                 if (outcome == SwcWheelOutcome.MUTE) {
                     HeadUnitVolume.toggleMute()
                     return
                 }
-                val startZoom = Runnable {
-                    volumeZooming = true
-                    repeatZoom(outcome, now)
+                if (srcHolding(now)) {
+                    volumeAsZoom = true
+                    srcConsumedByZoom = true
+                    controller()?.zoomMap(outcome == SwcWheelOutcome.VOLUME_UP)
                 }
-                zoomRunnable = startZoom
-                handler.postDelayed(startZoom, VOLUME_LONG_PRESS_MILLIS)
                 return
             }
             if (!up || volumeName != name) return
-            val zoomed = volumeZooming || volumePressIsZoom(now - volumeDownAt)
-            cancelHold()
             volumeName = null
-            if (zoomed || outcome == SwcWheelOutcome.MUTE) return
+            if (volumeAsZoom) {
+                volumeAsZoom = false
+                return
+            }
             if (outcome == SwcWheelOutcome.VOLUME_UP) HeadUnitVolume.volumeUp()
             else HeadUnitVolume.volumeDown()
         }
 
-        private fun repeatZoom(outcome: SwcWheelOutcome, startedAt: Long) {
-            if (!volumeZooming) return
-            if (SystemClock.elapsedRealtime() - startedAt > ZOOM_MAX_MILLIS) {
-                volumeZooming = false
+        /**
+         * SRC 是修饰键：按住时音量键缩地图；单独抬起（期间没缩放过）仍切一次地图视图。
+         * 按下只记录时刻、抬起才切视图，避免长按 SRC 时画面先跳一下。
+         */
+        private fun handleSrc(name: String, state: String?, now: Long) {
+            val pressed = state == "DOWN" || state == "NONE"
+            if (pressed) {
+                if (srcDownAt != 0L) return
+                srcDownAt = now
+                srcConsumedByZoom = false
+                srcFallback?.let { handler.removeCallbacks(it) }
+                // 只报 DOWN 不报 UP 的固件：窗口过去后仍按单击处理，不让 SRC 卡死在按住状态。
+                val fallback = Runnable {
+                    srcFallback = null
+                    if (srcDownAt != 0L && !srcConsumedByZoom) {
+                        srcDownAt = 0L
+                        controller()?.cycleMapView()
+                    }
+                }
+                srcFallback = fallback
+                handler.postDelayed(fallback, SRC_HOLD_WINDOW_MILLIS)
                 return
             }
-            controller()?.zoomMap(outcome == SwcWheelOutcome.VOLUME_UP)
-            val next = Runnable { repeatZoom(outcome, startedAt) }
-            zoomRunnable = next
-            handler.postDelayed(next, ZOOM_REPEAT_MILLIS)
+            srcFallback?.let { handler.removeCallbacks(it) }
+            srcFallback = null
+            val wasHeld = srcDownAt != 0L
+            srcDownAt = 0L
+            val consumed = srcConsumedByZoom
+            srcConsumedByZoom = false
+            if (wasHeld && !consumed) controller()?.cycleMapView()
         }
+
+        private fun srcHolding(now: Long): Boolean =
+            srcDownAt != 0L && now - srcDownAt <= SRC_HOLD_WINDOW_MILLIS
     }
 }

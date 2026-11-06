@@ -457,17 +457,23 @@ class ShellChrome(
             setPadding(pad, dp(ShellSpacing.SMALL), pad, pad)
         }
         addDestinations(destinations, rail = true)
+        // 三个入口平分导航栏的可用高度：原先挤在顶部、下面靠一段空白撑开，显得又紧又空。
         nav.addView(destinations, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f,
         ))
-        nav.addView(View(activity), LinearLayout.LayoutParams(1, 0, 1f))
         nav.addView(TextView(activity).apply {
             text = versionLabel()
             setTextColor(GlassColors.DIM)
             textSize = LayoutMetrics.navVersionSize(activity)
             gravity = Gravity.CENTER
             maxLines = 1
-            setPadding(dp(ShellSpacing.EXTRA_SMALL), 0, dp(ShellSpacing.EXTRA_SMALL), LayoutMetrics.pagePad(activity))
+            // 版本号原先只留 pagePad 的底距，在宽屏上几乎贴到屏幕底边。
+            setPadding(
+                dp(ShellSpacing.EXTRA_SMALL),
+                dp(ShellSpacing.SMALL),
+                dp(ShellSpacing.EXTRA_SMALL),
+                LayoutMetrics.pagePad(activity) + dp(ShellSpacing.SMALL),
+            )
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         return nav
     }
@@ -564,8 +570,9 @@ class ShellChrome(
         nav.addView(
             shell,
             if (rail) {
+                // 竖排入口等分导航栏高度，图标与标签整体居中。
                 LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f,
                 )
             } else {
                 LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)

@@ -29,8 +29,9 @@ class SwcCarPlayKeysTest {
         }
         assertEquals(SwcWheelOutcome.MAP_VIEW, SwcCarPlayKeys.outcomeFor("SRC"))
         assertEquals(SwcWheelOutcome.MAP_VIEW, SwcCarPlayKeys.outcomeFor("KEY_SWC_SRC"))
-        assertEquals(false, SwcCarPlayKeys.volumePressIsZoom(399))
-        assertEquals(true, SwcCarPlayKeys.volumePressIsZoom(400))
+        // SRC 是缩放的修饰键：按住时音量键才缩地图，单独按音量仍归车机。
+        assertEquals(false, SwcCarPlayKeys.volumePressIsZoom(srcHeld = false))
+        assertEquals(true, SwcCarPlayKeys.volumePressIsZoom(srcHeld = true))
     }
 
     @Test

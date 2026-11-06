@@ -12,19 +12,20 @@ import com.shihab.diplay.util.AppLog
 
 /**
  * Applies learned Android key codes while generic steering-wheel mode is on.
- * A short volume press still changes the head-unit volume. Holding volume zooms the map.
+ * Volume on its own is the head unit's: pressing it changes the head-unit volume. With the
+ * learned map-view key held, one volume press steps the CarPlay map zoom once — the same
+ * modifier gesture [SwcCarPlayKeys] uses, so both steering modes behave alike.
  */
 object GenericSwcKeys {
     private const val TAG = "DiPlay-SwcKeys"
-    private const val ZOOM_REPEAT_MILLIS = 220L
-    private const val ZOOM_MAX_MILLIS = 8_000L
 
-    private val handler by lazy { Handler(Looper.getMainLooper()) }
     private var volumeId = ""
-    private var volumeDownAt = 0L
-    private var volumeZooming = false
-    private var zoomRunnable: Runnable? = null
-    private var zoomController: (() -> CarPlayController?)? = null
+    /** 本次音量按压是否已作为缩放用掉；抬起时就不再改车机音量。 */
+    private var volumeAsZoom = false
+    /** 地图视图键按下的时刻；0 表示未按住。 */
+    private var srcDownAt = 0L
+    /** 这一轮按住期间已经缩放过，抬起时不再切地图视图。 */
+    private var srcConsumedByZoom = false
     private val broadcastRepeatGate = SwcBroadcastRepeatGate()
 
     /** True when [event] was a learned key and should not reach the head unit. */
@@ -69,9 +70,12 @@ object GenericSwcKeys {
             handleVolume(outcome, holdId, down, up, controller)
             return true
         }
+        if (outcome == SwcWheelOutcome.MAP_VIEW) {
+            handleMapViewKey(down, up, controller)
+            return true
+        }
         if (!down || repeatCount != 0) return true
         when (outcome) {
-            SwcWheelOutcome.MAP_VIEW -> controller?.cycleMapView()
             SwcWheelOutcome.TRACK_NEXT -> controller?.sendMediaButton(CarPlayMediaButton.NEXT)
             SwcWheelOutcome.TRACK_PREV -> controller?.sendMediaButton(CarPlayMediaButton.PREVIOUS)
             SwcWheelOutcome.ANSWER_CALL -> controller?.answerCall()
@@ -83,12 +87,23 @@ object GenericSwcKeys {
         return true
     }
 
+    /** 地图视图键本体：按下切一次视图，同时作为按住音量缩放的修饰键。 */
+    private fun handleMapViewKey(down: Boolean, up: Boolean, controller: CarPlayController?) {
+        if (down) {
+            srcDownAt = SystemClock.elapsedRealtime()
+            srcConsumedByZoom = false
+            controller?.cycleMapView()
+        } else if (up) {
+            srcDownAt = 0L
+            srcConsumedByZoom = false
+        }
+    }
+
     fun cancelHold() {
-        zoomRunnable?.let { handler.removeCallbacks(it) }
-        zoomRunnable = null
-        volumeZooming = false
         volumeId = ""
-        zoomController = null
+        volumeAsZoom = false
+        srcDownAt = 0L
+        srcConsumedByZoom = false
     }
 
     fun reset() {
@@ -107,42 +122,30 @@ object GenericSwcKeys {
         if (down) {
             if (volumeId == holdId) return
             volumeId = holdId
-            volumeDownAt = now
-            volumeZooming = false
-            zoomRunnable?.let { handler.removeCallbacks(it) }
-            zoomRunnable = null
+            volumeAsZoom = false
             if (outcome == SwcWheelOutcome.MUTE) {
                 HeadUnitVolume.toggleMute()
                 return
             }
-            zoomController = { controller }
-            val startZoom = Runnable {
-                volumeZooming = true
-                repeatZoom(outcome, now)
+            if (SwcCarPlayKeys.volumePressIsZoom(srcHolding(now))) {
+                volumeAsZoom = true
+                srcConsumedByZoom = true
+                controller?.zoomMap(outcome == SwcWheelOutcome.VOLUME_UP)
             }
-            zoomRunnable = startZoom
-            handler.postDelayed(startZoom, SwcCarPlayKeys.VOLUME_LONG_PRESS_MILLIS)
             return
         }
         if (!up || volumeId != holdId) return
-        val zoomed = volumeZooming || SwcCarPlayKeys.volumePressIsZoom(now - volumeDownAt)
-        cancelHold()
-        if (zoomed || outcome == SwcWheelOutcome.MUTE) return
+        volumeId = ""
+        if (volumeAsZoom) {
+            volumeAsZoom = false
+            return
+        }
         if (outcome == SwcWheelOutcome.VOLUME_UP) HeadUnitVolume.volumeUp()
         else HeadUnitVolume.volumeDown()
     }
 
-    private fun repeatZoom(outcome: SwcWheelOutcome, startedAt: Long) {
-        if (!volumeZooming) return
-        if (SystemClock.elapsedRealtime() - startedAt > ZOOM_MAX_MILLIS) {
-            volumeZooming = false
-            return
-        }
-        zoomController?.invoke()?.zoomMap(outcome == SwcWheelOutcome.VOLUME_UP)
-        val next = Runnable { repeatZoom(outcome, startedAt) }
-        zoomRunnable = next
-        handler.postDelayed(next, ZOOM_REPEAT_MILLIS)
-    }
+    private fun srcHolding(now: Long): Boolean =
+        srcDownAt != 0L && now - srcDownAt <= SwcCarPlayKeys.SRC_HOLD_WINDOW_MILLIS
 }
 
 private fun GenericSwcAction.isVolume(): Boolean = when (this) {
