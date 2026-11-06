@@ -328,6 +328,8 @@ class NcmUsbBridge internal constructor(
 
     /** Wall-clock anchor for "ring full with zero completions" — the silent-wedge detector. */
     private var wedgedOutSinceNs = 0L
+    /** 一次性 OUT 写入探针是否已经跑过（每次 bridge 生命周期只跑一次）。 */
+    private var outProbeAttempted = false
 
     /**
      * The asynchronous ring can fill with URBs the phone never reads: submitted stays > 0 while
@@ -349,12 +351,9 @@ class NcmUsbBridge internal constructor(
         wedgedOutSinceNs = 0L
         if (interfaceReclaimAttempted) return
         interfaceReclaimAttempted = true
-        val probe = if (WiredNcmTuning.probeOutOnWedge) probeOutWritable() else PROBE_SKIPPED
         onDiagnostic(
             "ncm bulk-out wedged: submitted=${snapshot.submitted} completed=0 successBytes=0 " +
-                "while the ring is full; sync probe=$probe " +
-                "(>0 = 端点可写，原生 async 路径可疑；-1 = 设备仍未读取该端点；-2 = 未探测); " +
-                "reclaiming the data interface",
+                "while the ring is full; reclaiming the data interface",
         )
         runCatching { reclaimDataInterface() }
     }
@@ -386,6 +385,22 @@ class NcmUsbBridge internal constructor(
             val line = io.diagnostics()
             onDiagnostic("ncm bulk-out partial submit; rebuilding data plane $line")
             throw failSession("NCM bulk-out submitted a partial NTB")
+        }
+        // 首次出现"有提交、零完成"就立刻探一次，不等 3 秒 wedge 窗口：实车会话常常很短
+        // （75Play-20261107-001909 只有约 2 秒），3 秒窗口走不到，探针就没机会跑。
+        // 探测块是无效 NTB，设备端丢弃，不进数据流。
+        if (!outProbeAttempted && snapshot.submitted > 0 &&
+            snapshot.completed == 0 && snapshot.successBytes == 0L
+        ) {
+            outProbeAttempted = true
+            if (WiredNcmTuning.probeOutOnWedge) {
+                val probe = probeOutWritable()
+                onDiagnostic(
+                    "ncm bulk-out probe (first full ring): submitted=${snapshot.submitted} " +
+                        "timeoutMs=$OUT_PROBE_TIMEOUT_MILLIS sync bulkTransfer=$probe " +
+                        "(>0 = 端点可写，原生 async 路径可疑；-1 = 设备仍未读取该端点；探测块不进数据流)",
+                )
+            }
         }
         when (NcmSessionHealth.decide(snapshot)) {
             NcmOutAction.CONTINUE -> Unit
@@ -1094,7 +1109,6 @@ class NcmUsbBridge internal constructor(
         /** 一次性同步探测块的字节数与超时。 */
         private const val OUT_PROBE_BYTES = 64
         private const val OUT_PROBE_TIMEOUT_MILLIS = 500
-        private const val PROBE_SKIPPED = -2
         /** Issue #75: consecutive failures at which the one-shot interface re-claim runs. */
         private const val INTERFACE_RECLAIM_AT_FAILURE = 12
         private const val ENDPOINT_STATUS_TIMEOUT_MILLIS = 500
