@@ -24,6 +24,13 @@ android {
         // The UI suite covers several SDKs and locale-specific resource sandboxes.
         unitTests.all { it.maxHeapSize = "1g" }
     }
+
+    lint {
+        // lint's JavaDocParser crashes (NoSuchMethodError: java.util.List.removeLast()) on this
+        // toolchain; keep release vital lint from blocking the signed standalone build.
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
 }
 
 dependencies {
