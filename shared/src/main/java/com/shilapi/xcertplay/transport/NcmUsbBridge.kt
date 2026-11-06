@@ -1128,8 +1128,14 @@ class NcmUsbBridge internal constructor(
         private const val PACKET_FILTER_DIRECTED_BROADCAST_MULTICAST = 0x001c
         /** CDC NCM 1.0: declare the host's receive-side max NTB size to the device. */
         private const val SET_NTB_INPUT_SIZE = 0x1d
-        /** Matches UsbfsNcmIo.READ_BUFFER_BYTES; also the cap on what we may declare. */
-        private const val NTB_INPUT_SIZE_BYTES = 16 * 1024
+        /**
+         * Local receive buffer, and the hard cap on what SET_NTB_INPUT_SIZE may declare.
+         * Must match UsbfsNcmIo.READ_BUFFER_BYTES. 32 KB keeps it above the 32764-byte
+         * dwNtbInMaxSize that phones advertise, so the declaration is never undersized
+         * (75Play-20261107: declaring 16 KB got result=-1 and the phone never armed its
+         * bulk-OUT read queue).
+         */
+        private const val NTB_INPUT_SIZE_BYTES = 32 * 1024
         /** CDC NCM 1.0 requires at least a 2048-byte NTB for the NTB16 format. */
         private const val MIN_NTB_INPUT_SIZE_BYTES = 2048L
         private const val NTB16_FORMAT = 0x00
