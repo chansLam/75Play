@@ -629,10 +629,11 @@ class NcmUsbBridge internal constructor(
 
     private fun drainStatus(endpoint: UsbEndpoint) {
         val buffer = ByteArray(endpoint.maxPacketSize.coerceAtLeast(64))
-        var loggedFirst = false
+        var notificationCount = 0
         while (statusRunning.get()) {
             // Short synchronous polls keep this thread out of JNI critical sections most of the time;
-            // notifications are rare, small interrupt packets that are only logged.
+            // notifications are rare, small interrupt packets. Every one is logged (and exported via
+            // onDiagnostic) so a missing NetworkConnection is visible instead of silently swallowed.
             val transferred = try {
                 sharedConnection.bulkTransfer(endpoint, buffer, buffer.size, STATUS_POLL_TIMEOUT_MILLIS)
             } catch (_: RuntimeException) {
@@ -646,13 +647,14 @@ class NcmUsbBridge internal constructor(
                 }
                 continue
             }
-            if (!loggedFirst) {
-                loggedFirst = true
-                Log.i(
-                    IphoneCarPlayConfiguration.TAG,
-                    "ncm status notification bytes=$transferred data=${buffer.copyOf(transferred).hex(32)}",
-                )
-            }
+            notificationCount++
+            val data = buffer.copyOf(transferred)
+            val notification = data.getOrNull(1)?.toInt()?.and(0xff)
+            val connected = data.getOrNull(8)?.toInt()?.and(0xff)
+            val line = "ncm status notification #$notificationCount bytes=$transferred " +
+                "notification=0x${notification?.toString(16) ?: "?"} connected=$connected data=${data.hex(32)}"
+            Log.i(IphoneCarPlayConfiguration.TAG, line)
+            onDiagnostic(line)
         }
     }
 
@@ -1205,6 +1207,13 @@ class NcmUsbBridge internal constructor(
             log("ncm GET_NTB_PARAMETERS iface=$controlInterface read=$paramsRead " +
                 describeNtbParameters(paramsBuffer, paramsRead))
 
+            // Stage 1 — minimal control plane (CherryUSB path): only the read-only GET above, then
+            // alt=1; skip every SET. The individual negotiate* knobs apply only when this is false.
+            if (WiredNcmTuning.minimalControlPlane) {
+                log("ncm minimal control plane: skipping all SET requests")
+                return NcmNtbLimits.parse(paramsBuffer, paramsRead) ?: NcmNtbLimits.DEFAULT
+            }
+
             if (WiredNcmTuning.negotiateNtbFormat) {
                 val setFormat = runCatching {
                     connection.controlTransfer(
@@ -1609,7 +1618,9 @@ class NcmUsbBridge internal constructor(
                             (altSelection.errno?.let { " (usbfs errno $it)" } ?: ""),
                     )
                 }
-                if (WiredNcmTuning.renegotiateAfterAltSelection) {
+                if (!WiredNcmTuning.minimalControlPlane &&
+                    WiredNcmTuning.renegotiateAfterAltSelection
+                ) {
                     renegotiateAfterAltSelection(connection, function.control.id, ::log)
                 }
                 Log.i(
@@ -1626,15 +1637,50 @@ class NcmUsbBridge internal constructor(
                         "out=0x${function.bulkOut.address.toString(16)}@${function.bulkOut.maxPacketSize}" +
                         "/type=${function.bulkOut.type}",
                 )
-                val nativeIo = if (realSdkInt() <= 19) {
-                    UsbfsNcmIo.open(sharedConnection, function.bulkIn, function.bulkOut).also {
-                        log(
-                            if (it != null) "ncm using async usbfs URB data plane: ${it.diagnostics()}"
-                            else "ncm async usbfs URB unavailable (${UsbfsNcmIo.lastOpenFailure}); using framework bulk transfer",
+                // Stage 3 recovery for the synchronous plane: clear the latched endpoint halt and
+                // bounce the data interface through alt=0 then back to alt=1, rebuilding the bulk
+                // pipe and data toggle without a bus reset. Defined before the Io so its callback
+                // can capture it. Bounded by WiredNcmTuning.syncStallRecoveryLimit.
+                var syncRecoveryAttempts = 0
+                fun recoverSyncStall(): Boolean {
+                    if (syncRecoveryAttempts >= WiredNcmTuning.syncStallRecoveryLimit) {
+                        log("ncm sync recovery limit reached ($syncRecoveryAttempts); giving up")
+                        return false
+                    }
+                    syncRecoveryAttempts++
+                    val clearResult = clearUsbEndpointHalt(sharedConnection, function.bulkOut)
+                    val bounceErrno = LegacyUsbHostCompat.bounce(sharedConnection, function.data)
+                    if (WiredNcmTuning.syncRecoverySettleMillis > 0) {
+                        runCatching { Thread.sleep(WiredNcmTuning.syncRecoverySettleMillis) }
+                    }
+                    val ok = bounceErrno != null && bounceErrno == 0
+                    log("ncm sync recovery attempt=$syncRecoveryAttempts clear-halt=$clearResult " +
+                        "bounce=$bounceErrno ok=$ok")
+                    return ok
+                }
+
+                val dataIo: NcmIo = when {
+                    WiredNcmTuning.useSyncBulkDataPlane -> {
+                        log("ncm using synchronous USBDEVFS_BULK data plane")
+                        SyncUsbfsNcmIo(
+                            sharedConnection,
+                            function.bulkOut,
+                            function.bulkIn,
+                            ::log,
+                            ::recoverSyncStall,
                         )
                     }
-                } else {
-                    null
+                    realSdkInt() <= 19 -> {
+                        val async = UsbfsNcmIo.open(
+                            sharedConnection, function.bulkIn, function.bulkOut,
+                        )
+                        log(
+                            if (async != null) "ncm using async usbfs URB data plane: ${async.diagnostics()}"
+                            else "ncm async usbfs URB unavailable (${UsbfsNcmIo.lastOpenFailure}); using framework bulk transfer",
+                        )
+                        async ?: FrameworkNcmIo(sharedConnection, function.bulkOut, function.bulkIn)
+                    }
+                    else -> FrameworkNcmIo(sharedConnection, function.bulkOut, function.bulkIn)
                 }
                 return NcmUsbBridge(
                     sharedConnection = sharedConnection,
@@ -1648,7 +1694,7 @@ class NcmUsbBridge internal constructor(
                     legacyRestore = legacyRestore,
                     dataInterface = function.data,
                     ntbLimits = ntbLimits,
-                    dataIo = nativeIo ?: FrameworkNcmIo(sharedConnection, function.bulkOut, function.bulkIn),
+                    dataIo = dataIo,
                 )
             } catch (error: Throwable) {
                 for (usbInterface in claimed.asReversed()) {

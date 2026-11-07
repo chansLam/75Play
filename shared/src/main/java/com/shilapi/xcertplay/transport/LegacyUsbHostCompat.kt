@@ -241,6 +241,26 @@ internal object LegacyUsbHostCompat {
         }
     }
 
+    /**
+     * One synchronous USBDEVFS_BULK transfer. Returns the transferred byte count (>= 0) or
+     * -errno. Null when the native helper is unavailable on this build, so callers can fall back.
+     */
+    internal fun rawBulkTransfer(
+        fileDescriptor: Int,
+        endpoint: Int,
+        buffer: ByteArray,
+        length: Int,
+        timeoutMillis: Int,
+    ): Int? {
+        if (fileDescriptor < 0) return null
+        return try {
+            LegacyUsbHostNative.bulkTransfer(fileDescriptor, endpoint, buffer, length, timeoutMillis)
+        } catch (error: LinkageError) {
+            Log.w(TAG, "usbfs bulk unavailable on endpoint 0x${endpoint.toString(16)}", error)
+            null
+        }
+    }
+
     private const val TAG = "xcertplay-usb"
     private const val USB_REQUEST_GET_CONFIGURATION = 8
     private const val USB_CONTROL_TIMEOUT_MILLIS = 2_000
@@ -267,6 +287,18 @@ private object LegacyUsbHostNative {
         value: Int,
         index: Int,
         buffer: ByteArray?,
+        length: Int,
+        timeoutMillis: Int,
+    ): Int
+
+    /**
+     * Raw USBDEVFS_BULK, a single synchronous bulk transfer. Returns the transferred byte count
+     * (>= 0) or -errno. The caller splits a long NTB into <=16384-byte chunks.
+     */
+    external fun bulkTransfer(
+        fileDescriptor: Int,
+        endpoint: Int,
+        buffer: ByteArray,
         length: Int,
         timeoutMillis: Int,
     ): Int

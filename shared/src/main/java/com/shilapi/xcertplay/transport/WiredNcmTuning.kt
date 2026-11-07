@@ -137,4 +137,40 @@ object WiredNcmTuning {
      * blocks teardown either way.
      */
     var endSessionOnClose: Boolean = false
+
+    /* =========================================================================================
+     * Combined three-stage bring-up switches (aligned with the working CherryUSB + LIVI hosts).
+     * The individual knobs above stay in place for granular A/B; these master switches select the
+     * end-to-end path that ships in one test build so the real car only needs one run.
+     * ========================================================================================= */
+
+    /**
+     * Stage 1 — minimal control plane. When true, only GET_NTB_PARAMETERS (read-only) is issued
+     * and then the data interface is selected at alt=1; every SET_* is skipped (CherryUSB brings
+     * the link up without any SET). When false, the individual negotiate* knobs below apply.
+     */
+    var minimalControlPlane: Boolean = true
+
+    /**
+     * Stage 2 — synchronous blocking data plane. When true, bulk IN/OUT use USBDEVFS_BULK
+     * (LIVI's blocking transfer) instead of the asynchronous URB ring whose OUT URBs never
+     * complete on the i.MX6 KitKat kernel. When false, UsbfsNcmIo's async ring is used.
+     */
+    var useSyncBulkDataPlane: Boolean = true
+
+    /**
+     * Stage 3 — conditional recovery on a synchronous -EPIPE. On a latched stall, clear the
+     * endpoint halt and bounce the data interface through alt=0 then back to alt=1, up to
+     * [syncStallRecoveryLimit] times. It never runs on the healthy path.
+     */
+    var recoverSyncStall: Boolean = true
+
+    /** Timeout for a single synchronous USBDEVFS_BULK transfer. */
+    var syncBulkTimeoutMillis: Int = 3_000
+
+    /** Maximum number of EPIPE recovery attempts over the whole lifetime of one connection. */
+    var syncStallRecoveryLimit: Int = 2
+
+    /** Settle delay after an alt bounce before the first synchronous bulk retry. */
+    var syncRecoverySettleMillis: Long = 150L
 }

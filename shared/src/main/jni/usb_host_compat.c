@@ -225,3 +225,42 @@ Java_com_shilapi_xcertplay_transport_LegacyUsbHostNative_controlTransfer(
     if (result < 0) return saved_errno != 0 ? -saved_errno : -EIO;
     return result;
 }
+
+/* Raw USBDEVFS_BULK, a single synchronous bulk transfer.
+ *
+ * The asynchronous URB ring (usbfs_ncm_io.c) keeps eight bulk-OUT URBs in flight; on the i.MX6
+ * KitKat kernel those OUT URBs submit successfully but never complete (completed=0) while the
+ * phone keeps NAKing. LIVI drives the same NCM function with a blocking bulk transfer instead and
+ * brings up the link. USBDEVFS_BULK blocks until the device ACKs, stalls, or the timeout fires,
+ * and returns the real -errno instead of collapsing every failure into -1.
+ *
+ * The caller is responsible for splitting a long NTB into <=16384-byte chunks.
+ *
+ * Returns the transferred byte count (>= 0), or -errno on failure.
+ */
+JNIEXPORT jint JNICALL
+Java_com_shilapi_xcertplay_transport_LegacyUsbHostNative_bulkTransfer(
+        JNIEnv *env, jobject self, jint file_descriptor, jint endpoint,
+        jbyteArray data, jint length, jint timeout_millis) {
+    (void) self;
+
+    if (file_descriptor < 0 || length <= 0 || data == NULL) return -EINVAL;
+    if ((*env)->GetArrayLength(env, data) < length) return -EINVAL;
+
+    jbyte *buffer = (*env)->GetByteArrayElements(env, data, NULL);
+    if (buffer == NULL) return -ENOMEM;
+
+    struct usbdevfs_bulktransfer bulk;
+    memset(&bulk, 0, sizeof(bulk));
+    bulk.ep = (unsigned int) (endpoint & 0xff);
+    bulk.len = (unsigned int) length;
+    bulk.timeout = (unsigned int) (timeout_millis > 0 ? timeout_millis : 1);
+    bulk.data = buffer;
+
+    int result = ioctl(file_descriptor, USBDEVFS_BULK, &bulk);
+    int saved_errno = errno;
+    (*env)->ReleaseByteArrayElements(env, data, buffer, result >= 0 ? 0 : JNI_ABORT);
+
+    if (result < 0) return saved_errno != 0 ? -saved_errno : -EIO;
+    return result;
+}
