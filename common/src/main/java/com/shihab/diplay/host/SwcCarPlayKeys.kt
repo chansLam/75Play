@@ -62,8 +62,9 @@ enum class SwcWheelOutcome {
  * Key-test mode (`coagent_settings_key_test_mode`) is the switch that swallows the press and
  * reports it as `KEY_CHANGED_TEST_MODE`. Mapped names, including the voice key, go to the
  * session. Volume on its own is the head unit's: short or long, it changes the head-unit volume.
- * With SRC held, one volume press steps the CarPlay map zoom once — a modifier gesture, never a
- * timed hold that runs away. SRC released without a volume press still taps the map-view control.
+ * Double-tapping SRC arms the CarPlay map zoom: the next volume presses each step it once.
+ * A single tap still cycles the map view. Holding SRC is deliberately unused — the head unit
+ * turns a long press into a screen-off, and the `KEY_CHANGED` notice arrives too late to stop it.
  * Every other unmapped name is re-broadcast as the original KEY_CHANGED so the head unit's own
  * consumers act on it.
  * Generic steering does not use this listener.
@@ -80,8 +81,17 @@ object SwcCarPlayKeys {
     /** Same-name presses inside this window are framework repeats; run each mapped key once. */
     private const val REPEAT_WINDOW_MILLIS = 1000L
     /**
-     * 按住 SRC 的有效窗口。音量键在这个窗口内点按时算缩放，超出则算单独按音量交给车机。
-     * 这个窗口也兜住只报 DOWN、不报 UP 的固件：窗口过去后 SRC 仍按单击处理。
+     * 单击 SRC 后等这么久再切地图视图，给第二击留出双击窗口。
+     *
+     * 不能用「按住 SRC」当修饰键：车机自己把长按 SRC 处理成息屏/锁屏，而 `KEY_CHANGED`
+     * 只是通知、拦不住那次系统动作，屏幕锁上之后在车机上很难解开。双击的第一击会被系统
+     * 当作普通 SRC 短按，不会触发长按判定。
+     */
+    internal const val SRC_DOUBLE_TAP_MILLIS = 500L
+    /** 双击 SRC 之后，音量键在这段时间内算缩放；每次缩放都会重新计时，方便连按几下。 */
+    internal const val ZOOM_ARMED_MILLIS = 4_000L
+    /**
+     * 只报 DOWN、不报 UP 的固件的兜底窗口：窗口过去后 SRC 仍按单击处理，不让它卡在按住状态。
      */
     internal const val SRC_HOLD_WINDOW_MILLIS = 2_000L
 
@@ -99,8 +109,8 @@ object SwcCarPlayKeys {
         else -> null
     }
 
-    /** SRC 按住时音量键缩地图；单独按音量仍交给车机处理。 */
-    internal fun volumePressIsZoom(srcHeld: Boolean): Boolean = srcHeld
+    /** 双击 SRC 之后音量键缩地图；单独按音量仍交给车机处理。 */
+    internal fun volumePressIsZoom(zoomArmed: Boolean): Boolean = zoomArmed
 
     /** Mapped keys go to CarPlay. Volume keys drive the head unit volume; everything else is released. */
     internal fun outcomeFor(name: String?): SwcWheelOutcome? {
@@ -216,17 +226,24 @@ object SwcCarPlayKeys {
         private var volumeAsZoom = false
         /** SRC 按下的时刻；0 表示未按住。 */
         private var srcDownAt = 0L
-        /** SRC 这一轮按住期间已经缩放过，抬起时不再切地图视图。 */
-        private var srcConsumedByZoom = false
+        /** 待执行的单击切视图；第二击落在窗口内时取消。 */
+        private var srcPendingTap: Runnable? = null
+        /** 双击 SRC 之后的缩放态有效期；0 表示未进入缩放态。 */
+        private var zoomArmedUntil = 0L
+        /** 本次 SRC 按下是否属于一次双击（是的话抬起不再切视图）。 */
+        private var srcDoubleTapped = false
         private var srcFallback: Runnable? = null
 
         fun cancelHold() {
             srcFallback?.let { handler.removeCallbacks(it) }
             srcFallback = null
+            srcPendingTap?.let { handler.removeCallbacks(it) }
+            srcPendingTap = null
             volumeName = null
             volumeAsZoom = false
             srcDownAt = 0L
-            srcConsumedByZoom = false
+            srcDoubleTapped = false
+            zoomArmedUntil = 0L
         }
 
         override fun onReceive(context: Context, intent: Intent) {
@@ -271,7 +288,7 @@ object SwcCarPlayKeys {
          * Firmware maps mKeystate 0/1/2 to NONE/DOWN/UP.
          *
          * 音量单独按：交给车机调音量（长按也一样，不再有按住即连续缩放）。
-         * 按住 SRC 时按音量：这一次按压算缩放一步，抬起后不再调音量。
+         * 双击过 SRC 之后的缩放态里按音量：这一次按压算缩放一步，抬起后不再调音量。
          */
         private fun handleVolume(outcome: SwcWheelOutcome, name: String, state: String?, now: Long) {
             val down = state == "DOWN" || state == "NONE"
@@ -284,9 +301,10 @@ object SwcCarPlayKeys {
                     HeadUnitVolume.toggleMute()
                     return
                 }
-                if (srcHolding(now)) {
+                if (zoomArmed(now)) {
                     volumeAsZoom = true
-                    srcConsumedByZoom = true
+                    // 连按几下时每次重新计时，缩完自然失效。
+                    zoomArmedUntil = now + ZOOM_ARMED_MILLIS
                     controller()?.zoomMap(outcome == SwcWheelOutcome.VOLUME_UP)
                 }
                 return
@@ -302,20 +320,31 @@ object SwcCarPlayKeys {
         }
 
         /**
-         * SRC 是修饰键：按住时音量键缩地图；单独抬起（期间没缩放过）仍切一次地图视图。
-         * 按下只记录时刻、抬起才切视图，避免长按 SRC 时画面先跳一下。
+         * SRC 单击切地图视图，双击进入缩放态。
+         *
+         * 按下不立刻切视图：先等 [SRC_DOUBLE_TAP_MILLIS]，第二击到来就取消待执行的单击并进入
+         * 缩放态；否则窗口过去后再切。长按 SRC 会被车机当成息屏键，所以这里刻意不用按住做
+         * 修饰，也不再从按住状态里取任何信息。
          */
         private fun handleSrc(name: String, state: String?, now: Long) {
             val pressed = state == "DOWN" || state == "NONE"
             if (pressed) {
                 if (srcDownAt != 0L) return
                 srcDownAt = now
-                srcConsumedByZoom = false
-                srcFallback?.let { handler.removeCallbacks(it) }
+                val pending = srcPendingTap
+                if (pending != null) {
+                    handler.removeCallbacks(pending)
+                    srcPendingTap = null
+                    srcDoubleTapped = true
+                    zoomArmedUntil = now + ZOOM_ARMED_MILLIS
+                    AppLog.i(TAG, "SRC double tap -> map zoom armed ${ZOOM_ARMED_MILLIS}ms")
+                    return
+                }
+                srcDoubleTapped = false
                 // 只报 DOWN 不报 UP 的固件：窗口过去后仍按单击处理，不让 SRC 卡死在按住状态。
                 val fallback = Runnable {
                     srcFallback = null
-                    if (srcDownAt != 0L && !srcConsumedByZoom) {
+                    if (srcDownAt != 0L) {
                         srcDownAt = 0L
                         controller()?.cycleMapView()
                     }
@@ -324,16 +353,23 @@ object SwcCarPlayKeys {
                 handler.postDelayed(fallback, SRC_HOLD_WINDOW_MILLIS)
                 return
             }
+            if (state != "UP" && state != "LONG_UP" && state != "LONG") return
+            if (srcDownAt == 0L) return
             srcFallback?.let { handler.removeCallbacks(it) }
             srcFallback = null
-            val wasHeld = srcDownAt != 0L
             srcDownAt = 0L
-            val consumed = srcConsumedByZoom
-            srcConsumedByZoom = false
-            if (wasHeld && !consumed) controller()?.cycleMapView()
+            if (srcDoubleTapped) {
+                srcDoubleTapped = false
+                return
+            }
+            val tap = Runnable {
+                srcPendingTap = null
+                controller()?.cycleMapView()
+            }
+            srcPendingTap = tap
+            handler.postDelayed(tap, SRC_DOUBLE_TAP_MILLIS)
         }
 
-        private fun srcHolding(now: Long): Boolean =
-            srcDownAt != 0L && now - srcDownAt <= SRC_HOLD_WINDOW_MILLIS
+        private fun zoomArmed(now: Long): Boolean = zoomArmedUntil > now
     }
 }

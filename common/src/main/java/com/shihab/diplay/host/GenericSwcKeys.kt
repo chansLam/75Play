@@ -12,9 +12,11 @@ import com.shihab.diplay.util.AppLog
 
 /**
  * Applies learned Android key codes while generic steering-wheel mode is on.
- * Volume on its own is the head unit's: pressing it changes the head-unit volume. With the
- * learned map-view key held, one volume press steps the CarPlay map zoom once — the same
- * modifier gesture [SwcCarPlayKeys] uses, so both steering modes behave alike.
+ * Volume on its own is the head unit's: pressing it changes the head-unit volume. Double-tapping
+ * the learned map-view key arms the CarPlay map zoom, and the next volume presses step it once
+ * per press — the same gesture [SwcCarPlayKeys] uses, so both steering modes behave alike.
+ * Holding that key cannot be used as a modifier because the head unit turns a long press into a
+ * screen-off, which the KEY_CHANGED notice cannot prevent.
  */
 object GenericSwcKeys {
     private const val TAG = "DiPlay-SwcKeys"
@@ -24,8 +26,13 @@ object GenericSwcKeys {
     private var volumeAsZoom = false
     /** 地图视图键按下的时刻；0 表示未按住。 */
     private var srcDownAt = 0L
-    /** 这一轮按住期间已经缩放过，抬起时不再切地图视图。 */
-    private var srcConsumedByZoom = false
+    /** 待执行的单击切视图；第二击落在双击窗口内时取消。 */
+    private var srcPendingTap: Runnable? = null
+    /** 双击地图视图键之后的缩放态有效期；0 表示未进入缩放态。 */
+    private var zoomArmedUntil = 0L
+    /** 本次地图视图键按下是否属于一次双击。 */
+    private var srcDoubleTapped = false
+    private val handler by lazy { Handler(Looper.getMainLooper()) }
     private val broadcastRepeatGate = SwcBroadcastRepeatGate()
 
     /** True when [event] was a learned key and should not reach the head unit. */
@@ -87,23 +94,50 @@ object GenericSwcKeys {
         return true
     }
 
-    /** 地图视图键本体：按下切一次视图，同时作为按住音量缩放的修饰键。 */
+    /**
+     * 地图视图键：单击切视图，双击进入缩放态。
+     *
+     * 长按会被车机当成息屏键，所以这里刻意不用按住做修饰。
+     */
     private fun handleMapViewKey(down: Boolean, up: Boolean, controller: CarPlayController?) {
+        val now = SystemClock.elapsedRealtime()
         if (down) {
-            srcDownAt = SystemClock.elapsedRealtime()
-            srcConsumedByZoom = false
-            controller?.cycleMapView()
-        } else if (up) {
-            srcDownAt = 0L
-            srcConsumedByZoom = false
+            if (srcDownAt != 0L) return
+            srcDownAt = now
+            val pending = srcPendingTap
+            if (pending != null) {
+                handler.removeCallbacks(pending)
+                srcPendingTap = null
+                srcDoubleTapped = true
+                zoomArmedUntil = now + SwcCarPlayKeys.ZOOM_ARMED_MILLIS
+                AppLog.i(TAG, "map-view key double tap -> map zoom armed")
+                return
+            }
+            srcDoubleTapped = false
+            return
         }
+        if (!up || srcDownAt == 0L) return
+        srcDownAt = 0L
+        if (srcDoubleTapped) {
+            srcDoubleTapped = false
+            return
+        }
+        val tap = Runnable {
+            srcPendingTap = null
+            controller?.cycleMapView()
+        }
+        srcPendingTap = tap
+        handler.postDelayed(tap, SwcCarPlayKeys.SRC_DOUBLE_TAP_MILLIS)
     }
 
     fun cancelHold() {
         volumeId = ""
         volumeAsZoom = false
         srcDownAt = 0L
-        srcConsumedByZoom = false
+        srcDoubleTapped = false
+        zoomArmedUntil = 0L
+        srcPendingTap?.let { handler.removeCallbacks(it) }
+        srcPendingTap = null
     }
 
     fun reset() {
@@ -127,9 +161,9 @@ object GenericSwcKeys {
                 HeadUnitVolume.toggleMute()
                 return
             }
-            if (SwcCarPlayKeys.volumePressIsZoom(srcHolding(now))) {
+            if (SwcCarPlayKeys.volumePressIsZoom(zoomArmed(now))) {
                 volumeAsZoom = true
-                srcConsumedByZoom = true
+                zoomArmedUntil = now + SwcCarPlayKeys.ZOOM_ARMED_MILLIS
                 controller?.zoomMap(outcome == SwcWheelOutcome.VOLUME_UP)
             }
             return
@@ -144,8 +178,7 @@ object GenericSwcKeys {
         else HeadUnitVolume.volumeDown()
     }
 
-    private fun srcHolding(now: Long): Boolean =
-        srcDownAt != 0L && now - srcDownAt <= SwcCarPlayKeys.SRC_HOLD_WINDOW_MILLIS
+    private fun zoomArmed(now: Long): Boolean = zoomArmedUntil > now
 }
 
 private fun GenericSwcAction.isVolume(): Boolean = when (this) {
