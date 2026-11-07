@@ -1151,6 +1151,13 @@ class NcmUsbBridge internal constructor(
         private const val MAX_PLAUSIBLE_NTB_BYTES = 1_048_576L
         private const val REQUEST_DRAIN_TIMEOUT_MILLIS = 2_000L
 
+        /**
+         * Apple vendor-specific GET_MODE. Read-only probe of the device's current extended-function
+         * mode (usbmuxd: 0x45, device recipient, 4-byte reply). A reply whose first byte is not 3
+         * means the phone has not been switched to CDC-NCM mode, which is what macOS does with 0x52.
+         */
+        private const val APPLE_VEND_SPECIFIC_GET_MODE = 0x45
+
         private const val ALT_SETTING_ATTEMPTS = 5
         private const val ALT_SETTING_RETRY_MILLIS = 100L
 
@@ -1491,6 +1498,25 @@ class NcmUsbBridge internal constructor(
                 Log.i(
                     IphoneCarPlayConfiguration.TAG,
                     "ncm opening activeConfig=${activeConfiguration ?: "unknown"}",
+                )
+                // Read-only Apple GET_MODE before any interface is claimed or changed. macOS uses the
+                // vendor-specific 0x52 modeswitch to put the phone in CDC-NCM mode before touching
+                // these interfaces; if the phone is still in another mode its NCM data plane can
+                // stay inactive and every bulk-OUT URB stays queued forever.
+                val modeBuffer = ByteArray(4)
+                val modeResult = LegacyUsbHostCompat.rawControlTransfer(
+                    connection.fileDescriptor,
+                    UsbConstants.USB_DIR_IN or UsbConstants.USB_TYPE_VENDOR or 0, // USB_RECIP_DEVICE = 0
+                    APPLE_VEND_SPECIFIC_GET_MODE,
+                    0,
+                    0,
+                    modeBuffer,
+                    4,
+                    ENDPOINT_STATUS_TIMEOUT_MILLIS,
+                )
+                log(
+                    "ncm apple GET_MODE raw=${describeRawControl(modeResult)} " +
+                        "bytes=${modeBuffer.joinToString(" ") { "%02x".format(it) }}",
                 )
                 @Suppress("DEPRECATION")
                 val legacyEligible = LegacyNcmClaim.eligible(

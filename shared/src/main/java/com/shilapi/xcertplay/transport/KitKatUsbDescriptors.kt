@@ -20,8 +20,14 @@ internal object KitKatUsbDescriptors {
          */
         var ncmCapabilities: Int? = null)
     data class Configuration(val id: Int, val interfaces: MutableList<Interface> = mutableListOf()) {
-        /** control interface id -> data interface id, from the CDC Union descriptors. */
-        val unions: Map<Int, Int> = interfaces.mapNotNull { iface ->
+        /**
+         * control interface id -> data interface id, from the CDC Union descriptors.
+         *
+         * This must be a getter rather than a cached val: the Configuration is constructed (and
+         * added to the parse result) before its interfaces' unionSlave fields are filled in, so a
+         * val evaluated at construction time would stay empty forever.
+         */
+        val unions: Map<Int, Int> get() = interfaces.mapNotNull { iface ->
             iface.unionSlave?.let { iface.id to it }
         }.toMap()
         /** Raw configuration descriptor bytes, kept for hex dumps in the diagnostic log. */
