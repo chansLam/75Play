@@ -991,7 +991,7 @@ class CarPlayController(
         // configuration. Opening data paths before that fails with "exposes no USBMUX CarPlay
         // configuration", so confirm the configuration is ready first and re-enumerate if not.
         if (wiredCarPlayConfigurationReady(device)) {
-            openWiredDataPaths(device)
+            ensureNcmModeThenOpenDataPaths(device)
         } else {
             debugLog("wired iPhone has no CarPlay configuration yet; requesting re-enumeration")
             beginWiredReenumeration(device, attempts = 0)
@@ -1085,6 +1085,48 @@ class CarPlayController(
             }
         }
         mainHandler.postDelayed(poll, WIRED_REENUMERATION_POLL_MILLIS)
+    }
+
+    /**
+     * Before opening the data paths, confirm the phone is actually in pure CDC-NCM mode (Apple mode
+     * 3). The wired log showed it in mode 6 with the bulk-OUT endpoint halted and every URB queued;
+     * macOS selects mode 3 first. If the phone is already in mode 3, open straight away; otherwise
+     * issue the vendor SET_MODE and let the existing re-enumeration poll bring it back.
+     */
+    private fun ensureNcmModeThenOpenDataPaths(device: android.hardware.usb.UsbDevice) {
+        val host = wiredIphoneHost ?: return
+        executor.execute {
+            if (closed || phase != Phase.WIRED || wiredAborted.get()) return@execute
+            val mode = runCatching { host.readAppleMode(device) }.getOrNull()
+            debugLog("wired apple mode check mode=$mode")
+            if (mode == com.shilapi.xcertplay.transport.IphoneUsbHost.APPLE_MODE_CDC_NCM) {
+                openWiredDataPaths(device)
+                return@execute
+            }
+            host.selectAppleModeAsync(
+                device,
+                com.shilapi.xcertplay.transport.IphoneUsbHost.APPLE_MODE_CDC_NCM,
+                executor,
+            ) { transition ->
+                when (transition) {
+                    is com.shilapi.xcertplay.transport.IphoneUsbHost.TransitionResult.ReenumerationRequested -> {
+                        if (closed || phase != Phase.WIRED || wiredAborted.get()) return@selectAppleModeAsync
+                        onStatus(CarPlayStatus.WaitingForReenumeration)
+                        wiredPollReenumeration(device, attempts = 0)
+                    }
+                    is com.shilapi.xcertplay.transport.IphoneUsbHost.TransitionResult.Failed -> {
+                        // A STALL here can mean the device is already usable; fall back rather than
+                        // failing outright when the CarPlay configuration is still present.
+                        if (wiredCarPlayConfigurationReady(device)) {
+                            debugLog("wired SET_MODE failed but configuration is ready; opening data paths")
+                            openWiredDataPaths(device)
+                        } else {
+                            fail(transition.error)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private fun openWiredDataPaths(device: android.hardware.usb.UsbDevice) {
