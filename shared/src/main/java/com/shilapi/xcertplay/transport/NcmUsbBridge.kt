@@ -1336,21 +1336,19 @@ class NcmUsbBridge internal constructor(
             log("ncm post-alt GET_NTB_PARAMETERS iface=$controlInterface read=$paramsRead declared=$declared")
 
             if (WiredNcmTuning.negotiateMaxDatagramSize) {
-                val setMaxDatagram = runCatching {
-                    connection.controlTransfer(
-                        CONTROL_OUT_CLASS_INTERFACE,
-                        SET_MAX_DATAGRAM_SIZE,
-                        0,
-                        controlInterface,
-                        byteArrayOf(
-                            (MAX_DATAGRAM_BYTES and 0xff).toByte(),
-                            ((MAX_DATAGRAM_BYTES shr 8) and 0xff).toByte(),
-                        ),
-                        2,
-                        ENDPOINT_STATUS_TIMEOUT_MILLIS,
-                    )
-                }.getOrDefault(-1)
-                log("ncm post-alt SET_MAX_DATAGRAM_SIZE=$MAX_DATAGRAM_BYTES iface=$controlInterface result=$setMaxDatagram")
+                postAltOutRequest(
+                    connection,
+                    SET_MAX_DATAGRAM_SIZE,
+                    0,
+                    controlInterface,
+                    byteArrayOf(
+                        (MAX_DATAGRAM_BYTES and 0xff).toByte(),
+                        ((MAX_DATAGRAM_BYTES shr 8) and 0xff).toByte(),
+                    ),
+                    2,
+                    "SET_MAX_DATAGRAM_SIZE=$MAX_DATAGRAM_BYTES",
+                    log,
+                )
             }
             if (WiredNcmTuning.negotiateNtbInputSize) {
                 val fourBytes = byteArrayOf(
@@ -1359,48 +1357,101 @@ class NcmUsbBridge internal constructor(
                     ((declared shr 16) and 0xff).toByte(),
                     ((declared shr 24) and 0xff).toByte(),
                 )
-                val setFour = runCatching {
-                    connection.controlTransfer(
-                        CONTROL_OUT_CLASS_INTERFACE,
+                val setFour = postAltOutRequest(
+                    connection,
+                    SET_NTB_INPUT_SIZE,
+                    0,
+                    controlInterface,
+                    fourBytes,
+                    fourBytes.size,
+                    "SET_NTB_INPUT_SIZE=$declared (4-byte)",
+                    log,
+                )
+                if (setFour < 0 && WiredNcmTuning.negotiateNtbInputSize8Byte) {
+                    postAltOutRequest(
+                        connection,
                         SET_NTB_INPUT_SIZE,
                         0,
                         controlInterface,
-                        fourBytes,
-                        fourBytes.size,
-                        ENDPOINT_STATUS_TIMEOUT_MILLIS,
+                        fourBytes + fourBytes,
+                        fourBytes.size * 2,
+                        "SET_NTB_INPUT_SIZE=$declared (8-byte)",
+                        log,
                     )
-                }.getOrDefault(-1)
-                log("ncm post-alt SET_NTB_INPUT_SIZE=$declared (4-byte) iface=$controlInterface result=$setFour")
-                if (setFour < 0 && WiredNcmTuning.negotiateNtbInputSize8Byte) {
-                    val eightBytes = fourBytes + fourBytes
-                    val setEight = runCatching {
-                        connection.controlTransfer(
-                            CONTROL_OUT_CLASS_INTERFACE,
-                            SET_NTB_INPUT_SIZE,
-                            0,
-                            controlInterface,
-                            eightBytes,
-                            eightBytes.size,
-                            ENDPOINT_STATUS_TIMEOUT_MILLIS,
-                        )
-                    }.getOrDefault(-1)
-                    log("ncm post-alt SET_NTB_INPUT_SIZE=$declared (8-byte) iface=$controlInterface result=$setEight")
                 }
             }
             if (WiredNcmTuning.negotiatePacketFilter) {
-                val setFilter = runCatching {
-                    connection.controlTransfer(
-                        CONTROL_OUT_CLASS_INTERFACE,
-                        SET_ETHERNET_PACKET_FILTER,
-                        PACKET_FILTER_DIRECTED_BROADCAST_MULTICAST,
-                        controlInterface,
-                        null,
-                        0,
-                        ENDPOINT_STATUS_TIMEOUT_MILLIS,
-                    )
-                }.getOrDefault(-1)
-                log("ncm post-alt SET_ETHERNET_PACKET_FILTER=0x001c iface=$controlInterface result=$setFilter")
+                postAltOutRequest(
+                    connection,
+                    SET_ETHERNET_PACKET_FILTER,
+                    PACKET_FILTER_DIRECTED_BROADCAST_MULTICAST,
+                    controlInterface,
+                    null,
+                    0,
+                    "SET_ETHERNET_PACKET_FILTER=0x001c",
+                    log,
+                )
             }
+        }
+
+        /**
+         * Sends one OUT class request twice — framework first, then raw usbfs — and logs both.
+         *
+         * The framework's UsbDeviceConnection.controlTransfer() reports every failure as -1,
+         * which made "device stalls the data stage" indistinguishable from "the transfer timed
+         * out". usbfs returns -errno instead, and the elapsed times show whether a failure came
+         * back immediately (STALL) or ran to the deadline.
+         */
+        private fun postAltOutRequest(
+            connection: SharedUsbConnection,
+            request: Int,
+            value: Int,
+            index: Int,
+            payload: ByteArray?,
+            length: Int,
+            label: String,
+            log: (String) -> Unit,
+        ): Int {
+            val frameworkStart = System.nanoTime()
+            val framework = runCatching {
+                connection.controlTransfer(
+                    CONTROL_OUT_CLASS_INTERFACE,
+                    request,
+                    value,
+                    index,
+                    payload,
+                    length,
+                    ENDPOINT_STATUS_TIMEOUT_MILLIS,
+                )
+            }.getOrDefault(-1)
+            val frameworkMillis = (System.nanoTime() - frameworkStart) / 1_000_000
+            if (!WiredNcmTuning.probeRawUsbControl) {
+                log("ncm post-alt $label iface=$index result=$framework ${frameworkMillis}ms")
+                return framework
+            }
+            val rawStart = System.nanoTime()
+            val raw = LegacyUsbHostCompat.rawControlTransfer(
+                connection.fileDescriptor,
+                CONTROL_OUT_CLASS_INTERFACE,
+                request,
+                value,
+                index,
+                payload,
+                length,
+                ENDPOINT_STATUS_TIMEOUT_MILLIS,
+            )
+            val rawMillis = (System.nanoTime() - rawStart) / 1_000_000
+            log(
+                "ncm post-alt $label iface=$index result=$framework ${frameworkMillis}ms " +
+                    "raw=${describeRawControl(raw)} ${rawMillis}ms",
+            )
+            return framework
+        }
+
+        private fun describeRawControl(result: Int?): String = when {
+            result == null -> "unavailable"
+            result >= 0 -> "ok:$result"
+            else -> "-$result"
         }
 
         /** Claims NCM while retaining the caller's shared USB connection. */

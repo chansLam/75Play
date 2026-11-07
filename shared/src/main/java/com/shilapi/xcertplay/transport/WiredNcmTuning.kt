@@ -56,6 +56,17 @@ object WiredNcmTuning {
     var renegotiateAfterAltSelection: Boolean = true
 
     /**
+     * Re-send the OUT-data-stage class requests through usbfs USBDEVFS_CONTROL as well, so the
+     * log carries both results for the same request.
+     *
+     * The framework returns -1 for every failure, which cannot separate a device STALL from a
+     * timeout. After alt=1 the framework still failed all nine data-stage attempts while
+     * zero-length requests kept succeeding (report 75Play-20261107-143817), so the ordering
+     * theory is dead and the transport itself has to be inspected; usbfs returns -errno.
+     */
+    var probeRawUsbControl: Boolean = true
+
+    /**
      * Send CDC SET_ETHERNET_PACKET_FILTER (class request 0x43, value 0x001C = directed + broadcast +
      * multicast) after SET_CRC_MODE — the last step of Linux cdc_ncm_setup().
      *
