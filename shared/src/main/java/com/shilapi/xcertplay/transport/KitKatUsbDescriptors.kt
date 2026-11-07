@@ -12,12 +12,20 @@ internal object KitKatUsbDescriptors {
     data class Interface(val id: Int, val alternate: Int, val clazz: Int, val subclass: Int,
         val protocol: Int, val endpoints: MutableList<Endpoint> = mutableListOf(),
         /** CDC Union slave interface id declared by this interface's class-specific descriptor. */
-        var unionSlave: Int? = null)
+        var unionSlave: Int? = null,
+        /**
+         * bmNetworkCapabilities from the CDC-NCM functional descriptor (subtype 0x1A). A device is
+         * only obliged to answer SET_MAX_DATAGRAM_SIZE / SET_NTB_INPUT_SIZE when the matching bit
+         * is set, and may legitimately STALL them otherwise.
+         */
+        var ncmCapabilities: Int? = null)
     data class Configuration(val id: Int, val interfaces: MutableList<Interface> = mutableListOf()) {
         /** control interface id -> data interface id, from the CDC Union descriptors. */
         val unions: Map<Int, Int> = interfaces.mapNotNull { iface ->
             iface.unionSlave?.let { iface.id to it }
         }.toMap()
+        /** Raw configuration descriptor bytes, kept for hex dumps in the diagnostic log. */
+        var raw: ByteArray? = null
     }
     private val alternates = Collections.synchronizedMap(WeakHashMap<UsbInterface, Int>())
 
@@ -44,7 +52,11 @@ internal object KitKatUsbDescriptors {
             CarPlayUsbConfiguration(
                 config.id,
                 config.interfaces.map(::platformInterface),
-                unions = config.unions,
+                config.raw,
+                config.unions,
+                config.interfaces.mapNotNull { iface ->
+                    iface.ncmCapabilities?.let { iface.id to it }
+                }.toMap(),
             )
         }
     }
@@ -65,7 +77,10 @@ internal object KitKatUsbDescriptors {
                     if (configuration != null && cursor < end) return emptyList()
                     val total = u16(bytes, cursor + 2)
                     if (total < length || cursor + total > bytes.size) return emptyList()
-                    configuration = Configuration(bytes[cursor + 5].toInt() and 255).also(result::add)
+                    configuration = Configuration(bytes[cursor + 5].toInt() and 255).also {
+                        it.raw = bytes.copyOfRange(cursor, minOf(cursor + total, bytes.size))
+                        result.add(it)
+                    }
                     end = cursor + total
                     iface = null
                 }
@@ -80,13 +95,19 @@ internal object KitKatUsbDescriptors {
                     iface.endpoints += Endpoint(bytes[cursor + 2].toInt() and 255,
                         bytes[cursor + 3].toInt() and 255, u16(bytes, cursor + 4), bytes[cursor + 6].toInt() and 255)
                 }
-                // Class-specific interface descriptor: carry the CDC Union pair so NCM control and
-                // data interfaces can be matched as declared instead of by id order.
+                // Class-specific interface descriptor. Then: type 0x24, subtype 0x06 = CDC Union
+                // (control -> data pairing), subtype 0x1A = CDC-NCM functional descriptor whose
+                // bmNetworkCapabilities says which SET requests the device must answer.
                 0x24 -> {
-                    if (iface != null && cursor < end && length >= 5 &&
-                        (bytes[cursor + 2].toInt() and 255) == 0x06
-                    ) {
-                        iface.unionSlave = bytes[cursor + 4].toInt() and 255
+                    if (iface != null && cursor < end && length >= 3) {
+                        when (bytes[cursor + 2].toInt() and 255) {
+                            0x06 -> if (length >= 5) {
+                                iface.unionSlave = bytes[cursor + 4].toInt() and 255
+                            }
+                            0x1a -> if (length >= 6) {
+                                iface.ncmCapabilities = bytes[cursor + 5].toInt() and 255
+                            }
+                        }
                     }
                 }
             }

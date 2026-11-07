@@ -18,6 +18,8 @@ data class CarPlayUsbConfiguration(
      * order silently picked the Aux pair, whose data endpoints the phone never feeds.
      */
     val unions: Map<Int, Int> = emptyMap(),
+    /** Interface id -> bmNetworkCapabilities from its CDC-NCM functional descriptor. */
+    val ncmCapabilities: Map<Int, Int> = emptyMap(),
 )
 
 /**

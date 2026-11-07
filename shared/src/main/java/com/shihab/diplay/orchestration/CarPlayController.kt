@@ -1149,6 +1149,16 @@ class CarPlayController(
                 " status=${function.statusIn?.let { "0x${it.address.toString(16)}" } ?: "none"}" +
                 " unions=${configuration.unions}",
         )
+        // The phone may legitimately STALL SET_NTB_INPUT_SIZE / SET_MAX_DATAGRAM_SIZE when the
+        // matching bmNetworkCapabilities bit is clear, so log what it actually declares — and the
+        // raw configuration descriptor, because two NCM functions with no Union between them must
+        // be told apart by endpoint ownership rather than assumed order.
+        debugLog(
+            "ncm descriptors caps=${configuration.ncmCapabilities} unions=${configuration.unions} " +
+                "raw=${(configuration.platformConfiguration as? ByteArray)?.let { bytes ->
+                    bytes.take(400).joinToString(" ") { "%02x".format(it) }
+                } ?: "unavailable"}",
+        )
         // Re-entry guard: a previous NCM bridge whose kernel endpoints died after a UI/surface
         // destroy must never be reused (previous.log: surface recreate -> instant raw(1) EPERM on
         // the old bridge while counters still read completed=591). Close any stale bridge before
