@@ -335,9 +335,13 @@ class IphoneUsbHost(
     }
 
     /**
-     * Switches the device to the requested Apple extended-function mode (vendor SET_MODE: 0x52 OUT,
-     * wIndex = target mode, one data byte). The phone re-enumerates in response, so the caller then
-     * polls for it to reappear instead of reusing the current connection.
+     * Switches the device to the requested Apple extended-function mode (vendor SET_MODE: 0x52,
+     * wIndex = target mode).
+     *
+     * usbmuxd submits this through the same IN-direction vendor verb as GET_MODE (request type
+     * 0xC0, one-byte reply) rather than an OUT transfer — an OUT SET_MODE is rejected, which is
+     * why the earlier attempt stalled. A zero reply byte means the switch was accepted and the
+     * phone re-enumerates, so the caller then polls for it instead of reusing this connection.
      */
     fun selectAppleModeAsync(
         device: UsbDevice,
@@ -347,17 +351,20 @@ class IphoneUsbHost(
     ) {
         executor.execute {
             callback(runTransition(device) { connection ->
-                val payload = byteArrayOf(0)
+                val reply = ByteArray(1)
                 val transferred = connection.controlTransfer(
-                    USB_VENDOR_DEVICE_OUT,
+                    USB_VENDOR_DEVICE_IN,
                     CARPLAY_CONFIGURATION_REQUEST,
                     0,
                     targetMode,
-                    payload,
-                    payload.size,
+                    reply,
+                    reply.size,
                     CONTROL_TRANSFER_TIMEOUT_MILLIS,
                 )
-                diagnosticLog("apple SET_MODE target=$targetMode transferred=$transferred")
+                diagnosticLog(
+                    "apple SET_MODE target=$targetMode transferred=$transferred " +
+                        "reply=" + reply.take(maxOf(0, transferred)).joinToString(" ") { "%02x".format(it) },
+                )
                 if (transferred < 0) {
                     throw IphoneUsbException.Protocol(
                         "Apple SET_MODE to $targetMode was rejected (transferred=$transferred)",
@@ -644,7 +651,6 @@ class IphoneUsbHost(
         private const val ERRNO_NO_SUCH_FILE = 2
         private const val ERRNO_BUSY = 16
         private const val USB_VENDOR_DEVICE_IN = 0xc0
-        private const val USB_VENDOR_DEVICE_OUT = 0x40
         private const val CARPLAY_CONFIGURATION_REQUEST = 0x52
         private const val CARPLAY_CONFIGURATION_INDEX = 0x0004
         private const val VENDOR_RESPONSE_LENGTH = 1
