@@ -1145,7 +1145,9 @@ class CarPlayController(
             "ncm config=${configuration.id} control=${function.control.id}/" +
                 "${com.shilapi.xcertplay.transport.IphoneCarPlayConfiguration.alternateSetting(function.control)}" +
                 " data=${function.data.id}/${com.shilapi.xcertplay.transport.IphoneCarPlayConfiguration.alternateSetting(function.data)}" +
-                " in=0x${function.bulkIn.address.toString(16)} out=0x${function.bulkOut.address.toString(16)}",
+                " in=0x${function.bulkIn.address.toString(16)} out=0x${function.bulkOut.address.toString(16)}" +
+                " status=${function.statusIn?.let { "0x${it.address.toString(16)}" } ?: "none"}" +
+                " unions=${configuration.unions}",
         )
         // Re-entry guard: a previous NCM bridge whose kernel endpoints died after a UI/surface
         // destroy must never be reused (previous.log: surface recreate -> instant raw(1) EPERM on

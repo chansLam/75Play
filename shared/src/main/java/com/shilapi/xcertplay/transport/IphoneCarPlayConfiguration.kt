@@ -11,6 +11,13 @@ data class CarPlayUsbConfiguration(
     val id: Int,
     val interfaces: List<UsbInterface>,
     internal val platformConfiguration: Any? = null,
+    /**
+     * CDC Union pairs read from the class-specific interface descriptors: control interface id to
+     * data interface id. This is the only reliable way to pair them — an iPhone exposes two NCM
+     * functions (the standard one and the Aux/`anpi` one used by RemoteXPC), and pairing by id
+     * order silently picked the Aux pair, whose data endpoints the phone never feeds.
+     */
+    val unions: Map<Int, Int> = emptyMap(),
 )
 
 /**

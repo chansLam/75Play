@@ -35,25 +35,43 @@ object NcmFunctionDiscovery {
     }
 
     private fun findCdcNcm(configuration: CarPlayUsbConfiguration): NcmFunction? {
-        val control = interfaces(configuration).firstOrNull {
+        val all = interfaces(configuration)
+        val controls = all.filter {
             it.interfaceClass == CONTROL_CLASS && it.interfaceSubclass == CONTROL_SUBCLASS
-        } ?: return null
-        val data = interfaces(configuration)
-            .filter { it.interfaceClass == DATA_CLASS && bulkEndpoints(it) != null }
-            .minByOrNull { if (IphoneCarPlayConfiguration.alternateSetting(it) == DATA_ALTERNATE_SETTING) 0 else 1 }
+        }
+        // An iPhone exposes two NCM functions. The standard one carries the interrupt status
+        // endpoint; the Aux one (`anpi`, RemoteXPC) does not — its endpoint is disabled through
+        // the `ncm-interrupt-ep-disabled` device-tree key. Only the standard pair carries
+        // CarPlay's Ethernet traffic, so prefer the control interface that has the status endpoint.
+        val control = controls.firstOrNull { statusEndpoint(it) != null }
+            ?: controls.firstOrNull()
+            ?: return null
+        val candidates = all.filter {
+            it.interfaceClass == DATA_CLASS && bulkEndpoints(it) != null
+        }
+        // The CDC Union descriptor is authoritative; id order only stands in when it is missing.
+        val declared = configuration.unions[control.id]
+        val data = declared?.let { slave -> candidates.firstOrNull { it.id == slave } }
+            ?: candidates.firstOrNull { it.id == control.id + 1 }
+            ?: candidates.minByOrNull {
+                if (IphoneCarPlayConfiguration.alternateSetting(it) == DATA_ALTERNATE_SETTING) 0 else 1
+            }
             ?: return null
         val endpoints = bulkEndpoints(data) ?: return null
         val dataClaim = interfaces(configuration).firstOrNull {
             it.id == data.id && IphoneCarPlayConfiguration.alternateSetting(it) == 0
         } ?: data
-        val statusIn = (0 until control.endpointCount)
+        val statusIn = statusEndpoint(control)
+        return NcmFunction(control, data, dataClaim, statusIn, endpoints.first, endpoints.second)
+    }
+
+    private fun statusEndpoint(control: UsbInterface): UsbEndpoint? =
+        (0 until control.endpointCount)
             .map(control::getEndpoint)
             .singleOrNull {
                 it.direction == UsbConstants.USB_DIR_IN &&
                     it.type == UsbConstants.USB_ENDPOINT_XFER_INT
             }
-        return NcmFunction(control, data, dataClaim, statusIn, endpoints.first, endpoints.second)
-    }
 
     private fun interfaces(configuration: CarPlayUsbConfiguration): List<UsbInterface> = configuration.interfaces
 

@@ -1451,7 +1451,18 @@ class NcmUsbBridge internal constructor(
         private fun describeRawControl(result: Int?): String = when {
             result == null -> "unavailable"
             result >= 0 -> "ok:$result"
-            else -> "-$result"
+            else -> "$result(${controlErrnoName(-result)})"
+        }
+
+        /** usbfs errno names, so the log says STALL instead of a bare number. */
+        private fun controlErrnoName(errno: Int): String = when (errno) {
+            32 -> "EPIPE/STALL"
+            110 -> "ETIMEDOUT"
+            71 -> "EPROTO"
+            22 -> "EINVAL"
+            19 -> "ENODEV"
+            5 -> "EIO"
+            else -> "errno$errno"
         }
 
         /** Claims NCM while retaining the caller's shared USB connection. */

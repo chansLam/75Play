@@ -10,8 +10,15 @@ import java.util.WeakHashMap
 internal object KitKatUsbDescriptors {
     data class Endpoint(val address: Int, val attributes: Int, val packetSize: Int, val interval: Int)
     data class Interface(val id: Int, val alternate: Int, val clazz: Int, val subclass: Int,
-        val protocol: Int, val endpoints: MutableList<Endpoint> = mutableListOf())
-    data class Configuration(val id: Int, val interfaces: MutableList<Interface> = mutableListOf())
+        val protocol: Int, val endpoints: MutableList<Endpoint> = mutableListOf(),
+        /** CDC Union slave interface id declared by this interface's class-specific descriptor. */
+        var unionSlave: Int? = null)
+    data class Configuration(val id: Int, val interfaces: MutableList<Interface> = mutableListOf()) {
+        /** control interface id -> data interface id, from the CDC Union descriptors. */
+        val unions: Map<Int, Int> = interfaces.mapNotNull { iface ->
+            iface.unionSlave?.let { iface.id to it }
+        }.toMap()
+    }
     private val alternates = Collections.synchronizedMap(WeakHashMap<UsbInterface, Int>())
 
     fun alternate(iface: UsbInterface): Int? = alternates[iface]
@@ -33,7 +40,13 @@ internal object KitKatUsbDescriptors {
                 }
             }
         }
-        return configurations.map { config -> CarPlayUsbConfiguration(config.id, config.interfaces.map(::platformInterface)) }
+        return configurations.map { config ->
+            CarPlayUsbConfiguration(
+                config.id,
+                config.interfaces.map(::platformInterface),
+                unions = config.unions,
+            )
+        }
     }
 
     fun parse(bytes: ByteArray): List<Configuration> {
@@ -66,6 +79,15 @@ internal object KitKatUsbDescriptors {
                     if (iface == null || cursor >= end || length < 7) return emptyList()
                     iface.endpoints += Endpoint(bytes[cursor + 2].toInt() and 255,
                         bytes[cursor + 3].toInt() and 255, u16(bytes, cursor + 4), bytes[cursor + 6].toInt() and 255)
+                }
+                // Class-specific interface descriptor: carry the CDC Union pair so NCM control and
+                // data interfaces can be matched as declared instead of by id order.
+                0x24 -> {
+                    if (iface != null && cursor < end && length >= 5 &&
+                        (bytes[cursor + 2].toInt() and 255) == 0x06
+                    ) {
+                        iface.unionSlave = bytes[cursor + 4].toInt() and 255
+                    }
                 }
             }
             cursor += length
