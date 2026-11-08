@@ -147,10 +147,10 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
                     activeAirPlaySession = null
                     CarPlayBackgroundSession.active = false
                     activeScreenStreamTypes.clear()
-                    showVideoLoading()
-                    setConnectionStage(getString(R.string.carplay_session_ended_reconnecting))
-                    appendLog("AirPlay session ended; reconnecting from scratch")
-                    reconnectAfterLoss("AirPlay session ended")
+                    appendLog("AirPlay session ended; returning to shell, will auto-reopen on recovery")
+                    // Do not stay on a black/loading host: hand back to the shell. The foreground
+                    // session recovery reconnects in the background and reopens the host on success.
+                    returnToDiPlay()
                 }
             }
 
@@ -159,10 +159,8 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
                     if (wirelessStartup.isStale(controllerGeneration)) return@runOnUiThread
                     wirelessStartup.disconnected()
                     activeScreenStreamTypes.clear()
-                    showVideoLoading()
-                    setConnectionStage(getString(R.string.transport_error_reconnecting))
-                    appendLog("CarPlay transport error: $message; reconnecting from scratch")
-                    reconnectAfterLoss("CarPlay transport error: $message")
+                    appendLog("CarPlay transport error: $message; returning to shell for background recovery")
+                    returnToDiPlay()
                 }
             }
 

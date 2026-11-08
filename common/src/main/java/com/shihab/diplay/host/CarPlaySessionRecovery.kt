@@ -1,13 +1,17 @@
 package com.shihab.diplay.host
 
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.hardware.usb.UsbManager
 import android.os.Handler
 import android.os.Looper
 import com.shihab.diplay.AirPlayPersistence
+import com.shihab.diplay.CarPlayHostActivity
 import com.shihab.diplay.CarPlayConnectService
 import com.shihab.diplay.DiPlayPreferences
+import com.shihab.diplay.connect.ConnectBroadcasts
 import com.shilapi.xcertplay.transport.IphoneUsbHost
 import com.shilapi.xcertplay.transport.IphoneUsbMatcher
 import java.util.concurrent.atomic.AtomicBoolean
@@ -39,12 +43,29 @@ internal class CarPlaySessionRecovery(context: Context) {
     private val running = AtomicBoolean(false)
     private var attachHandle: java.io.Closeable? = null
     @Volatile private var pollThread: Thread? = null
+    private var connectedReceiver: BroadcastReceiver? = null
 
     fun start() {
         if (!running.compareAndSet(false, true)) return
         attachHandle = runCatching {
             iphoneHost.registerAttachReceiver { scheduleRecoveryCheck(ATTACH_DEBOUNCE_MILLIS) }
         }.getOrNull()
+        // Reopen the CarPlay host automatically as soon as a background recovery succeeds, so the
+        // driver never has to tap through the shell. singleTask reuses an existing host instance.
+        connectedReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action != ConnectBroadcasts.ACTION_CONNECTED) return
+                if (!DiPlayPreferences.autoConnect(appContext)) return
+                openCarPlayHost()
+            }
+        }.also { receiver ->
+            runCatching {
+                appContext.registerReceiver(
+                    receiver,
+                    IntentFilter(ConnectBroadcasts.ACTION_CONNECTED),
+                )
+            }
+        }
         Thread({
             while (running.get()) {
                 try {
@@ -67,6 +88,8 @@ internal class CarPlaySessionRecovery(context: Context) {
         attachHandle = null
         pollThread?.interrupt()
         pollThread = null
+        connectedReceiver?.let { runCatching { appContext.unregisterReceiver(it) } }
+        connectedReceiver = null
         mainHandler.removeCallbacks(checkRunnable)
     }
 
@@ -98,6 +121,12 @@ internal class CarPlaySessionRecovery(context: Context) {
         val intent = Intent(appContext, CarPlayConnectService::class.java)
             .setAction(CarPlayConnectService.ACTION_START)
         runCatching { appContext.startService(intent) }
+    }
+
+    private fun openCarPlayHost() {
+        val intent = Intent(appContext, CarPlayHostActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { appContext.startActivity(intent) }
     }
 
     private companion object {
