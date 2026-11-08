@@ -173,4 +173,22 @@ object WiredNcmTuning {
 
     /** Settle delay after an alt bounce before the first synchronous bulk retry. */
     var syncRecoverySettleMillis: Long = 150L
+
+    /**
+     * Hard-wait for the NCM NETWORK_CONNECTION notification before submitting any bulk-OUT URB
+     * (CherryUSB's get_connect_status gate). Report 75Play-20261108-125509 shows the discriminator:
+     * a healthy connection opens already connected=1 and never writes while disconnected, whereas a
+     * reconnect starts at connected=0 and, while the old code still issued a real bulk every 10 ms,
+     * fired ~1500 failed URBs in the 14 s before connected=1 — after which the first write returned
+     * EINVAL and the endpoint stayed wedged. When true, sendBatch returns before touching the USB
+     * endpoint while the link is down instead of flooding it.
+     */
+    var hardWaitNetworkConnection: Boolean = true
+
+    /**
+     * Fallback that unblocks bulk OUT even without a NETWORK_CONNECTION after this many ms since
+     * bridge open, so a lost/missing status notification can never cause a permanent write stall.
+     * The observed connected delay is ~15 s; 30 s leaves headroom while bounding the wait.
+     */
+    var hardWaitFallbackMillis: Long = 30_000L
 }

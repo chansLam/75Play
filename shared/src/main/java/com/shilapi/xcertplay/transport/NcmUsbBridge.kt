@@ -134,6 +134,17 @@ class NcmUsbBridge internal constructor(
      */
     fun sendBatch(frames: List<ByteArray>, timeoutMillis: Int): Int = synchronized(writeLock) {
         if (frames.isEmpty() || closed || isAbortedOrDetached) return@synchronized 0
+        // Hard-wait gate (CherryUSB): do not touch the bulk-OUT endpoint until the phone's
+        // NETWORK_CONNECTION. While the link is down it NAKs every URB, and on this head unit a
+        // ~1500-URB flood during the ~14 s reconnect window leaves the endpoint wedged (first write
+        // after connected=1 returned EINVAL). Return before allocating/submitting anything; the
+        // bounded fallback prevents a permanent stall if the status notification is ever lost.
+        if (WiredNcmTuning.hardWaitNetworkConnection &&
+            !networkConnected &&
+            elapsedSinceOpenMillis() < WiredNcmTuning.hardWaitFallbackMillis
+        ) {
+            return@synchronized 0
+        }
         val batch = NcmTxBatch.take(frames, ntbLimits)
         if (batch.isEmpty()) return@synchronized 0
         ncmWriteEnqueuedFrames += batch.size
