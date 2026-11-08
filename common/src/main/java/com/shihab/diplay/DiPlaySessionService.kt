@@ -10,12 +10,14 @@ import com.shihab.diplay.host.R
 
 /** Keeps an explicitly started connection alive when another car app is in the foreground. */
 class DiPlaySessionService : Service() {
-    private val sessionRecovery = com.shihab.diplay.host.CarPlaySessionRecovery(this)
+    // Created in onCreate: the service Context is not attached during the constructor, so calling
+    // applicationContext on a field initializer would NPE on this KitKat build.
+    private var sessionRecovery: com.shihab.diplay.host.CarPlaySessionRecovery? = null
 
     override fun onCreate() {
         super.onCreate()
         // Watch for the iPhone returning after a quick-resume/link loss and auto-reconnect.
-        sessionRecovery.start()
+        sessionRecovery = com.shihab.diplay.host.CarPlaySessionRecovery(this).also { it.start() }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -56,7 +58,8 @@ class DiPlaySessionService : Service() {
     }
 
     override fun onDestroy() {
-        sessionRecovery.stop()
+        sessionRecovery?.stop()
+        sessionRecovery = null
         super.onDestroy()
     }
 
