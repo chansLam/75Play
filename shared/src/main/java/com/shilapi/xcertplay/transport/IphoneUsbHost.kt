@@ -201,6 +201,11 @@ class IphoneUsbHost(
             runCatching { setPackage.invoke(usb, *args) }
         }
         true
+    }.onFailure { error ->
+        diagnosticLog(
+            "wired silent grant failed: ${error.javaClass.name} " +
+                "${error.message}; falling back to system dialog",
+        )
     }.getOrDefault(false)
 
     /** Returns null for unrelated broadcasts, malformed results, or non-configured devices. */

@@ -16,6 +16,10 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <!-- Optional: floating ball over other apps (install-time on KitKat). -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- Granted only when installed as a privileged system app (/system/priv-app via root).
+         A normal sideload cannot hold it, so the reflective grant then simply fails and the
+         system permission dialog is shown. -->
+    <uses-permission android:name="android.permission.MANAGE_USB" />
     <queries>
         <!-- Legacy OEM package query (not a BYD HUD product feature). Keep for HomeScreenMonitor tests / ROMs that still expose it. -->
         <package android:name="com.byd.carsettings" />
