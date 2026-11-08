@@ -1389,7 +1389,12 @@ class CarPlayController(
                 identification = config.identification,
                 endpoint = endpoint,
                 availableCurrentMilliAmps = config.availableCurrentMilliAmps,
-                timeoutMillis = WIRED_CONTROL_TIMEOUT_MILLIS,
+                // Keep the iAP2 control loop alive for the whole session: a fixed 60s deadline used
+                // to return TIMED_OUT right after a successful connect, stopping iAP2 receive while
+                // media kept streaming; the iPhone then saw an unmaintained link and sent EOF ~20s
+                // later (the "dies after ~1 minute" fault). NO_TIMEOUT keeps the bounded 60s handshake
+                // but runs live control until closed/aborted.
+                timeoutMillis = com.shihab.diplay.transport.Iap2WiredControlClient.NO_TIMEOUT_MILLIS,
                 locationProvider = locationProvider,
                 vehicleStatusProvider = vehicleStatusProvider,
                 onIncoming = ::onRouteFrame,
@@ -2602,6 +2607,8 @@ class CarPlayController(
         // 60s: the iPhone trust dialog appears only when unlocked/awake; a locked or slow-unlock
         // phone misses the old 15s budget. Per-step wait lives in LockdownPairingClient (10s).
         private const val WIRED_PAIR_TIMEOUT_MILLIS = 60_000L
+        // Retained for reference; the live iAP2 loop now uses NO_TIMEOUT_MILLIS so a fixed 60s
+        // deadline cannot stop the control channel after a successful connect.
         private const val WIRED_CONTROL_TIMEOUT_MILLIS = 60_000L
         private const val MAX_WIRED_REENUMERATION_ATTEMPTS = 3
         private const val WIRED_REENUMERATION_RETRY_MILLIS = 250L
