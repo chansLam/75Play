@@ -410,4 +410,12 @@
     <string name="shell_category_maintenance">Обслуговування</string>
     <string name="shell_category_product">Про застосунок</string>
     <string name="shell_category_hardware">Система й обладнання</string>
+    <string name="usb_privilege_row">Мовчазний дозвіл USB</string>
+    <string name="usb_privilege_action">Встановити</string>
+    <string name="usb_privilege_title">Встановити системний привілей</string>
+    <string name="usb_privilege_confirm_body">Додаток буде скопійовано до /system/priv-app, і пристрій перезавантажиться. Після цього він матиме MANAGE_USB і автоматично надаватиме iPhone доступ до USB без діалогу. Продовжити?</string>
+    <string name="usb_privilege_reboot">Перезавантажити зараз</string>
+    <string name="usb_privilege_hint">Шлях дротового iPhone змінюється під час кожного перелічення, тому звичайна установка показує діалог USB. З root встановіть це один раз для мовчазного дозволу; без root діалог залишається.</string>
+    <string name="usb_privilege_already">Це вже привілейований системний додаток; доступ до USB надається мовчки</string>
+    <string name="usb_privilege_no_root">Root недоступний; використовуватиметься системний діалог USB</string>
 </resources>

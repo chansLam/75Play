@@ -410,4 +410,12 @@
     <string name="shell_category_maintenance">الصيانة</string>
     <string name="shell_category_product">معلومات التطبيق</string>
     <string name="shell_category_hardware">النظام والأجهزة</string>
+    <string name="usb_privilege_row">إذن USB الصامت</string>
+    <string name="usb_privilege_action">تثبيت</string>
+    <string name="usb_privilege_title">تثبيت امتياز النظام</string>
+    <string name="usb_privilege_confirm_body">سيتم نسخ التطبيق إلى /system/priv-app وستتم إعادة تشغيل الوحدة. بعد ذلك يمتلك التطبيق MANAGE_USB ويمنح iPhone إذن USB تلقائيًا دون نافذة إذن. هل تريد المتابعة؟</string>
+    <string name="usb_privilege_reboot">إعادة التشغيل الآن</string>
+    <string name="usb_privilege_hint">تتغير مسارة جهاز iPhone السلكي في كل إعادة تعداد، لذا يجب على التثبيت العادي إظهار نافذة USB. مع صلاحيات الروت، ثبّت هذا مرة واحدة لمنح الإذن صامتًا؛ بدون روت تبقى النافذة.</string>
+    <string name="usb_privilege_already">التطبيق مميز بالنظام بالفعل؛ يُمنح إذن USB صامتًا</string>
+    <string name="usb_privilege_no_root">صلاحيات الروت غير متاحة؛ ستُستخدم نافذة إذن USB</string>
 </resources>

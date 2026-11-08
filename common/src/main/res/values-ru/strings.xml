@@ -410,4 +410,12 @@
     <string name="shell_category_maintenance">Обслуживание</string>
     <string name="shell_category_product">О приложении</string>
     <string name="shell_category_hardware">Система и оборудование</string>
+    <string name="usb_privilege_row">Молчаливое разрешение USB</string>
+    <string name="usb_privilege_action">Установить</string>
+    <string name="usb_privilege_title">Установить системную привилегию</string>
+    <string name="usb_privilege_confirm_body">Приложение будет скопировано в /system/priv-app, и устройство перезагрузится. После этого оно получит MANAGE_USB и будет автоматически предоставлять iPhone доступ к USB без диалога. Продолжить?</string>
+    <string name="usb_privilege_reboot">Перезагрузить сейчас</string>
+    <string name="usb_privilege_hint">Путь проводного iPhone меняется при каждом перечислении, поэтому обычная установка показывает диалог USB. С root установите это один раз для молчаливого разрешения; без root диалог остаётся.</string>
+    <string name="usb_privilege_already">Это уже привилегированное системное приложение; доступ к USB предоставляется молча</string>
+    <string name="usb_privilege_no_root">Root недоступен; будет использоваться системный диалог USB</string>
 </resources>

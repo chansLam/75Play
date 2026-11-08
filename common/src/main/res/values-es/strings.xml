@@ -410,4 +410,12 @@
     <string name="shell_category_maintenance">Mantenimiento</string>
     <string name="shell_category_product">Producto</string>
     <string name="shell_category_hardware">Sistema y hardware</string>
+    <string name="usb_privilege_row">Permiso USB silencioso</string>
+    <string name="usb_privilege_action">Instalar</string>
+    <string name="usb_privilege_title">Instalar privilegio del sistema</string>
+    <string name="usb_privilege_confirm_body">La app se copiará a /system/priv-app y la unidad se reiniciará. Después tendrá MANAGE_USB y concederá al iPhone el acceso USB automáticamente, sin diálogo. ¿Continuar?</string>
+    <string name="usb_privilege_reboot">Reiniciar ahora</string>
+    <string name="usb_privilege_hint">La ruta del iPhone con cable cambia en cada reenumeración, por lo que una instalación normal debe mostrar el diálogo USB. Con root, instala esto una vez para conceder el permiso en silencio; sin root se mantiene el diálogo.</string>
+    <string name="usb_privilege_already">Ya es una app del sistema con privilegios; el acceso USB se concede en silencio</string>
+    <string name="usb_privilege_no_root">No hay acceso root; se usará el diálogo USB del sistema</string>
 </resources>
