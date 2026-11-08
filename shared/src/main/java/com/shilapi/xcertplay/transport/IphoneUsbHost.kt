@@ -152,9 +152,13 @@ class IphoneUsbHost(
     @Throws(IphoneUsbException::class)
     fun requestPermission(device: UsbDevice): PermissionRequest {
         requireConfiguredDevice(device)
+        // Diagnostics must never break the connect flow: every reflective/device access is guarded.
+        val path = runCatching { device.deviceName }.getOrNull()
+        val configCount = runCatching { device.configurationCount }.getOrNull()
         diagnosticLog(
-            "wired USB permission check path=${device.deviceName} " +
-                "hasPermission=${usbManager.hasPermission(device)} configCount=${device.configurationCount}",
+            "wired USB permission check path=$path " +
+                "hasPermission=${runCatching { usbManager.hasPermission(device) }.getOrNull()} " +
+                "configCount=$configCount",
         )
         if (usbManager.hasPermission(device)) return PermissionRequest.AlreadyGranted(device)
         if (tryGrantDevicePermission(device) && usbManager.hasPermission(device)) {
@@ -162,7 +166,7 @@ class IphoneUsbHost(
             return PermissionRequest.AlreadyGranted(device)
         }
 
-        diagnosticLog("wired USB permission dialog required path=${device.deviceName}")
+        diagnosticLog("wired USB permission dialog required path=$path")
         usbManager.requestPermission(device, permissionPendingIntent())
         return PermissionRequest.Requested(device)
     }
