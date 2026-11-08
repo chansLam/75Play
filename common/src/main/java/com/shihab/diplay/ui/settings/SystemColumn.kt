@@ -4,6 +4,7 @@ package com.shihab.diplay.ui.settings
 import android.widget.LinearLayout
 import androidx.fragment.app.Fragment
 import com.shihab.diplay.host.R
+import com.shihab.diplay.ui.DiPlayDialog
 import com.shihab.diplay.ui.FocusSupport
 import com.shihab.diplay.ui.GlassColors
 import com.shihab.diplay.ui.LayoutMetrics
@@ -55,6 +56,55 @@ internal class SystemColumn(page: Fragment) : AboutColumnKit(page) {
         card.addView(divider(ctx))
         card.addView(settingRow(ctx, ctx.getString(R.string.about_export_report), ghostButton(ctx, ctx.getString(R.string.about_export)) { host.exportDiagnosticsNow() }))
         card.addView(settingRow(ctx, ctx.getString(R.string.choose_save_location), capPick(ctx, ctx.getString(R.string.about_default)) { host.chooseReportDestination() }))
+        card.addView(divider(ctx))
+        addPrivilegedUsbRow(card)
+    }
+
+    /**
+     * One-time privileged install so wired USB permission is granted silently. The heavy work
+     * (su probe / remount / copy) runs off the UI thread; the reboot itself is confirmed first.
+     */
+    private fun addPrivilegedUsbRow(card: LinearLayout) {
+        val ctx = card.context
+        val root = com.shihab.diplay.host.RootController(ctx)
+        val button = ghostButton(ctx, ctx.getString(R.string.usb_privilege_action)) {
+            Thread {
+                when {
+                    root.hasManageUsb() || root.isSystemApp() ->
+                        host.showGlassToast(ctx.getString(R.string.usb_privilege_already))
+                    !root.isRootAvailable() ->
+                        host.showGlassToast(ctx.getString(R.string.usb_privilege_no_root))
+                    else -> mainThread(ctx) {
+                        DiPlayDialog.showConfirm(
+                            ctx,
+                            ctx.getString(R.string.usb_privilege_title),
+                            ctx.getString(R.string.usb_privilege_confirm_body),
+                            ctx.getString(R.string.usb_privilege_reboot),
+                            ctx.getString(R.string.cancel),
+                            danger = true,
+                            onConfirm = {
+                                Thread {
+                                    val error = root.installAsPrivilegedApp()
+                                    if (error != null) mainThread(ctx) {
+                                        DiPlayDialog.showInfo(
+                                            ctx,
+                                            ctx.getString(R.string.usb_privilege_title),
+                                            error,
+                                        )
+                                    }
+                                }.start()
+                            },
+                        )
+                    }
+                }
+            }.start()
+        }
+        card.addView(settingRow(ctx, ctx.getString(R.string.usb_privilege_row), button))
+        card.addView(paragraph(ctx, ctx.getString(R.string.usb_privilege_hint)))
+    }
+
+    private fun mainThread(ctx: android.content.Context, block: () -> Unit) {
+        android.os.Handler(ctx.mainLooper).post(block)
     }
 
     private fun sectionTitle(ctx: android.content.Context, text: String) =

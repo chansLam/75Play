@@ -410,4 +410,12 @@
     <string name="shell_category_maintenance">Maintenance</string>
     <string name="shell_category_product">Product</string>
     <string name="shell_category_hardware">System &amp; hardware</string>
+    <string name="usb_privilege_row">Silent USB permission</string>
+    <string name="usb_privilege_action">Install</string>
+    <string name="usb_privilege_title">Install system privilege</string>
+    <string name="usb_privilege_confirm_body">The app will be copied to /system/priv-app and the head unit will reboot. After that it holds MANAGE_USB and grants the iPhone USB access silently, with no permission dialog. Continue?</string>
+    <string name="usb_privilege_reboot">Reboot now</string>
+    <string name="usb_privilege_hint">Wired iPhone re-enumeration changes the device path every time, so a normal install must show the USB dialog. With root, install this once to grant access silently; without root the dialog stays.</string>
+    <string name="usb_privilege_already">Already a privileged system app; USB access is granted silently</string>
+    <string name="usb_privilege_no_root">Root is not available; the system USB dialog will be used</string>
 </resources>

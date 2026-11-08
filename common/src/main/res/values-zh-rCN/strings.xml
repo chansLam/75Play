@@ -409,4 +409,12 @@
     <string name="shell_category_maintenance">维护与诊断</string>
     <string name="shell_category_product">应用信息</string>
     <string name="shell_category_hardware">系统与硬件</string>
+    <string name="usb_privilege_row">USB 静默授权</string>
+    <string name="usb_privilege_action">安装</string>
+    <string name="usb_privilege_title">安装系统特权</string>
+    <string name="usb_privilege_confirm_body">应用将复制到 /system/priv-app 并重启车机。之后应用持有 MANAGE_USB，对 iPhone 的 USB 访问自动静默授权，不再弹授权窗。是否继续？</string>
+    <string name="usb_privilege_reboot">立即重启</string>
+    <string name="usb_privilege_hint">有线 iPhone 重新枚举时设备路径每次都变，普通安装只能弹 USB 授权窗。有 root 时一次性安装本项即可静默授权；无 root 则保留弹窗。</string>
+    <string name="usb_privilege_already">已是系统特权应用，USB 访问已静默授权</string>
+    <string name="usb_privilege_no_root">未获得 root 权限，将使用系统 USB 授权窗</string>
 </resources>

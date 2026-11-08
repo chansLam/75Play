@@ -408,4 +408,12 @@
     <string name="shell_category_maintenance">維護與診斷</string>
     <string name="shell_category_product">應用資訊</string>
     <string name="shell_category_hardware">系統與硬體</string>
+    <string name="usb_privilege_row">USB 靜默授權</string>
+    <string name="usb_privilege_action">安裝</string>
+    <string name="usb_privilege_title">安裝系統特權</string>
+    <string name="usb_privilege_confirm_body">應用將複製到 /system/priv-app 並重啟車機。之後應用持有 MANAGE_USB，對 iPhone 的 USB 存取自動靜默授權，不再彈授權視窗。是否繼續？</string>
+    <string name="usb_privilege_reboot">立即重啟</string>
+    <string name="usb_privilege_hint">有線 iPhone 重新列舉時裝置路徑每次都變，普通安裝只能彈 USB 授權視窗。有 root 時一次性安裝本項即可靜默授權；無 root 則保留彈窗。</string>
+    <string name="usb_privilege_already">已是系統特權應用，USB 存取已靜默授權</string>
+    <string name="usb_privilege_no_root">未獲得 root 權限，將使用系統 USB 授權視窗</string>
 </resources>
