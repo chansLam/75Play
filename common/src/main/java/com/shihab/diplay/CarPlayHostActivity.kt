@@ -852,6 +852,12 @@ class CarPlayHostActivity : ComponentActivity() {
         SwcCarPlayKeys.stop(this)
         logThemeState(ThemeModeDiagnostics.Source.STOP, resources.configuration)
         mainHandler.removeCallbacks(pollConfiguration)
+        // Unified keep-alive for every way the UI can leave (back to shell, home key, launching
+        // another head-unit app, recents): park here so the controller/USB/iAP2 link outlives the
+        // UI regardless of whether the system later destroys this singleTask Activity. Partial
+        // overlays only trigger onPause, not onStop, so this does not park while still visible.
+        // Idempotent with the park calls in showDiPlayHome/onDestroy.
+        sessionLifecycle.parkForShell()
         super.onStop()
         // Leaving the CarPlay screen: show the floating ball (tap=Back, long-press=return to
         // the DiPlay shell), only while its switch is on.
