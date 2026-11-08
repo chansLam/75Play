@@ -659,6 +659,8 @@ class IphoneUsbHost(
         private const val MODE_REPLY_LENGTH = 4
         /** Apple extended-function mode 3 = CDC-NCM, the mode macOS selects before using NCM. */
         internal const val APPLE_MODE_CDC_NCM = 3
+        /** Apple extended-function mode 4 = USB Ethernet + CDC-NCM (6 configurations); LIVI's mode. */
+        internal const val APPLE_MODE_USB_ETHERNET_CDC_NCM = 4
         /** iPhone USB product ID once it has switched into CarPlay mode (issue #201). */
         internal const val CARPLAY_MODE_PID = 0x12a8
         private const val CONTROL_TRANSFER_TIMEOUT_MILLIS = 1_000

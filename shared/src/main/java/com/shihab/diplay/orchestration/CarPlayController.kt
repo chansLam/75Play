@@ -1088,24 +1088,33 @@ class CarPlayController(
     }
 
     /**
-     * Before opening the data paths, confirm the phone is actually in pure CDC-NCM mode (Apple mode
-     * 3). The wired log showed it in mode 6 with the bulk-OUT endpoint halted and every URB queued;
-     * macOS selects mode 3 first. If the phone is already in mode 3, open straight away; otherwise
-     * issue the vendor SET_MODE and let the existing re-enumeration poll bring it back.
+     * Opens the data paths once the NCM CarPlay configuration is ready (the caller already verified
+     * [wiredCarPlayConfigurationReady]).
+     *
+     * Do NOT gate this on the GET_MODE first byte: per usbmuxd that reply is "3:3:3:0 in the
+     * initial mode, 5:3:3:0 otherwise" — the first byte is an initial/non-initial flag, not the
+     * Apple mode number, and the real mode is derived from bNumConfigurations (guess_mode). A device
+     * with 6 configurations is already in mode 4 (USB Ethernet + CDC-NCM), the correct working
+     * mode. Comparing that byte against mode 3 never matches and made the old code issue SET_MODE
+     * in an infinite loop (195 times in the 2026-11-08 report) without ever opening the data
+     * plane. So when the NCM configuration is present, open the data paths directly.
      */
     private fun ensureNcmModeThenOpenDataPaths(device: android.hardware.usb.UsbDevice) {
         val host = wiredIphoneHost ?: return
         executor.execute {
             if (closed || phase != Phase.WIRED || wiredAborted.get()) return@execute
-            val mode = runCatching { host.readAppleMode(device) }.getOrNull()
-            debugLog("wired apple mode check mode=$mode")
-            if (mode == com.shilapi.xcertplay.transport.IphoneUsbHost.APPLE_MODE_CDC_NCM) {
+            if (wiredCarPlayConfigurationReady(device)) {
+                debugLog("wired NCM configuration ready; opening data paths directly (no Apple SET_MODE)")
                 openWiredDataPaths(device)
                 return@execute
             }
+            // Fallback only: the device is still in the initial mode with no NCM configuration.
+            // Ask for mode 4 (the mode LIVI uses); a STALL is treated as "already usable" and the
+            // re-enumeration poll / configuration check bounds the work, so this can never loop.
+            debugLog("wired NCM configuration absent; requesting Apple mode 4")
             host.selectAppleModeAsync(
                 device,
-                com.shilapi.xcertplay.transport.IphoneUsbHost.APPLE_MODE_CDC_NCM,
+                com.shilapi.xcertplay.transport.IphoneUsbHost.APPLE_MODE_USB_ETHERNET_CDC_NCM,
                 executor,
             ) { transition ->
                 when (transition) {
