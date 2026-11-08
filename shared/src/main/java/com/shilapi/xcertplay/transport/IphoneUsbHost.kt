@@ -152,12 +152,17 @@ class IphoneUsbHost(
     @Throws(IphoneUsbException::class)
     fun requestPermission(device: UsbDevice): PermissionRequest {
         requireConfiguredDevice(device)
+        diagnosticLog(
+            "wired USB permission check path=${device.deviceName} " +
+                "hasPermission=${usbManager.hasPermission(device)} configCount=${device.configurationCount}",
+        )
         if (usbManager.hasPermission(device)) return PermissionRequest.AlreadyGranted(device)
         if (tryGrantDevicePermission(device) && usbManager.hasPermission(device)) {
             diagnosticLog("wired iPhone USB permission granted without a dialog")
             return PermissionRequest.AlreadyGranted(device)
         }
 
+        diagnosticLog("wired USB permission dialog required path=${device.deviceName}")
         usbManager.requestPermission(device, permissionPendingIntent())
         return PermissionRequest.Requested(device)
     }
