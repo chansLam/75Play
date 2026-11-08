@@ -67,6 +67,12 @@ class NcmUsbBridge internal constructor(
     private val writeWatchdogStarted = AtomicBoolean(false)
     private val writeWatchdogFired = AtomicBoolean(false)
     private var inboundFrameSeen = false
+    /**
+     * Set by the status thread from the NCM NETWORK_CONNECTION notification (wValue at byte 2:
+     * 0 = disconnected, 1 = connected). While false the phone keeps bulk OUT NAKed, so those
+     * timeouts are retried silently rather than counted as write failures.
+     */
+    @Volatile private var networkConnected = false
     private val readWatchdogStarted = AtomicBoolean(false)
     private val readWatchdogFired = AtomicBoolean(false)
     /** Monotonic time of the last inbound NCM frame; the read-stall watchdog keys off it. */
@@ -200,7 +206,9 @@ class NcmUsbBridge internal constructor(
                 ncmWriteEnqueuedFrames <= WiredNcmTuning.earlyGraceFrames ||
                     System.nanoTime() - openNanos < WiredNcmTuning.earlyGraceMillis * NANOS_PER_MILLISECOND
             )
-            if (inEarlyGrace || !inboundFrameSeen) {
+            // Until the phone's NETWORK_CONNECTION arrives it keeps bulk OUT NAKed; wait as long as
+            // that takes (the 2026-11-08 report needed ~15 s) instead of burning the failure quota.
+            if (inEarlyGrace || !inboundFrameSeen || !networkConnected) {
                 earlyNakCount += 1
                 logFirstOutbound(block, blockBytes, sequence, failed = true)
                 if (WiredNcmTuning.reselectAltOnEarlyNak && earlyNakCount == 1) {
@@ -221,6 +229,7 @@ class NcmUsbBridge internal constructor(
                         IphoneCarPlayConfiguration.TAG,
                         "ncm bulk-out not ready; retaining bridge for retry " +
                             "(earlyGrace=$inEarlyGrace inboundSeen=$inboundFrameSeen " +
+                            "networkConnected=$networkConnected " +
                             "earlyNak=$earlyNakCount enqueued=$ncmWriteEnqueuedFrames " +
                             "elapsedMs=${elapsedSinceOpenMillis()})",
                     )
@@ -650,9 +659,15 @@ class NcmUsbBridge internal constructor(
             notificationCount++
             val data = buffer.copyOf(transferred)
             val notification = data.getOrNull(1)?.toInt()?.and(0xff)
-            val connected = data.getOrNull(8)?.toInt()?.and(0xff)
+            // NETWORK_CONNECTION (bNotification 0x00) carries the link state in wValue's low byte
+            // (byte 2): 0 = disconnected, 1 = connected. The 8-byte packet has no byte 8.
+            val connected = data.getOrNull(2)?.toInt()?.and(0xff)
+            if (notification == 0x00) {
+                networkConnected = connected == 1
+            }
             val line = "ncm status notification #$notificationCount bytes=$transferred " +
-                "notification=0x${notification?.toString(16) ?: "?"} connected=$connected data=${data.hex(32)}"
+                "notification=0x${notification?.toString(16) ?: "?"} connected=$connected " +
+                "networkConnected=$networkConnected data=${data.hex(32)}"
             Log.i(IphoneCarPlayConfiguration.TAG, line)
             onDiagnostic(line)
         }
