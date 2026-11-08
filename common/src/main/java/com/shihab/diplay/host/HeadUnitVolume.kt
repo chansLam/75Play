@@ -5,6 +5,7 @@ import android.media.AudioManager
 import android.os.IBinder
 import android.os.Parcel
 import android.os.RemoteException
+import com.shihab.diplay.AirPlayPersistence
 import com.shihab.diplay.util.AppLog
 
 /**
@@ -102,6 +103,7 @@ object HeadUnitVolume {
 
     /** Logs before->after volume for each stream and flags the one the firmware actually changed. */
     private fun logStreamVolumeDelta(code: Int, before: IntArray) {
+        val ctx = debugContext
         val am = audioManager() ?: return
         val parts = ArrayList<String>()
         for (i in DIAG_STREAMS.indices) {
@@ -111,7 +113,13 @@ object HeadUnitVolume {
             val active = isStreamActive(stream)?.let { if (it) " active" else "" } ?: ""
             parts.add("s$stream:${before[i]}->$after$active$changed")
         }
-        diag("tx$code delta " + parts.joinToString(" ") + " musicActive=" + am.isMusicActive)
+        val config = if (ctx == null) "" else {
+            val media = AirPlayPersistence.loadMediaAudioChannel(ctx)
+            val nav = AirPlayPersistence.loadNavigationAudioChannel(ctx)
+            val call = AirPlayPersistence.loadCallAudioChannel(ctx)
+            " cfg[media=$media nav=$nav call=$call]"
+        }
+        diag("tx$code$config delta " + parts.joinToString(" ") + " musicActive=" + am.isMusicActive)
     }
 
     private fun audioManager(): AudioManager? =
