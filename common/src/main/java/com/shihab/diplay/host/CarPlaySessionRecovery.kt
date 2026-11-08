@@ -45,6 +45,9 @@ internal class CarPlaySessionRecovery(context: Context) {
     private var detachHandle: java.io.Closeable? = null
     @Volatile private var pollThread: Thread? = null
     private var connectedReceiver: BroadcastReceiver? = null
+    // Tracks whether the last poll saw an iPhone so we detect the present->absent edge. The USB
+    // DETACHED broadcast is unreliable on this head unit, so the poll must catch an unplug itself.
+    @Volatile private var iphonePresentLastPoll = false
 
     fun start() {
         if (!running.compareAndSet(false, true)) return
@@ -112,21 +115,33 @@ internal class CarPlaySessionRecovery(context: Context) {
         if (!running.get()) return
         // Respect the user's auto-connect choice.
         if (!DiPlayPreferences.autoConnect(appContext)) return
+        val wireless = AirPlayPersistence.loadWirelessEnabled(appContext)
+        val iphonePresent = wireless || iphoneHost.discover().isNotEmpty()
+
+        // Detect the present->absent edge while a session is active. This head unit does not
+        // deliver USB DETACHED, so without this the link only dies on the ~60s read watchdog.
+        if (iphonePresentLastPoll && !iphonePresent &&
+            (CarPlayBackgroundSession.snapshot() != null || CarPlayConnectService.connecting)
+        ) {
+            iphonePresentLastPoll = false
+            onIphoneDetached()
+            return
+        }
+        iphonePresentLastPoll = iphonePresent
+
         // A healthy session (or an in-flight connect) already exists: nothing to recover.
         if (CarPlayConnectService.connecting) return
         if (CarPlayBackgroundSession.snapshot() != null) return
         // Wired requires an iPhone to be present; wireless bring-up creates its own network and
         // is triggered unconditionally (the iPhone connects back once the hotspot is up).
-        if (!AirPlayPersistence.loadWirelessEnabled(appContext) &&
-            iphoneHost.discover().isEmpty()
-        ) {
-            return
-        }
+        if (!iphonePresent) return
         startConnectService()
     }
 
     private fun onIphoneDetached() {
         if (!running.get()) return
+        iphonePresentLastPoll = false
+        android.util.Log.i("CarPlayRecovery", "iPhone gone; returning to shell and resetting session")
         // Stop any in-flight connect immediately rather than letting it time out.
         runCatching {
             val cancel = Intent(appContext, CarPlayConnectService::class.java)
