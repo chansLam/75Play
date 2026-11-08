@@ -1449,6 +1449,11 @@ class CarPlayHostActivity : ComponentActivity() {
 
 
     private fun showDiPlayHome(page: String = "home") {
+        // Park immediately, before this Activity leaves: waiting until onDestroy leaves a window
+        // (onStop..onDestroy) where the USB link can be torn down. Swap the owner to the parked
+        // session now so the controller/USB/iAP2 link outlives the UI. Idempotent with the
+        // parkForShell call in onDestroy.
+        sessionLifecycle.parkForShell()
         controller?.sendTouch(emptyList())
         // No FLAG_ACTIVITY_REORDER_TO_FRONT on KitKat i.MX6: it conflicts with the home-screen
         // relaunch and bounces DiPlay back to the launcher when opening CarPlay.
