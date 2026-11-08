@@ -1,6 +1,7 @@
 package com.shihab.diplay.host
 
 import android.content.Context
+import android.media.AudioManager
 import android.os.IBinder
 import android.os.Parcel
 import android.os.RemoteException
@@ -32,6 +33,9 @@ object HeadUnitVolume {
     private const val TX_SET_VOLUME_DOWN = 10
     private const val TX_SET_MUTE = 13
     private const val TX_GET_SETTINGS_INFO = 22
+
+    // Streams whose volume we snapshot around a volume key so we can see which one the firmware edits.
+    private val DIAG_STREAMS = intArrayOf(0, 3, 4, 5, 6, 8, 9, 10)
 
     private var binder: IBinder? = null
     private var debugContext: Context? = null
@@ -70,6 +74,8 @@ object HeadUnitVolume {
     /** One-way no-arg void call, matching the AIDL proxy's exact wire format. */
     private fun transactVoid(code: Int, label: String) {
         val target = binderLocked() ?: return
+        val isVolumeKey = code == TX_SET_VOLUME_UP || code == TX_SET_VOLUME_DOWN
+        val before = if (isVolumeKey) snapshotStreamVolumes() else null
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
         try {
@@ -85,6 +91,39 @@ object HeadUnitVolume {
             reply.recycle()
             data.recycle()
         }
+        if (before != null) logStreamVolumeDelta(code, before)
+    }
+
+    /** Snapshot getStreamVolume() for every diagnostic stream (null when no context/audio service). */
+    private fun snapshotStreamVolumes(): IntArray? {
+        val am = audioManager() ?: return null
+        return DIAG_STREAMS.map { am.getStreamVolume(it) }.toIntArray()
+    }
+
+    /** Logs before->after volume for each stream and flags the one the firmware actually changed. */
+    private fun logStreamVolumeDelta(code: Int, before: IntArray) {
+        val am = audioManager() ?: return
+        val parts = ArrayList<String>()
+        for (i in DIAG_STREAMS.indices) {
+            val stream = DIAG_STREAMS[i]
+            val after = am.getStreamVolume(stream)
+            val changed = if (after != before[i]) " *CHANGED*" else ""
+            val active = isStreamActive(stream)?.let { if (it) " active" else "" } ?: ""
+            parts.add("s$stream:${before[i]}->$after$active$changed")
+        }
+        diag("tx$code delta " + parts.joinToString(" ") + " musicActive=" + am.isMusicActive)
+    }
+
+    private fun audioManager(): AudioManager? =
+        debugContext?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+
+    /** Reflects hidden AudioSystem.isStreamActive(stream, 0); null if unavailable. */
+    private fun isStreamActive(stream: Int): Boolean? = try {
+        val method = Class.forName("android.media.AudioSystem")
+            .getMethod("isStreamActive", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+        method.invoke(null, stream, 0) as? Boolean
+    } catch (e: Exception) {
+        null
     }
 
     /** void call with one boolean argument (e.g. setMute(bool)). */
