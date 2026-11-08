@@ -267,7 +267,12 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         // the session; hasSession covers the return from CarPlay if that callback already happened.
         // While stop() is in flight, hasSession stays true for waiters — do not show play/disconnect.
         if (isCarPlayConnecting() || CarPlayBackgroundSession.isStopping()) return false
-        return CarPlayBackgroundSession.active || CarPlayBackgroundSession.hasSession()
+        if (CarPlayBackgroundSession.active) return true
+        // A restart clears the live controller but keeps the stop action so the next attempt can
+        // reuse the owner. That bookkeeping is not a live connection: require a real controller,
+        // otherwise the shell keeps showing "connected" after an unexpected drop and the manual
+        // connect path races a session that no longer exists.
+        return CarPlayBackgroundSession.hasSession() && CarPlayBackgroundSession.snapshot() != null
     }
     override fun isCarPlayConnecting(): Boolean =
         // Only the explicit connect flow flags — do NOT use hasSession()&&!active here:

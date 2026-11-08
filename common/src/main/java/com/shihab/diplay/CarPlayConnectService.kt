@@ -100,7 +100,10 @@ class CarPlayConnectService : Service() {
     private fun beginConnect() {
         if (started) return // idempotent: a connection attempt is already in flight
         // An active session already exists (e.g. DiPlay relaunched after a handoff); just tell DiPlay.
-        if (CarPlayBackgroundSession.hasSession()) {
+        // A restart can leave a stop action with no live controller (snapshot null); that is not a
+        // reusable session, so fall through and build a real controller instead of broadcasting a
+        // fake "connected" that leaves the shell with nothing to open.
+        if (CarPlayBackgroundSession.hasSession() && CarPlayBackgroundSession.snapshot() != null) {
             succeeded = true
             connecting = false
             runCatching { sendBroadcast(ConnectBroadcasts.connected(this)) }
