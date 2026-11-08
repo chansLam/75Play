@@ -42,6 +42,7 @@ internal class CarPlaySessionRecovery(context: Context) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val running = AtomicBoolean(false)
     private var attachHandle: java.io.Closeable? = null
+    private var detachHandle: java.io.Closeable? = null
     @Volatile private var pollThread: Thread? = null
     private var connectedReceiver: BroadcastReceiver? = null
 
@@ -49,6 +50,11 @@ internal class CarPlaySessionRecovery(context: Context) {
         if (!running.compareAndSet(false, true)) return
         attachHandle = runCatching {
             iphoneHost.registerAttachReceiver { scheduleRecoveryCheck(ATTACH_DEBOUNCE_MILLIS) }
+        }.getOrNull()
+        // Physical cable unplug: do not wait for the read watchdog (8-10s) on a frozen host.
+        // Abort the in-flight link and return to the shell immediately.
+        detachHandle = runCatching {
+            iphoneHost.registerDetachReceiver { onIphoneDetached() }
         }.getOrNull()
         // Reopen the CarPlay host automatically as soon as a background recovery succeeds, so the
         // driver never has to tap through the shell. singleTask reuses an existing host instance.
@@ -86,6 +92,8 @@ internal class CarPlaySessionRecovery(context: Context) {
         if (!running.compareAndSet(true, false)) return
         runCatching { attachHandle?.close() }
         attachHandle = null
+        runCatching { detachHandle?.close() }
+        detachHandle = null
         pollThread?.interrupt()
         pollThread = null
         connectedReceiver?.let { runCatching { appContext.unregisterReceiver(it) } }
@@ -117,6 +125,22 @@ internal class CarPlaySessionRecovery(context: Context) {
         startConnectService()
     }
 
+    private fun onIphoneDetached() {
+        if (!running.get()) return
+        // Stop any in-flight connect immediately rather than letting it time out.
+        runCatching {
+            val cancel = Intent(appContext, CarPlayConnectService::class.java)
+                .setAction(CarPlayConnectService.ACTION_CANCEL)
+            appContext.startService(cancel)
+        }
+        // Hand the UI back to the shell first so the host finishes and releases its owner claim.
+        FloatingBall.backToDiPlay(appContext)
+        // Once the host is gone, clear the dead bookkeeping so a later reinsert is a clean connect.
+        mainHandler.postDelayed({
+            runCatching { CarPlayBackgroundSession.forceReset() }
+        }, RESET_AFTER_DETACH_MILLIS)
+    }
+
     private fun startConnectService() {
         val intent = Intent(appContext, CarPlayConnectService::class.java)
             .setAction(CarPlayConnectService.ACTION_START)
@@ -132,5 +156,6 @@ internal class CarPlaySessionRecovery(context: Context) {
     private companion object {
         const val POLL_INTERVAL_MILLIS = 3_000L
         const val ATTACH_DEBOUNCE_MILLIS = 1_500L
+        const val RESET_AFTER_DETACH_MILLIS = 300L
     }
 }
