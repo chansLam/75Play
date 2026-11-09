@@ -117,14 +117,7 @@ class NcmUsbBridge internal constructor(
         }
     }
 
-    /** Native usbfs context used by lwIP for direct NTB submission. Zero on the framework path. */
-    internal fun nativeDataPlaneHandle(): Long = (dataIo as? UsbfsNcmIo)?.nativeHandle() ?: 0L
-
-    /** Delivers ordinary IPv6 frames from the usbfs reader straight into this lwIP context. */
-    internal fun bindDirectInput(lwipHandle: Long): Boolean =
-        (dataIo as? UsbfsNcmIo)?.bindLwip(lwipHandle) == true
-
-    /** Submits one Ethernet frame. Returns false when the OUT ring cannot accept it yet. */
+    /** Submits one Ethernet frame. Returns false when the OUT pipe cannot accept it yet. */
     fun send(frame: ByteArray, timeoutMillis: Int): Boolean =
         sendBatch(listOf(frame), timeoutMillis) == 1
 
@@ -154,44 +147,22 @@ class NcmUsbBridge internal constructor(
             checkOpenLocked()
             this.sequence.also { this.sequence = (this.sequence + 1) and 0xffff }
         }
-        val usbfs = dataIo as? UsbfsNcmIo
-        // usbfs allocates and fills the final NTB inside its URB buffer. The framework fallback
-        // retains the managed encoder because it has no native URB-owned destination.
-        val block = if (usbfs == null) {
-            Ntb16Codec.buildFrames(batch, sequence, ntbLimits.maxBlockBytes, ntbLimits.alignment)
-        } else {
-            null
-        }
+        val block = Ntb16Codec.buildFrames(batch, sequence, ntbLimits.maxBlockBytes, ntbLimits.alignment)
         val blockBytes = NativeNcmBatch.select(batch, ntbLimits).blockBytes.let { encoded ->
             if (encoded % USB_PACKET_SIZE == 0) encoded + 1 else encoded
         }
-        val blocking = usbfs == null
-        if (blocking) {
-            ensureWriteWatchdog()
-            writeInFlightSinceNs = System.nanoTime()
-        }
+        ensureWriteWatchdog()
+        writeInFlightSinceNs = System.nanoTime()
         var failedAfterNanos = 0L
         var errno = 0
         val transferred = try {
-            when (val submitted = usbfs?.submitFrames(batch, sequence, ntbLimits)
-                ?: dataIo.submitOut(checkNotNull(block), timeoutMillis)) {
-                NcmSubmit.Backpressured -> {
-                    onDiagnostic("ncm async bulk-out ring full bytes=$blockBytes slots=${dataIo.availableOutSlots()} " + dataIo.diagnostics())
-                    maybeRecoverWedgedOut()
-                    return@synchronized 0
-                }
-                NcmSubmit.FatalPartialSubmit -> {
-                    val line = dataIo.diagnostics()
-                    onDiagnostic("ncm bulk-out partial submit; rebuilding data plane $line")
-                    throw failSession("NCM bulk-out submitted a partial NTB")
-                }
+            when (val submitted = dataIo.submitOut(block, timeoutMillis)) {
                 is NcmSubmit.Accepted -> {
                     ncmWriteSubmittedChunks += submitted.submittedChunks
                     if (submitted.completedNow) {
                         ncmWriteCompletedChunks += submitted.completedChunks
                         ncmWriteSuccessBytes += submitted.successBytes
                     }
-                    if (usbfs != null) maybeObserveAsyncOut()
                     noteBatch(batch.size)
                     finishOutbound(block, blockBytes, sequence)
                     return@synchronized batch.size
@@ -206,7 +177,7 @@ class NcmUsbBridge internal constructor(
                 }
             }
         } finally {
-            if (blocking) writeInFlightSinceNs = 0L
+            writeInFlightSinceNs = 0L
         }
         // Before StartCarPlaySession the phone keeps the NCM data path NAKed. Android reports the
         // resulting timeout as -1; it is not a detach and later packets must be allowed to retry.
@@ -222,18 +193,6 @@ class NcmUsbBridge internal constructor(
             if (inEarlyGrace || !inboundFrameSeen || !networkConnected) {
                 earlyNakCount += 1
                 logFirstOutbound(block, blockBytes, sequence, failed = true)
-                if (WiredNcmTuning.reselectAltOnEarlyNak && earlyNakCount == 1) {
-                    dataInterface?.let { iface ->
-                        val reselected = runCatching { LegacyUsbHostCompat.select(sharedConnection, iface) }
-                            .getOrNull()
-                        Log.i(
-                            IphoneCarPlayConfiguration.TAG,
-                            "ncm early-grace alt reselect iface=${iface.id}/" +
-                                "${IphoneCarPlayConfiguration.alternateSetting(iface)} " +
-                                "ok=${reselected?.selected} errno=${reselected?.errno ?: "none"}",
-                        )
-                    }
-                }
                 if (!loggedWriteTimeout) {
                     loggedWriteTimeout = true
                     Log.i(
@@ -328,7 +287,7 @@ class NcmUsbBridge internal constructor(
         onDiagnostic("ncm ntb aggregate frames=$frames blocks=$ntbBlocks totalFrames=$aggregatedFrames")
     }
 
-    private fun finishOutbound(block: ByteArray?, blockBytes: Int, sequence: Int) {
+    private fun finishOutbound(block: ByteArray, blockBytes: Int, sequence: Int) {
         consecutiveWriteFailures = 0
         interfaceResetAttempted = false
         interfaceReclaimAttempted = false
@@ -344,105 +303,6 @@ class NcmUsbBridge internal constructor(
         earlyNakCount = 0
     }
 
-    private var lastOutHealthNs = 0L
-
-    /** Wall-clock anchor for "ring full with zero completions" — the silent-wedge detector. */
-    private var wedgedOutSinceNs = 0L
-    /** 一次性 OUT 写入探针是否已经跑过（每次 bridge 生命周期只跑一次）。 */
-    private var outProbeAttempted = false
-
-    /**
-     * The asynchronous ring can fill with URBs the phone never reads: submitted stays > 0 while
-     * completed and successBytes stay 0. The caller only ever sees "ring full" and the old code
-     * dropped the frame, so this wedge left no trace in reports (75Play-20261106-225501). Detect
-     * it once, then run the heavier interface re-claim, which rebuilds both sides' data pipes
-     * in place without tearing the session down.
-     */
-    private fun maybeRecoverWedgedOut() {
-        val io = dataIo as? UsbfsNcmIo ?: return
-        val snapshot = NcmOutSnapshot.parse(io.diagnostics()) ?: return
-        if (snapshot.submitted <= 0 || snapshot.completed > 0 || snapshot.successBytes > 0) {
-            wedgedOutSinceNs = 0L
-            return
-        }
-        val now = System.nanoTime()
-        if (wedgedOutSinceNs == 0L) wedgedOutSinceNs = now
-        if (now - wedgedOutSinceNs < OUT_WEDGE_RECLAIM_NANOS) return
-        wedgedOutSinceNs = 0L
-        if (interfaceReclaimAttempted) return
-        interfaceReclaimAttempted = true
-        onDiagnostic(
-            "ncm bulk-out wedged: submitted=${snapshot.submitted} completed=0 successBytes=0 " +
-                "while the ring is full; reclaiming the data interface",
-        )
-        runCatching { reclaimDataInterface() }
-    }
-
-    /**
-     * 一次同步写入，用来区分"设备根本没读 OUT 端点"和"原生 async 路径有 bug"：
-     * framework bulkTransfer 返回 >0 = 端点可写（async 路径可疑），-1 = 设备在 NAK（没人读）。
-     * 只在 wedge 首次触发时跑一次；写的是无效 NTB，设备端会丢弃，不进数据流。
-     */
-    private fun probeOutWritable(): Int = runCatching {
-        sharedConnection.bulkTransfer(outEndpoint, ByteArray(OUT_PROBE_BYTES), OUT_PROBE_BYTES, OUT_PROBE_TIMEOUT_MILLIS)
-    }.getOrDefault(-1)
-
-    private fun maybeObserveAsyncOut() {
-        val io = dataIo as? UsbfsNcmIo ?: return
-        val now = System.nanoTime()
-        if (now - lastOutHealthNs < 500_000_000L) return
-        lastOutHealthNs = now
-        observeAsyncOut(io)
-    }
-
-    private fun observeAsyncOut(io: UsbfsNcmIo) {
-        val snapshot = NcmOutSnapshot.parse(io.diagnostics()) ?: return
-        if (snapshot.completed > ncmWriteCompletedChunks) ncmWriteCompletedChunks = snapshot.completed
-        if (snapshot.successBytes > ncmWriteSuccessBytes) {
-            ncmWriteSuccessBytes = snapshot.successBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-        }
-        if (snapshot.fatalSubmit > 0) {
-            val line = io.diagnostics()
-            onDiagnostic("ncm bulk-out partial submit; rebuilding data plane $line")
-            throw failSession("NCM bulk-out submitted a partial NTB")
-        }
-        // 首次出现"有提交、零完成"就立刻探一次，不等 3 秒 wedge 窗口：实车会话常常很短
-        // （75Play-20261107-001909 只有约 2 秒），3 秒窗口走不到，探针就没机会跑。
-        // 探测块是无效 NTB，设备端丢弃，不进数据流。
-        if (!outProbeAttempted && snapshot.submitted > 0 &&
-            snapshot.completed == 0 && snapshot.successBytes == 0L
-        ) {
-            outProbeAttempted = true
-            if (WiredNcmTuning.probeOutOnWedge) {
-                val probe = probeOutWritable()
-                onDiagnostic(
-                    "ncm bulk-out probe (first full ring): submitted=${snapshot.submitted} " +
-                        "timeoutMs=$OUT_PROBE_TIMEOUT_MILLIS sync bulkTransfer=$probe " +
-                        "(>0 = 端点可写，原生 async 路径可疑；-1 = 设备仍未读取该端点；探测块不进数据流)",
-                )
-            }
-        }
-        when (NcmSessionHealth.decide(snapshot)) {
-            NcmOutAction.CONTINUE -> Unit
-            NcmOutAction.DISCARD, NcmOutAction.REPLUG -> {
-                if (!snapshot.replug && snapshot.reclaimFailed == 0) io.abort()
-                val deadline = System.nanoTime() + 2_000_000_000L
-                var latest = snapshot
-                while (System.nanoTime() < deadline && !latest.replug && latest.reclaimFailed == 0) {
-                    Thread.sleep(100)
-                    latest = NcmOutSnapshot.parse(io.diagnostics()) ?: latest
-                }
-                val line = io.diagnostics()
-                if (latest.replug || latest.reclaimFailed > 0) {
-                    onDiagnostic("ncm USB controller wedged; replug required $line")
-                    throw failSession("USB 控制器卡死、需物理重插")
-                }
-                onDiagnostic("ncm bulk-out no completion; discarded URBs $line")
-                throw failSession("NCM bulk-out had no completion")
-            }
-        }
-    }
-
     private fun elapsedSinceOpenMillis(): Long =
         (System.nanoTime() - openNanos) / NANOS_PER_MILLISECOND
 
@@ -451,10 +311,10 @@ class NcmUsbBridge internal constructor(
      * Ethernet header (14 B) = 42 bytes, enough to verify signature/sequence/blockLength/NDPIndex
      * and the Ethernet dst/src MAC + ethertype without leaking payload.
      */
-    private fun logFirstOutbound(block: ByteArray?, blockBytes: Int, sequence: Int, failed: Boolean) {
+    private fun logFirstOutbound(block: ByteArray, blockBytes: Int, sequence: Int, failed: Boolean) {
         if (!WiredNcmTuning.logFirstOutboundHex || firstOutboundLogged) return
         firstOutboundLogged = true
-        val dump = block?.let { hexPrefix(it, 42) } ?: "native-urb"
+        val dump = hexPrefix(block, 42)
         Log.i(
             IphoneCarPlayConfiguration.TAG,
             "ncm first outbound NTB seq=$sequence failed=$failed bytes=$blockBytes hex=$dump",
@@ -546,28 +406,6 @@ class NcmUsbBridge internal constructor(
         synchronized(readLock) {
             checkOpen()
             if (frames.isNotEmpty()) return pollFrame()
-            val usbfs = dataIo as? UsbfsNcmIo
-            if (usbfs != null) {
-                val deadline = System.nanoTime() + timeoutMillis * NANOS_PER_MILLISECOND
-                while (true) {
-                    val remainingNanos = deadline - System.nanoTime()
-                    if (remainingNanos <= 0) return null
-                    val decoded = try {
-                        usbfs.receiveFrames(
-                            ((remainingNanos + NANOS_PER_MILLISECOND - 1) / NANOS_PER_MILLISECOND)
-                                .coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-                        )
-                    } catch (error: RuntimeException) {
-                        throw failSession("NCM native NTB read failed", error)
-                    }
-                    maybeObserveAsyncOut()
-                    if (usbfs.takeDirectFrames() > 0) inboundFrameSeen = true
-                    if (decoded.isNullOrEmpty()) continue
-                    for (frame in decoded) enqueueFrame(frame)
-                    return pollFrame()
-                }
-            }
-
             val deadline = System.nanoTime() + timeoutMillis * NANOS_PER_MILLISECOND
             while (true) {
                 drainFrames()
@@ -798,7 +636,7 @@ class NcmUsbBridge internal constructor(
     }
 
     private fun readChunk(timeoutMillis: Long): Int? {
-        if (dataIo is UsbfsNcmIo || !useAsyncRead) {
+        if (!useAsyncRead) {
             checkOpen()
             val chunk = try {
                 dataIo.receive(
@@ -808,7 +646,6 @@ class NcmUsbBridge internal constructor(
             } catch (error: RuntimeException) {
                 throw failSession("NCM synchronous read failed", error)
             } ?: return null
-            if (dataIo is UsbfsNcmIo) maybeObserveAsyncOut()
             chunk.copyInto(readBuffer)
             return chunk.size
         }
@@ -1099,20 +936,6 @@ class NcmUsbBridge internal constructor(
             return if (implausible) "$parsed IMPLAUSIBLE raw=$hex" else "$parsed raw=$hex"
         }
 
-        /**
-         * dwNtbInMaxSize@4 from GET_NTB_PARAMETERS, clamped to our own receive buffer. CDC NCM
-         * forbids declaring more than the device advertised, and a missing/implausible reply
-         * simply keeps the local buffer size instead of inventing a value.
-         */
-        private fun ntbInMaxSize(buffer: ByteArray, read: Int): Int {
-            if (read < 8) return NTB_INPUT_SIZE_BYTES
-            val advertised = readU32(buffer, 4).toLong() and 0xffff_ffffL
-            if (advertised < MIN_NTB_INPUT_SIZE_BYTES || advertised > MAX_PLAUSIBLE_NTB_BYTES) {
-                return NTB_INPUT_SIZE_BYTES
-            }
-            return minOf(advertised, NTB_INPUT_SIZE_BYTES.toLong()).toInt()
-        }
-
         private const val READ_CHUNK_BYTES = 32 * 1024
         private const val USB_PACKET_SIZE = 512
         private const val NTH16_LENGTH = 12
@@ -1132,11 +955,6 @@ class NcmUsbBridge internal constructor(
         private const val READ_WATCHDOG_POLL_MILLIS = 500L
         /** Issue #279: consecutive failures at which the one-shot interface reset runs. */
         private const val INTERFACE_RESET_AT_FAILURE = 5
-        /** Ring-full with zero OUT completions for this long is a wedged pipe, not a burst. */
-        private const val OUT_WEDGE_RECLAIM_NANOS = 3_000_000_000L
-        /** 一次性同步探测块的字节数与超时。 */
-        private const val OUT_PROBE_BYTES = 64
-        private const val OUT_PROBE_TIMEOUT_MILLIS = 500
         /** Issue #75: consecutive failures at which the one-shot interface re-claim runs. */
         private const val INTERFACE_RECLAIM_AT_FAILURE = 12
         private const val ENDPOINT_STATUS_TIMEOUT_MILLIS = 500
@@ -1148,43 +966,10 @@ class NcmUsbBridge internal constructor(
         private const val CDC_CONTROL_CLASS = 0x02
         private const val INTERFACE_RECIPIENT = 0x01
         private const val GET_NTB_PARAMETERS = 0x80
-        private const val SET_NTB_FORMAT = 0x84
-        private const val SET_CRC_MODE = 0x8a
-        /** CDC SET_MAX_DATAGRAM_SIZE: the largest single datagram the host will pack into an NTB. */
-        private const val SET_MAX_DATAGRAM_SIZE = 0x1e
-        /** Ethernet MTU plus header, i.e. what a 1514-byte frame needs. */
-        private const val MAX_DATAGRAM_BYTES = 1514
-        /** CDC SET_ETHERNET_PACKET_FILTER, the last step of Linux cdc_ncm_setup(). */
-        private const val SET_ETHERNET_PACKET_FILTER = 0x43
-        /** DIRECTED | BROADCAST | MULTICAST: what ARP, mDNS and ICMPv6 need on this link. */
-        private const val PACKET_FILTER_DIRECTED_BROADCAST_MULTICAST = 0x001c
-        /** CDC NCM 1.0: declare the host's receive-side max NTB size to the device. */
-        private const val SET_NTB_INPUT_SIZE = 0x1d
-        /**
-         * Local receive buffer, and the hard cap on what SET_NTB_INPUT_SIZE may declare.
-         * Must match UsbfsNcmIo.READ_BUFFER_BYTES. 32 KB keeps it above the 32764-byte
-         * dwNtbInMaxSize that phones advertise, so the declaration is never undersized
-         * (75Play-20261107: declaring 16 KB got result=-1 and the phone never armed its
-         * bulk-OUT read queue).
-         */
-        private const val NTB_INPUT_SIZE_BYTES = 32 * 1024
-        /** CDC NCM 1.0 requires at least a 2048-byte NTB for the NTB16 format. */
-        private const val MIN_NTB_INPUT_SIZE_BYTES = 2048L
-        private const val NTB16_FORMAT = 0x00
-        private const val CRC_NOT_APPENDED = 0x00
-        private const val CONTROL_OUT_CLASS_INTERFACE =
-            UsbConstants.USB_DIR_OUT or UsbConstants.USB_TYPE_CLASS or INTERFACE_RECIPIENT
         private const val NTB_PARAMETERS_LENGTH = 28
         /** Phones advertise NTB sizes in the KB range; anything past 1 MB is a parse/peer error. */
         private const val MAX_PLAUSIBLE_NTB_BYTES = 1_048_576L
         private const val REQUEST_DRAIN_TIMEOUT_MILLIS = 2_000L
-
-        /**
-         * Apple vendor-specific GET_MODE. Read-only probe of the device's current extended-function
-         * mode (usbmuxd: 0x45, device recipient, 4-byte reply). A reply whose first byte is not 3
-         * means the phone has not been switched to CDC-NCM mode, which is what macOS does with 0x52.
-         */
-        private const val APPLE_VEND_SPECIFIC_GET_MODE = 0x45
 
         private const val ALT_SETTING_ATTEMPTS = 5
         private const val ALT_SETTING_RETRY_MILLIS = 100L
@@ -1208,10 +993,8 @@ class NcmUsbBridge internal constructor(
         }
 
         /**
-         * Spec-correct CDC NCM control-plane bring-up on the control interface (data iface still
-         * alt=0): GET_NTB_PARAMETERS readback, SET_NTB_FORMAT=NTB16, SET_CRC_MODE=off. Every call
-         * is best-effort and logged; failures never abort open() because the phone defaults to
-         * NTB16/no-CRC after a bus reset.
+         * Reads GET_NTB_PARAMETERS and keeps the device's advertised OUT limits.
+         * A missing or implausible reply falls back to [NcmNtbLimits.DEFAULT].
          */
         private fun negotiateNcmControlPlane(
             connection: SharedUsbConnection,
@@ -1233,278 +1016,7 @@ class NcmUsbBridge internal constructor(
             log("ncm GET_NTB_PARAMETERS iface=$controlInterface read=$paramsRead " +
                 describeNtbParameters(paramsBuffer, paramsRead))
 
-            // Stage 1 — minimal control plane (CherryUSB path): only the read-only GET above, then
-            // alt=1; skip every SET. The individual negotiate* knobs apply only when this is false.
-            if (WiredNcmTuning.minimalControlPlane) {
-                log("ncm minimal control plane: skipping all SET requests")
-                return NcmNtbLimits.parse(paramsBuffer, paramsRead) ?: NcmNtbLimits.DEFAULT
-            }
-
-            if (WiredNcmTuning.negotiateNtbFormat) {
-                val setFormat = runCatching {
-                    connection.controlTransfer(
-                        CONTROL_OUT_CLASS_INTERFACE,
-                        SET_NTB_FORMAT,
-                        NTB16_FORMAT,
-                        controlInterface,
-                        null,
-                        0,
-                        ENDPOINT_STATUS_TIMEOUT_MILLIS,
-                    )
-                }.getOrDefault(-1)
-                log("ncm SET_NTB_FORMAT=NTB16(0) iface=$controlInterface result=$setFormat")
-            }
-            if (WiredNcmTuning.negotiateCrcMode) {
-                val setCrc = runCatching {
-                    connection.controlTransfer(
-                        CONTROL_OUT_CLASS_INTERFACE,
-                        SET_CRC_MODE,
-                        CRC_NOT_APPENDED,
-                        controlInterface,
-                        null,
-                        0,
-                        ENDPOINT_STATUS_TIMEOUT_MILLIS,
-                    )
-                }.getOrDefault(-1)
-                log("ncm SET_CRC_MODE=off(0) iface=$controlInterface result=$setCrc")
-            }
-            // macOS 的 NCM 抓包里这一条就排在 SET_CRC_MODE 之后、SET_NTB_INPUT_SIZE 之前，
-            // 我们从来没发过（NCM 1.1 §6.2.9：告诉设备 host 的 NTB 里单个 datagram 上限）。
-            if (WiredNcmTuning.negotiateMaxDatagramSize) {
-                val setMaxDatagram = runCatching {
-                    connection.controlTransfer(
-                        CONTROL_OUT_CLASS_INTERFACE,
-                        SET_MAX_DATAGRAM_SIZE,
-                        0,
-                        controlInterface,
-                        byteArrayOf(
-                            (MAX_DATAGRAM_BYTES and 0xff).toByte(),
-                            ((MAX_DATAGRAM_BYTES shr 8) and 0xff).toByte(),
-                        ),
-                        2,
-                        ENDPOINT_STATUS_TIMEOUT_MILLIS,
-                    )
-                }.getOrDefault(-1)
-                log("ncm SET_MAX_DATAGRAM_SIZE=$MAX_DATAGRAM_BYTES iface=$controlInterface result=$setMaxDatagram")
-            }
-            // SET_NTB_INPUT_SIZE 的 wLength 由 NCM 功能描述符 bmNetworkCapabilities 的 D5 位
-            // ("8-byte ntb input size") 决定：D5=1 时 dwNtbInMaxSize 必须按 8 字节发，发 4 字节
-            // 设备只能 STALL —— 三份实车日志里它一律回 -1，我们此前只试过 4 字节。这里两种
-            // 长度都试，日志会打出哪一种是设备认的。
-            if (WiredNcmTuning.negotiateNtbInputSize) {
-                val declared = ntbInMaxSize(paramsBuffer, paramsRead)
-                val fourBytes = byteArrayOf(
-                    (declared and 0xff).toByte(),
-                    ((declared shr 8) and 0xff).toByte(),
-                    ((declared shr 16) and 0xff).toByte(),
-                    ((declared shr 24) and 0xff).toByte(),
-                )
-                val setInputSize = runCatching {
-                    connection.controlTransfer(
-                        CONTROL_OUT_CLASS_INTERFACE,
-                        SET_NTB_INPUT_SIZE,
-                        0,
-                        controlInterface,
-                        fourBytes,
-                        fourBytes.size,
-                        ENDPOINT_STATUS_TIMEOUT_MILLIS,
-                    )
-                }.getOrDefault(-1)
-                log("ncm SET_NTB_INPUT_SIZE=$declared (4-byte) iface=$controlInterface result=$setInputSize")
-                if (setInputSize < 0 && WiredNcmTuning.negotiateNtbInputSize8Byte) {
-                    val eightBytes = fourBytes + fourBytes
-                    val setInputSize8 = runCatching {
-                        connection.controlTransfer(
-                            CONTROL_OUT_CLASS_INTERFACE,
-                            SET_NTB_INPUT_SIZE,
-                            0,
-                            controlInterface,
-                            eightBytes,
-                            eightBytes.size,
-                            ENDPOINT_STATUS_TIMEOUT_MILLIS,
-                        )
-                    }.getOrDefault(-1)
-                    log("ncm SET_NTB_INPUT_SIZE=$declared (8-byte) iface=$controlInterface result=$setInputSize8")
-                }
-            }
-            // Linux cdc_ncm_setup() 的最后一步。少了它，部分 NCM 实现不会把数据接口
-            // "up" 起来，也就不会去读 host 的 bulk-OUT 端点，URB 提交后永远 completed=0
-            // （报告 2026-11-06-235001：IN 侧 ICMPv6 有来有回，OUT 侧零完成）。
-            if (WiredNcmTuning.negotiatePacketFilter) {
-                val setFilter = runCatching {
-                    connection.controlTransfer(
-                        CONTROL_OUT_CLASS_INTERFACE,
-                        SET_ETHERNET_PACKET_FILTER,
-                        PACKET_FILTER_DIRECTED_BROADCAST_MULTICAST,
-                        controlInterface,
-                        null,
-                        0,
-                        ENDPOINT_STATUS_TIMEOUT_MILLIS,
-                    )
-                }.getOrDefault(-1)
-                log("ncm SET_ETHERNET_PACKET_FILTER=0x001c iface=$controlInterface result=$setFilter")
-            }
             return NcmNtbLimits.parse(paramsBuffer, paramsRead) ?: NcmNtbLimits.DEFAULT
-        }
-
-        /**
-         * Re-send the data-stage requests after alt=1 has been selected.
-         *
-         * Every class request that carries an OUT data stage is refused (result=-1) when it is
-         * sent while the data interface still sits at alt=0 — SET_MAX_DATAGRAM_SIZE and both
-         * NTB_INPUT_SIZE lengths (report 75Play-20261107-011616), while the zero-length ones
-         * (SET_NTB_FORMAT, SET_CRC_MODE, SET_ETHERNET_PACKET_FILTER) all return 0. macOS sends
-         * the same requests to the same phone after the pipe is selected. Repeat them here and
-         * log each result with a post-alt prefix so one live run shows which ordering lands.
-         */
-        private fun renegotiateAfterAltSelection(
-            connection: SharedUsbConnection,
-            controlInterface: Int,
-            log: (String) -> Unit,
-        ) {
-            val paramsBuffer = ByteArray(NTB_PARAMETERS_LENGTH)
-            val paramsRead = runCatching {
-                connection.controlTransfer(
-                    UsbConstants.USB_DIR_IN or UsbConstants.USB_TYPE_CLASS or INTERFACE_RECIPIENT,
-                    GET_NTB_PARAMETERS,
-                    0,
-                    controlInterface,
-                    paramsBuffer,
-                    paramsBuffer.size,
-                    ENDPOINT_STATUS_TIMEOUT_MILLIS,
-                )
-            }.getOrDefault(-1)
-            val declared = if (paramsRead >= 8) ntbInMaxSize(paramsBuffer, paramsRead) else NTB_INPUT_SIZE_BYTES
-            log("ncm post-alt GET_NTB_PARAMETERS iface=$controlInterface read=$paramsRead declared=$declared")
-
-            if (WiredNcmTuning.negotiateMaxDatagramSize) {
-                postAltOutRequest(
-                    connection,
-                    SET_MAX_DATAGRAM_SIZE,
-                    0,
-                    controlInterface,
-                    byteArrayOf(
-                        (MAX_DATAGRAM_BYTES and 0xff).toByte(),
-                        ((MAX_DATAGRAM_BYTES shr 8) and 0xff).toByte(),
-                    ),
-                    2,
-                    "SET_MAX_DATAGRAM_SIZE=$MAX_DATAGRAM_BYTES",
-                    log,
-                )
-            }
-            if (WiredNcmTuning.negotiateNtbInputSize) {
-                val fourBytes = byteArrayOf(
-                    (declared and 0xff).toByte(),
-                    ((declared shr 8) and 0xff).toByte(),
-                    ((declared shr 16) and 0xff).toByte(),
-                    ((declared shr 24) and 0xff).toByte(),
-                )
-                val setFour = postAltOutRequest(
-                    connection,
-                    SET_NTB_INPUT_SIZE,
-                    0,
-                    controlInterface,
-                    fourBytes,
-                    fourBytes.size,
-                    "SET_NTB_INPUT_SIZE=$declared (4-byte)",
-                    log,
-                )
-                if (setFour < 0 && WiredNcmTuning.negotiateNtbInputSize8Byte) {
-                    postAltOutRequest(
-                        connection,
-                        SET_NTB_INPUT_SIZE,
-                        0,
-                        controlInterface,
-                        fourBytes + fourBytes,
-                        fourBytes.size * 2,
-                        "SET_NTB_INPUT_SIZE=$declared (8-byte)",
-                        log,
-                    )
-                }
-            }
-            if (WiredNcmTuning.negotiatePacketFilter) {
-                postAltOutRequest(
-                    connection,
-                    SET_ETHERNET_PACKET_FILTER,
-                    PACKET_FILTER_DIRECTED_BROADCAST_MULTICAST,
-                    controlInterface,
-                    null,
-                    0,
-                    "SET_ETHERNET_PACKET_FILTER=0x001c",
-                    log,
-                )
-            }
-        }
-
-        /**
-         * Sends one OUT class request twice — framework first, then raw usbfs — and logs both.
-         *
-         * The framework's UsbDeviceConnection.controlTransfer() reports every failure as -1,
-         * which made "device stalls the data stage" indistinguishable from "the transfer timed
-         * out". usbfs returns -errno instead, and the elapsed times show whether a failure came
-         * back immediately (STALL) or ran to the deadline.
-         */
-        private fun postAltOutRequest(
-            connection: SharedUsbConnection,
-            request: Int,
-            value: Int,
-            index: Int,
-            payload: ByteArray?,
-            length: Int,
-            label: String,
-            log: (String) -> Unit,
-        ): Int {
-            val frameworkStart = System.nanoTime()
-            val framework = runCatching {
-                connection.controlTransfer(
-                    CONTROL_OUT_CLASS_INTERFACE,
-                    request,
-                    value,
-                    index,
-                    payload,
-                    length,
-                    ENDPOINT_STATUS_TIMEOUT_MILLIS,
-                )
-            }.getOrDefault(-1)
-            val frameworkMillis = (System.nanoTime() - frameworkStart) / 1_000_000
-            if (!WiredNcmTuning.probeRawUsbControl) {
-                log("ncm post-alt $label iface=$index result=$framework ${frameworkMillis}ms")
-                return framework
-            }
-            val rawStart = System.nanoTime()
-            val raw = LegacyUsbHostCompat.rawControlTransfer(
-                connection.fileDescriptor,
-                CONTROL_OUT_CLASS_INTERFACE,
-                request,
-                value,
-                index,
-                payload,
-                length,
-                ENDPOINT_STATUS_TIMEOUT_MILLIS,
-            )
-            val rawMillis = (System.nanoTime() - rawStart) / 1_000_000
-            log(
-                "ncm post-alt $label iface=$index result=$framework ${frameworkMillis}ms " +
-                    "raw=${describeRawControl(raw)} ${rawMillis}ms",
-            )
-            return framework
-        }
-
-        private fun describeRawControl(result: Int?): String = when {
-            result == null -> "unavailable"
-            result >= 0 -> "ok:$result"
-            else -> "$result(${controlErrnoName(-result)})"
-        }
-
-        /** usbfs errno names, so the log says STALL instead of a bare number. */
-        private fun controlErrnoName(errno: Int): String = when (errno) {
-            32 -> "EPIPE/STALL"
-            110 -> "ETIMEDOUT"
-            71 -> "EPROTO"
-            22 -> "EINVAL"
-            19 -> "ENODEV"
-            5 -> "EIO"
-            else -> "errno$errno"
         }
 
         /** Claims NCM while retaining the caller's shared USB connection. */
@@ -1533,25 +1045,6 @@ class NcmUsbBridge internal constructor(
                 Log.i(
                     IphoneCarPlayConfiguration.TAG,
                     "ncm opening activeConfig=${activeConfiguration ?: "unknown"}",
-                )
-                // Read-only Apple GET_MODE before any interface is claimed or changed. macOS uses the
-                // vendor-specific 0x52 modeswitch to put the phone in CDC-NCM mode before touching
-                // these interfaces; if the phone is still in another mode its NCM data plane can
-                // stay inactive and every bulk-OUT URB stays queued forever.
-                val modeBuffer = ByteArray(4)
-                val modeResult = LegacyUsbHostCompat.rawControlTransfer(
-                    connection.fileDescriptor,
-                    UsbConstants.USB_DIR_IN or UsbConstants.USB_TYPE_VENDOR or 0, // USB_RECIP_DEVICE = 0
-                    APPLE_VEND_SPECIFIC_GET_MODE,
-                    0,
-                    0,
-                    modeBuffer,
-                    4,
-                    ENDPOINT_STATUS_TIMEOUT_MILLIS,
-                )
-                log(
-                    "ncm apple GET_MODE raw=${describeRawControl(modeResult)} " +
-                        "bytes=${modeBuffer.joinToString(" ") { "%02x".format(it) }}",
                 )
                 @Suppress("DEPRECATION")
                 val legacyEligible = LegacyNcmClaim.eligible(
@@ -1621,15 +1114,8 @@ class NcmUsbBridge internal constructor(
                         )
                     }
                 }
-                // CDC NCM control-plane negotiation on the control interface while the data
-                // interface is still at alt=0 (kernel cdc_ncm_init ordering: SET_NTB_FORMAT /
-                // SET_CRC_MODE must precede alt=1). Best-effort; a phone that ignores the request
-                // keeps its default NTB16/no-CRC, which matches the blocks we encode anyway.
                 val ntbLimits = negotiateNcmControlPlane(connection, function.control.id, ::log)
 
-                if (WiredNcmTuning.settleAfterSetInterfaceMillis > 0) {
-                    runCatching { Thread.sleep(WiredNcmTuning.settleAfterSetInterfaceMillis) }
-                }
                 val altSelection = retryAlternateSelection(
                     select = { LegacyUsbHostCompat.select(connection, function.data) },
                     onAttempt = { attempt, result ->
@@ -1643,11 +1129,6 @@ class NcmUsbBridge internal constructor(
                         "Android could not select the NCM data alternate setting" +
                             (altSelection.errno?.let { " (usbfs errno $it)" } ?: ""),
                     )
-                }
-                if (!WiredNcmTuning.minimalControlPlane &&
-                    WiredNcmTuning.renegotiateAfterAltSelection
-                ) {
-                    renegotiateAfterAltSelection(connection, function.control.id, ::log)
                 }
                 Log.i(
                     IphoneCarPlayConfiguration.TAG,
@@ -1685,29 +1166,14 @@ class NcmUsbBridge internal constructor(
                     return ok
                 }
 
-                val dataIo: NcmIo = when {
-                    WiredNcmTuning.useSyncBulkDataPlane -> {
-                        log("ncm using synchronous USBDEVFS_BULK data plane")
-                        SyncUsbfsNcmIo(
-                            sharedConnection,
-                            function.bulkOut,
-                            function.bulkIn,
-                            ::log,
-                            ::recoverSyncStall,
-                        )
-                    }
-                    realSdkInt() <= 19 -> {
-                        val async = UsbfsNcmIo.open(
-                            sharedConnection, function.bulkIn, function.bulkOut,
-                        )
-                        log(
-                            if (async != null) "ncm using async usbfs URB data plane: ${async.diagnostics()}"
-                            else "ncm async usbfs URB unavailable (${UsbfsNcmIo.lastOpenFailure}); using framework bulk transfer",
-                        )
-                        async ?: FrameworkNcmIo(sharedConnection, function.bulkOut, function.bulkIn)
-                    }
-                    else -> FrameworkNcmIo(sharedConnection, function.bulkOut, function.bulkIn)
-                }
+                log("ncm using synchronous USBDEVFS_BULK data plane")
+                val dataIo: NcmIo = SyncUsbfsNcmIo(
+                    sharedConnection,
+                    function.bulkOut,
+                    function.bulkIn,
+                    ::log,
+                    ::recoverSyncStall,
+                )
                 return NcmUsbBridge(
                     sharedConnection = sharedConnection,
                     outEndpoint = function.bulkOut,

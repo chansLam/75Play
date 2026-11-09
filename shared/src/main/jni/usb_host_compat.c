@@ -177,64 +177,10 @@ restore_drivers:
     return result;
 }
 
-/* Raw USBDEVFS_CONTROL, bypassing UsbDeviceConnection.controlTransfer().
- *
- * The framework path collapses every failure into -1, so a device STALL and a transfer
- * timeout look identical. That ambiguity blocked the CDC-NCM control plane: every class
- * request carrying an OUT data stage failed while every zero-length one succeeded
- * (22 failures vs 44 successes across the 2026-11-06/07 wired reports). Issuing the same
- * request through usbfs returns -errno instead, which separates EPIPE (device stalled the
- * data stage) from ETIMEDOUT (the device never answered) and EPROTO (link reset).
- *
- * Returns the transferred byte count (>= 0), or -errno on failure.
- */
-JNIEXPORT jint JNICALL
-Java_com_shilapi_xcertplay_transport_LegacyUsbHostNative_controlTransfer(
-        JNIEnv *env, jobject self, jint file_descriptor,
-        jint request_type, jint request, jint value, jint index,
-        jbyteArray data, jint length, jint timeout_millis) {
-    (void) self;
-
-    if (file_descriptor < 0 || length < 0) return -EINVAL;
-
-    jbyte *buffer = NULL;
-    if (data != NULL && length > 0) {
-        if ((*env)->GetArrayLength(env, data) < length) return -EINVAL;
-        buffer = (*env)->GetByteArrayElements(env, data, NULL);
-        if (buffer == NULL) return -ENOMEM;
-    }
-
-    struct usbdevfs_ctrltransfer transfer;
-    memset(&transfer, 0, sizeof(transfer));
-    transfer.bRequestType = (unsigned char) request_type;
-    transfer.bRequest = (unsigned char) request;
-    transfer.wValue = (unsigned short) value;
-    transfer.wIndex = (unsigned short) index;
-    transfer.wLength = (unsigned short) length;
-    /* usbfs takes milliseconds here, same unit as the framework's timeoutMillis. */
-    transfer.timeout = (unsigned int) (timeout_millis > 0 ? timeout_millis : 1);
-    transfer.data = buffer;
-
-    int result = ioctl(file_descriptor, USBDEVFS_CONTROL, &transfer);
-    int saved_errno = errno;
-    /* Non-zero mode copies the IN payload back into the Java array. */
-    if (buffer != NULL) {
-        (*env)->ReleaseByteArrayElements(env, data, buffer, result >= 0 ? 0 : JNI_ABORT);
-    }
-
-    if (result < 0) return saved_errno != 0 ? -saved_errno : -EIO;
-    return result;
-}
-
 /* Raw USBDEVFS_BULK, a single synchronous bulk transfer.
  *
- * The asynchronous URB ring (usbfs_ncm_io.c) keeps eight bulk-OUT URBs in flight; on the i.MX6
- * KitKat kernel those OUT URBs submit successfully but never complete (completed=0) while the
- * phone keeps NAKing. LIVI drives the same NCM function with a blocking bulk transfer instead and
- * brings up the link. USBDEVFS_BULK blocks until the device ACKs, stalls, or the timeout fires,
- * and returns the real -errno instead of collapsing every failure into -1.
- *
- * The caller is responsible for splitting a long NTB into <=16384-byte chunks.
+ * Blocks until the device ACKs, stalls, or the timeout fires, and returns -errno instead of
+ * collapsing every failure into -1. The caller splits a long NTB into <=16384-byte chunks.
  *
  * Returns the transferred byte count (>= 0), or -errno on failure.
  */

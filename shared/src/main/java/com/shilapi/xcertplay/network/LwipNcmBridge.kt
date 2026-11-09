@@ -107,13 +107,6 @@ class LwipNcmBridge(
             onError(err)
             throw err
         }
-        if (lwipNative.bindUsbfs(ncm.nativeDataPlaneHandle(), ncm.ntbLimits)) {
-            runCatching { onDebugLog("ncm lwip tx bound to native usbfs NTB") }
-        }
-        if (ncm.bindDirectInput(lwipNative.lwipHandle())) {
-            runCatching { onDebugLog("ncm ipv6 data frames enter lwIP directly") }
-        }
-
         sendUnsolicitedNeighborAdvertisement(force = true)
 
         ncmRxThread = Thread(::runNcmRx, "ncm-lwip-rx").apply {

@@ -36,7 +36,7 @@ class Iap2HandshakeProgressTest {
             }
             override fun close() = Unit
         }
-        val progress = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val progress = java.util.concurrent.CopyOnWriteArrayList<String>()
         val link = Iap2LinkChannel.openWirelessForTest(
             transport,
             onHandshakeProgress = { progress += it },

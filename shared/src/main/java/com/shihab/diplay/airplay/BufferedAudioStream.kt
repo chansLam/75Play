@@ -28,6 +28,7 @@ internal class BufferedAudioStream(
     private val log: (String) -> Unit = {},
     private val nanoTime: () -> Long = System::nanoTime,
     private val expectedPeer: InetAddress = InetAddress.getLoopbackAddress(),
+    private val onData: () -> Unit = {},
 ) : Closeable {
     internal class Frame(val sequence: Int, val timestamp: Long, val rtp: ByteArray)
 
@@ -97,6 +98,7 @@ internal class BufferedAudioStream(
                     if (failures++ < 3) log("Buffered audio: frame did not open ($payloadBytes bytes)")
                     continue
                 }
+                onData()
                 receivedBytes += length
                 val now = nanoTime()
                 if (now - windowStart >= STATS_WINDOW_NS) {

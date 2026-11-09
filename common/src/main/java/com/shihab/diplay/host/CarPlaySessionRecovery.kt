@@ -45,9 +45,9 @@ internal class CarPlaySessionRecovery(context: Context) {
     private var detachHandle: java.io.Closeable? = null
     @Volatile private var pollThread: Thread? = null
     private var connectedReceiver: BroadcastReceiver? = null
-    // Tracks whether the last poll saw an iPhone so we detect the present->absent edge. The USB
-    // DETACHED broadcast is unreliable on this head unit, so the poll must catch an unplug itself.
-    @Volatile private var iphonePresentLastPoll = false
+    // Tracks USB enumeration, not the wireless preference. DETACHED is unreliable on this head
+    // unit, and a saved wireless preference must not hide an unplug of an auto-detected wired link.
+    @Volatile private var usbPresentLastPoll = false
 
     fun start() {
         if (!running.compareAndSet(false, true)) return
@@ -116,43 +116,54 @@ internal class CarPlaySessionRecovery(context: Context) {
         // Respect the user's auto-connect choice.
         if (!DiPlayPreferences.autoConnect(appContext)) return
         val wireless = AirPlayPersistence.loadWirelessEnabled(appContext)
-        val iphonePresent = wireless || iphoneHost.discover().isNotEmpty()
-
-        // Detect the present->absent edge while a session is active. This head unit does not
-        // deliver USB DETACHED, so without this the link only dies on the ~60s read watchdog.
-        if (iphonePresentLastPoll && !iphonePresent &&
-            (CarPlayBackgroundSession.snapshot() != null || CarPlayConnectService.connecting)
+        val usbPresent = iphoneHost.discover().isNotEmpty()
+        val snapshot = CarPlayBackgroundSession.snapshot()
+        if (
+            shouldDropLinkAfterUsbLoss(
+                usbWasPresent = usbPresentLastPoll,
+                usbPresent = usbPresent,
+                wirelessPreferred = wireless,
+                sessionOrConnectActive = snapshot != null || CarPlayConnectService.connecting,
+                wiredLinkActive = snapshot?.controller?.isWiredLink() == true,
+            )
         ) {
-            iphonePresentLastPoll = false
+            usbPresentLastPoll = false
             onIphoneDetached()
             return
         }
-        iphonePresentLastPoll = iphonePresent
+        usbPresentLastPoll = usbPresent
 
         // A healthy session (or an in-flight connect) already exists: nothing to recover.
         if (CarPlayConnectService.connecting) return
-        if (CarPlayBackgroundSession.snapshot() != null) return
+        if (snapshot != null) return
+        // The previous controller can still own USB after its snapshot is cleared.
+        if (CarPlayBackgroundSession.isReleasing()) return
         // Wired requires an iPhone to be present; wireless bring-up creates its own network and
         // is triggered unconditionally (the iPhone connects back once the hotspot is up).
-        if (!iphonePresent) return
+        if (!shouldStartRecovery(wireless, usbPresent)) return
         startConnectService()
     }
 
     private fun onIphoneDetached() {
         if (!running.get()) return
-        iphonePresentLastPoll = false
-        android.util.Log.i("CarPlayRecovery", "iPhone gone; returning to shell and resetting session")
-        // Stop any in-flight connect immediately rather than letting it time out.
-        runCatching {
-            val cancel = Intent(appContext, CarPlayConnectService::class.java)
-                .setAction(CarPlayConnectService.ACTION_CANCEL)
-            appContext.startService(cancel)
+        usbPresentLastPoll = false
+        android.util.Log.i("CarPlayRecovery", "iPhone gone; returning to shell and closing session")
+        // The service remains alive briefly after the handshake while the host adopts its
+        // controller. "connecting" is already false in that window, but it still needs the
+        // link-loss action so teardown cannot strand a foreground service and block reinsertion.
+        if (CarPlayConnectService.running) {
+            runCatching {
+                val cancel = Intent(appContext, CarPlayConnectService::class.java)
+                    .setAction(CarPlayConnectService.ACTION_LINK_LOST)
+                appContext.startService(cancel)
+            }
         }
         // Hand the UI back to the shell first so the host finishes and releases its owner claim.
         FloatingBall.backToDiPlay(appContext)
-        // Once the host is gone, clear the dead bookkeeping so a later reinsert is a clean connect.
+        // Once the host has parked, close through its registered stop action. forceReset() only
+        // drops bookkeeping and can leak native NCM/USB resources.
         mainHandler.postDelayed({
-            runCatching { CarPlayBackgroundSession.forceReset() }
+            runCatching { CarPlayBackgroundSession.stop() }
         }, RESET_AFTER_DETACH_MILLIS)
     }
 

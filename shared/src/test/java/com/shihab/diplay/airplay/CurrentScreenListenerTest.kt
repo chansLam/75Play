@@ -107,6 +107,28 @@ class CurrentScreenListenerTest {
     }
 
     @Test
+    fun onlyDeliveredFramesUpdateMediaLiveness() {
+        val sink = RecordingSink()
+        val current = AtomicBoolean(true)
+        var packets = 0
+        val listener = currentScreenListener(
+            110,
+            sink,
+            onData = { packets++ },
+            isCurrent = current::get,
+        )
+
+        listener.onCodec(VideoCodec.H264)
+        listener.onConfig(config)
+        listener.onFrame(frame)
+        listener.onFrame(timedFrame, 1L, 2L)
+        current.set(false)
+        listener.onFrame(frame)
+
+        assertEquals(2, packets)
+    }
+
+    @Test
     fun onScreenStopsTheReplacedStreamsListenerForTheSameKey() {
         val sink = RecordingSink()
         val engine = CarPlayMediaEngine(sink)

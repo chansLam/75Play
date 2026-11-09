@@ -12,7 +12,6 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <android/log.h>
-#include <dlfcn.h>
 
 #include "lwip/init.h"
 #include "lwip/netif.h"
@@ -112,11 +111,6 @@ typedef struct {
     pthread_cond_t tx_cv;
     pthread_t tx_thread;
     int tx_started;
-    void *usbfs_io;
-    int (*usbfs_submit)(void *, const unsigned char *const *, const int *, int, int, int, int *);
-    int usbfs_max_block;
-    int usbfs_alignment;
-    int usbfs_max_datagrams;
 
     uint32_t stats_rx_frames;
     uint32_t stats_rx_bytes;
@@ -157,36 +151,6 @@ static void pop_tx_frames(LwipContext *ctx, int count) {
     }
 }
 
-/** Packs the native TX ring into one NTB and submits it without entering Java. */
-static int submit_usbfs_batch(LwipContext *ctx) {
-    const unsigned char *frames[32];
-    int lengths[32];
-    pthread_mutex_lock(&ctx->tx_mu);
-    int count = ctx->tx_count;
-    int limit = ctx->usbfs_max_datagrams;
-    if (limit < 1) limit = 1;
-    if (limit > 32) limit = 32;
-    if (count > limit) count = limit;
-    void *io = ctx->usbfs_io;
-    int (*submit)(void *, const unsigned char *const *, const int *, int, int, int, int *) = ctx->usbfs_submit;
-    int max_block = ctx->usbfs_max_block;
-    int alignment = ctx->usbfs_alignment;
-    for (int i = 0; i < count; i++) {
-        NcmTxFrame frame = ctx->tx_q[(ctx->tx_head + i) % NCM_TX_CAP];
-        frames[i] = frame.data;
-        lengths[i] = frame.len;
-    }
-    pthread_mutex_unlock(&ctx->tx_mu);
-    if (submit == NULL || io == NULL || count <= 0) return 0;
-    int accepted = 0;
-    int submitted = submit(io, frames, lengths, count, max_block, alignment, &accepted);
-    pthread_mutex_lock(&ctx->tx_mu);
-    if (submitted > 0) pop_tx_frames(ctx, accepted);
-    else if (submitted == -1) pop_tx_frames(ctx, 1);
-    pthread_mutex_unlock(&ctx->tx_mu);
-    return submitted;
-}
-
 static void *ncm_tx_thread(void *arg) {
     LwipContext *ctx = (LwipContext *)arg;
     JNIEnv *env = NULL;
@@ -194,15 +158,9 @@ static void *ncm_tx_thread(void *arg) {
     while (1) {
         pthread_mutex_lock(&ctx->tx_mu);
         while (ctx->tx_count == 0 && ctx->running) pthread_cond_wait(&ctx->tx_cv, &ctx->tx_mu);
-        int direct = ctx->usbfs_submit != NULL;
         if (!ctx->running || ctx->tx_count == 0) {
             pthread_mutex_unlock(&ctx->tx_mu);
             break;
-        }
-        if (direct) {
-            pthread_mutex_unlock(&ctx->tx_mu);
-            if (submit_usbfs_batch(ctx) <= 0 && ctx->running) usleep(10000);
-            continue;
         }
         NcmTxFrame frame = ctx->tx_q[ctx->tx_head];
         pthread_mutex_unlock(&ctx->tx_mu);
@@ -898,13 +856,6 @@ static void input_ethernet(LwipContext *ctx, const uint8_t *data, int length) {
     trigger_wake(ctx);
 }
 
-int ncm_lwip_input_ethernet(void *handle, const unsigned char *data, int length) {
-    LwipContext *ctx = (LwipContext *)handle;
-    if (ctx == NULL || !ctx->running || data == NULL || length <= 0 || length > 65535) return -1;
-    input_ethernet(ctx, data, length);
-    return 0;
-}
-
 JNIEXPORT void JNICALL
 Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeInputFrame(
         JNIEnv *env, jobject thiz, jlong handle, jbyteArray frameArr, jint length) {
@@ -951,33 +902,6 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeRegisterPort(
     pthread_mutex_unlock(&lwip_core_lock);
 
     trigger_wake(ctx);
-}
-
-JNIEXPORT jboolean JNICALL
-Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeBindUsbfs(
-        JNIEnv *env, jobject thiz, jlong handle, jlong io_handle,
-        jint max_block_bytes, jint alignment, jint max_datagrams) {
-    (void)env; (void)thiz;
-    LwipContext *ctx = (LwipContext *)(intptr_t)handle;
-    if (ctx == NULL || io_handle == 0 || max_block_bytes < 64 || alignment <= 0 || max_datagrams < 1) {
-        return JNI_FALSE;
-    }
-    int (*submit)(void *, const unsigned char *const *, const int *, int, int, int, int *) =
-        (int (*)(void *, const unsigned char *const *, const int *, int, int, int, int *))
-        dlsym(RTLD_DEFAULT, "ncm_usbfs_submit_ethernet");
-    if (submit == NULL) {
-        LOGW("native usbfs submit symbol unavailable");
-        return JNI_FALSE;
-    }
-    pthread_mutex_lock(&ctx->tx_mu);
-    ctx->usbfs_io = (void *)(intptr_t)io_handle;
-    ctx->usbfs_max_block = max_block_bytes;
-    ctx->usbfs_alignment = alignment;
-    ctx->usbfs_max_datagrams = max_datagrams > 32 ? 32 : max_datagrams;
-    ctx->usbfs_submit = submit;
-    pthread_mutex_unlock(&ctx->tx_mu);
-    LOGI("lwIP TX bound directly to usbfs NTB");
-    return JNI_TRUE;
 }
 
 JNIEXPORT void JNICALL

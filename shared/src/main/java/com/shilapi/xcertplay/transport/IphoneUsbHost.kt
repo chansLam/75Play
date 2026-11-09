@@ -312,84 +312,6 @@ class IphoneUsbHost(
     }
 
     /**
-     * Reads the device's active Apple extended-function mode through the vendor GET_MODE request
-     * on a short-lived connection. Returns the first reply byte (the mode), or null on failure.
-     * The wired log shows a phone in mode 6 (usbeth+cdc_ncm) rather than pure CDC-NCM mode 3.
-     */
-    fun readAppleMode(device: UsbDevice): Int? {
-        return try {
-            requireConfiguredDevice(device)
-            if (!usbManager.hasPermission(device)) {
-                throw IphoneUsbException.PermissionDenied("USB permission has not been granted")
-            }
-            val connection = usbManager.openDevice(device)
-                ?: refreshDevice(device)?.let { usbManager.openDevice(it) }
-                ?: return null
-            try {
-                val reply = ByteArray(MODE_REPLY_LENGTH)
-                val transferred = connection.controlTransfer(
-                    USB_VENDOR_DEVICE_IN,
-                    APPLE_VEND_SPECIFIC_GET_MODE,
-                    0,
-                    0,
-                    reply,
-                    reply.size,
-                    CONTROL_TRANSFER_TIMEOUT_MILLIS,
-                )
-                diagnosticLog("apple GET_MODE transferred=$transferred bytes=" +
-                    reply.take(maxOf(0, transferred)).joinToString(" ") { "%02x".format(it) })
-                if (transferred >= 1) reply[0].toInt() and 0xff else null
-            } finally {
-                connection.close()
-            }
-        } catch (error: RuntimeException) {
-            diagnosticLog("apple GET_MODE failed: ${error.message}")
-            null
-        }
-    }
-
-    /**
-     * Switches the device to the requested Apple extended-function mode (vendor SET_MODE: 0x52,
-     * wIndex = target mode).
-     *
-     * usbmuxd submits this through the same IN-direction vendor verb as GET_MODE (request type
-     * 0xC0, one-byte reply) rather than an OUT transfer — an OUT SET_MODE is rejected, which is
-     * why the earlier attempt stalled. A zero reply byte means the switch was accepted and the
-     * phone re-enumerates, so the caller then polls for it instead of reusing this connection.
-     */
-    fun selectAppleModeAsync(
-        device: UsbDevice,
-        targetMode: Int,
-        executor: Executor,
-        callback: (TransitionResult) -> Unit,
-    ) {
-        executor.execute {
-            callback(runTransition(device) { connection ->
-                val reply = ByteArray(1)
-                val transferred = connection.controlTransfer(
-                    USB_VENDOR_DEVICE_IN,
-                    CARPLAY_CONFIGURATION_REQUEST,
-                    0,
-                    targetMode,
-                    reply,
-                    reply.size,
-                    CONTROL_TRANSFER_TIMEOUT_MILLIS,
-                )
-                diagnosticLog(
-                    "apple SET_MODE target=$targetMode transferred=$transferred " +
-                        "reply=" + reply.take(maxOf(0, transferred)).joinToString(" ") { "%02x".format(it) },
-                )
-                if (transferred < 0) {
-                    throw IphoneUsbException.Protocol(
-                        "Apple SET_MODE to $targetMode was rejected (transferred=$transferred)",
-                    )
-                }
-                TransitionResult.ReenumerationRequested
-            })
-        }
-    }
-
-    /**
      * Opens LIVI's USBMUX bulk pipe on the re-enumerated iPhone.
      *
      * This repeats CarPlay configuration selection on the newly opened Android connection and
@@ -668,13 +590,6 @@ class IphoneUsbHost(
         private const val CARPLAY_CONFIGURATION_REQUEST = 0x52
         private const val CARPLAY_CONFIGURATION_INDEX = 0x0004
         private const val VENDOR_RESPONSE_LENGTH = 1
-        /** Apple vendor GET_MODE (0x45): read the active extended-function mode. */
-        private const val APPLE_VEND_SPECIFIC_GET_MODE = 0x45
-        private const val MODE_REPLY_LENGTH = 4
-        /** Apple extended-function mode 3 = CDC-NCM, the mode macOS selects before using NCM. */
-        internal const val APPLE_MODE_CDC_NCM = 3
-        /** Apple extended-function mode 4 = USB Ethernet + CDC-NCM (6 configurations); LIVI's mode. */
-        internal const val APPLE_MODE_USB_ETHERNET_CDC_NCM = 4
         /** iPhone USB product ID once it has switched into CarPlay mode (issue #201). */
         internal const val CARPLAY_MODE_PID = 0x12a8
         private const val CONTROL_TRANSFER_TIMEOUT_MILLIS = 1_000

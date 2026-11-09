@@ -43,13 +43,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
         coreLibraryDesugaringEnabled true
     }
-    lint {
-        // The lint analyzer crashes inside its own Kotlin PSI JavaDocParser
-        // (NoSuchMethodError: java.util.List.removeLast(), a lint/JDK toolchain mismatch),
-        // which would otherwise fail lintVitalAnalyzeRelease and block the signed release build.
-        checkReleaseBuilds = false
-        abortOnError = false
-    }
 }
 dependencies {
     coreLibraryDesugaring libs.desugar.jdk.libs

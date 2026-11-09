@@ -4,11 +4,21 @@ import java.io.Closeable
 import java.net.Socket
 import java.math.BigInteger
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CarPlayMediaEngineTest {
+    @Test
+    fun mediaLivenessRequiresARealPacket() {
+        val engine = CarPlayMediaEngine(object : MediaSink {})
+
+        assertFalse(engine.isDataRecent(10_000L))
+        engine.noteDataReceived()
+        assertTrue(engine.isDataRecent(10_000L))
+    }
+
     @Test
     fun streamConnectionIdUsesUnsignedDecimalForHkdfSalt() {
         assertEquals("18446744073709551615", unsignedPlistDecimal(-1L))
@@ -64,6 +74,30 @@ class CarPlayMediaEngineTest {
 
         assertEquals(setOf(110 to false, 111 to false), events.toSet())
         assertTrue(streams.isEmpty())
+    }
+
+    @Test
+    fun sessionCloseKeepsAudioThatBelongsToTheOtherSession() {
+        val live = testSession()
+        val ended = testSession()
+        val engine = CarPlayMediaEngine(object : MediaSink {})
+        val audioMetaField = CarPlayMediaEngine::class.java.getDeclaredField("audioMeta").apply {
+            isAccessible = true
+        }
+        @Suppress("UNCHECKED_CAST")
+        val audioMeta = audioMetaField.get(engine) as MutableMap<Any, Any>
+        val liveKey = CarPlayMediaEngine.StreamKey(live, 100, "media")
+        val endedKey = CarPlayMediaEngine.StreamKey(ended, 100, "media")
+        audioMeta[liveKey] = "live"
+        audioMeta[endedKey] = "ended"
+
+        try {
+            engine.onSessionClosed(ended)
+            assertEquals(setOf(liveKey), audioMeta.keys)
+        } finally {
+            live.close()
+            ended.close()
+        }
     }
 
     @Test

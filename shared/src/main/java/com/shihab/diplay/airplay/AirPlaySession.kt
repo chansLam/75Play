@@ -57,6 +57,8 @@ interface AirPlayMediaHandler {
     fun onSessionClosed(session: AirPlaySession) {}
     fun setIapTunnelHandler(handler: ((BlockingDuplexByteStream) -> Boolean)?) {}
     fun onSetupResponseSent(session: AirPlaySession) {}
+    /** Whether a media packet arrived within [maxAgeMillis], or null when unavailable. */
+    fun isDataRecent(maxAgeMillis: Long): Boolean? = null
 }
 
 /**

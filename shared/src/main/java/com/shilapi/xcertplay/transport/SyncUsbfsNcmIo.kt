@@ -5,12 +5,9 @@ import android.hardware.usb.UsbEndpoint
 /**
  * Synchronous blocking NCM data plane over USBDEVFS_BULK.
  *
- * The asynchronous URB ring ([UsbfsNcmIo]) submits eight bulk-OUT URBs; on the i.MX6 KitKat
- * kernel those URBs are accepted but never complete (submitted>0, completed=0) while the phone
- * keeps NAKing. This class drives the same bulk endpoints with one blocking transfer at a time —
- * the path LIVI uses successfully — so each write returns the real byte count or a negative
- * errno instead of hanging in the ring. A long NTB is split into [SYNC_CHUNK_MAX_BYTES] chunks;
- * only the final chunk of a transfer may be short.
+ * One transfer is in flight at a time, so each write returns the real byte count or a negative
+ * errno. A long NTB is split into [SYNC_CHUNK_MAX_BYTES] chunks; only the final chunk of a
+ * transfer may be short.
  *
  * A latched stall (-EPIPE) is handed to [recoverStall] once per chunk; when recovery reports
  * success the chunk is retried. Recovery never runs on the healthy path.
@@ -69,10 +66,6 @@ internal class SyncUsbfsNcmIo(
         val transferred = readBulk(buffer, size, timeoutMillis)
         return if (transferred > 0) buffer.copyOf(transferred) else null
     }
-
-    override fun availableOutSlots(): Int = 1
-
-    override fun diagnostics(): String = "sync-usbfs"
 
     override fun abort() = Unit
 

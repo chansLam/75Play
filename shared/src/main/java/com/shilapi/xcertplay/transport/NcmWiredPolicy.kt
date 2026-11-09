@@ -56,59 +56,11 @@ internal object NcmTxBatch {
     }
 }
 
-internal data class NcmOutSnapshot(
-    val queued: Int,
-    val submitted: Int,
-    val completed: Int,
-    val cancelling: Int,
-    val reclaimFailed: Int,
-    val stall: Int,
-    val nak: Int,
-    val noCompletion: Int,
-    val fatalSubmit: Int,
-    val latencyMs: Int,
-    val replug: Boolean,
-    val successBytes: Long,
-) {
-    companion object {
-        fun parse(line: String): NcmOutSnapshot? {
-            if (!line.contains("completed=")) return null
-            fun value(key: String): Long =
-                Regex("""(?:^|\s)$key=(-?\d+)""").find(line)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
-            return NcmOutSnapshot(
-                queued = value("queued").toInt(),
-                submitted = value("submitted").toInt(),
-                completed = value("completed").toInt(),
-                cancelling = value("cancelling").toInt(),
-                reclaimFailed = value("reclaimFailed").toInt(),
-                stall = value("stall").toInt(),
-                nak = value("nak").toInt(),
-                noCompletion = value("noCompletion").toInt(),
-                fatalSubmit = value("fatalSubmit").toInt(),
-                latencyMs = value("latencyMs").toInt(),
-                replug = value("replug") != 0L,
-                successBytes = value("successBytes"),
-            )
-        }
-    }
-}
-
-internal enum class NcmOutAction { CONTINUE, DISCARD, REPLUG }
-
-/** Maps an asynchronous OUT snapshot to a session action. Never requests a bus reset. */
+/** Host-side OUT rejection timing. Never requests a bus reset. */
 internal object NcmSessionHealth {
-    fun decide(snapshot: NcmOutSnapshot): NcmOutAction = when {
-        snapshot.replug || snapshot.reclaimFailed > 0 -> NcmOutAction.REPLUG
-        snapshot.noCompletion > 0 || snapshot.fatalSubmit > 0 -> NcmOutAction.DISCARD
-        else -> NcmOutAction.CONTINUE
-    }
-
     /**
      * A data path that has already written successfully and then rejects OUT within 50ms
      * is a dead host pipe. The first such rejection still bounces the data alt.
      */
     fun immediateRejection(elapsedMs: Long): Boolean = elapsedMs in 0..50
-
-    fun immediateReplug(elapsedMs: Long, outHasSucceeded: Boolean): Boolean =
-        outHasSucceeded && immediateRejection(elapsedMs)
 }

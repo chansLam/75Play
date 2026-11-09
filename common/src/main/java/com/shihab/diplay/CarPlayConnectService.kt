@@ -47,11 +47,14 @@ class CarPlayConnectService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var controlReceiver: BroadcastReceiver? = null
     private var connectLog: SessionLogFile? = null
+    private var preserveSessionService = false
+    private val waitingForParkedRelease = java.util.concurrent.atomic.AtomicBoolean(false)
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
+        running = true
         connecting = true
         runCatching {
             val pm = getSystemService(POWER_SERVICE) as PowerManager
@@ -89,6 +92,14 @@ class CarPlayConnectService : Service() {
         startForeground(NOTIF_ID, buildNotification())
         when (intent?.action) {
             ACTION_CANCEL -> {
+                preserveSessionService = false
+                cancelConnect()
+                return START_NOT_STICKY
+            }
+            ACTION_LINK_LOST -> {
+                // Recovery owns DiPlaySessionService. Cancel this transport attempt without
+                // stopping the watcher that must notice the next cable insertion.
+                preserveSessionService = true
                 cancelConnect()
                 return START_NOT_STICKY
             }
@@ -108,6 +119,12 @@ class CarPlayConnectService : Service() {
             connecting = false
             runCatching { sendBroadcast(ConnectBroadcasts.connected(this)) }
             stopSelf()
+            return
+        }
+        // A reused instance must not keep the link-lost exception into this new attempt.
+        preserveSessionService = false
+        if (CarPlayBackgroundSession.isReleasing()) {
+            waitForParkedRelease()
             return
         }
         started = true
@@ -150,7 +167,7 @@ class CarPlayConnectService : Service() {
         }
 
         controller = built.controller
-        CarPlayBackgroundSession.store(
+        val stored = CarPlayBackgroundSession.store(
             built.controller, built.sink,
             built.display.windowWidth, built.display.windowHeight,
             this, built.display,
@@ -162,6 +179,20 @@ class CarPlayConnectService : Service() {
             // host handoff replaces this stopAction via store() before adopting.
             CarPlayBackgroundSession.clear(built.controller)
             completion()
+        }
+        if (!stored) {
+            AppLog.i(TAG, "connect deferred; a parked session is still releasing")
+            controller = null
+            runCatching { built.controller.close() }
+            started = false
+            if (CarPlayBackgroundSession.isReleasing()) {
+                waitForParkedRelease()
+            } else {
+                broadcastFailed(getString(R.string.connection_failed))
+                teardown()
+                stopSelf()
+            }
+            return
         }
 
         // Identity install runs off the main thread and can still be in progress when the user
@@ -191,6 +222,42 @@ class CarPlayConnectService : Service() {
                 }
             }
         }, "diplay-mfi-ready").apply { isDaemon = true }.start()
+    }
+
+    /**
+     * The previous parked controller can still own USB after its snapshot is gone. Starting
+     * another stack in that window fails the new attempt and can wedge the bus. Wait, then
+     * retry this connect instead of building a second controller.
+     */
+    private fun waitForParkedRelease() {
+        if (!waitingForParkedRelease.compareAndSet(false, true)) return
+        val generation = connectGeneration.get()
+        Thread({
+            val deadline = System.nanoTime() + PARKED_RELEASE_WAIT_MILLIS * 1_000_000L
+            while (
+                CarPlayBackgroundSession.isReleasing() &&
+                System.nanoTime() < deadline &&
+                generation == connectGeneration.get()
+            ) {
+                try {
+                    Thread.sleep(50)
+                } catch (_: InterruptedException) {
+                    break
+                }
+            }
+            val released = !CarPlayBackgroundSession.isReleasing()
+            Handler(Looper.getMainLooper()).post {
+                waitingForParkedRelease.set(false)
+                if (generation != connectGeneration.get()) return@post
+                if (!released) {
+                    broadcastFailed(getString(R.string.connection_failed))
+                    teardown()
+                    stopSelf()
+                    return@post
+                }
+                beginConnect()
+            }
+        }, "diplay-wait-parked-release").apply { isDaemon = true }.start()
     }
 
     private val forwardingListener = object : AirPlaySessionListener {
@@ -264,7 +331,9 @@ class CarPlayConnectService : Service() {
         // Allow a fresh startConnectFlow to begin after a cancel/failure.
         started = false
         succeeded = false
-        runCatching { stopService(Intent(this, DiPlaySessionService::class.java)) }
+        if (!preserveSessionService) {
+            runCatching { stopService(Intent(this, DiPlaySessionService::class.java)) }
+        }
     }
 
     private fun broadcastFailed(message: String) {
@@ -313,6 +382,7 @@ class CarPlayConnectService : Service() {
         if (ActiveSessionLog.current === connectLog) ActiveSessionLog.current = null
         connectLog = null
         connecting = false
+        running = false
         started = false
         super.onDestroy()
     }
@@ -320,10 +390,17 @@ class CarPlayConnectService : Service() {
     companion object {
         const val ACTION_START = "com.shihab.diplay.CONNECT_START"
         const val ACTION_CANCEL = "com.shihab.diplay.CONNECT_CANCEL_SERVICE"
+        const val ACTION_LINK_LOST = "com.shihab.diplay.CONNECT_LINK_LOST"
+        private const val PARKED_RELEASE_WAIT_MILLIS = 5_000L
 
         /** Process-global "a connection attempt is in flight" flag, read by the host's onCreate. */
         @Volatile
         var connecting = false
+            private set
+
+        /** True while an actual service instance exists, including the post-handshake handoff window. */
+        @Volatile
+        var running = false
             private set
 
         /** Clear [connecting] immediately on cancel/failure so home UI does not stay on「连接中」. */

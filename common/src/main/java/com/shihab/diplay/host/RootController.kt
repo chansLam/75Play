@@ -62,17 +62,7 @@ internal class RootController(private val context: Context) {
         val targetApk = "$targetDir/$targetName"
         // Mount /system rw, copy, fix perms/context, then reboot. Best-effort restorecon for
         // SELinux-enabled builds; the chmod/chown cover the classic i.MX KitKat rootfs.
-        val script = buildString {
-            append("mount -o remount,rw /system && ")
-            append("mkdir -p '$targetDir' && ")
-            append("cp '$sourceApk' '$targetApk' && ")
-            append("chmod 644 '$targetApk' && ")
-            append("chown root:root '$targetApk' && ")
-            append("(restorecon '$targetApk' || true) && ")
-            append("mount -o remount,ro /system && ")
-            append("sync && ")
-            append("reboot")
-        }
+        val script = privilegedInstallScript(sourceApk, targetDir, targetApk)
         return runCatching {
             val process = ProcessBuilder("su", "-c", script)
                 .redirectErrorStream(true)
@@ -94,3 +84,23 @@ internal class RootController(private val context: Context) {
             "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) ${Build.MANUFACTURER} ${Build.MODEL}"
     }
 }
+
+/** Builds a KitKat /system install script that always attempts to restore the read-only mount. */
+internal fun privilegedInstallScript(sourceApk: String, targetDir: String, targetApk: String): String =
+    buildString {
+        append("mount -o remount,rw /system || exit \$?; ")
+        append("status=0; ")
+        append("restore_system_ro() { mount -o remount,ro /system || true; }; ")
+        append("trap restore_system_ro EXIT; ")
+        append("trap 'restore_system_ro; exit 1' HUP INT TERM; ")
+        append("mkdir -p '$targetDir' || status=\$?; ")
+        append("if [ \$status -eq 0 ]; then cp '$sourceApk' '$targetApk' || status=\$?; fi; ")
+        append("if [ \$status -eq 0 ]; then chmod 644 '$targetApk' || status=\$?; fi; ")
+        append("if [ \$status -eq 0 ]; then chown root:root '$targetApk' || status=\$?; fi; ")
+        append("if [ \$status -eq 0 ]; then restorecon '$targetApk' || true; fi; ")
+        append("mount -o remount,ro /system; ro_status=\$?; ")
+        append("if [ \$ro_status -eq 0 ]; then trap - EXIT HUP INT TERM; fi; ")
+        append("if [ \$status -eq 0 ] && [ \$ro_status -ne 0 ]; then status=\$ro_status; fi; ")
+        append("if [ \$status -ne 0 ]; then exit \$status; fi; ")
+        append("sync || exit \$?; reboot")
+    }

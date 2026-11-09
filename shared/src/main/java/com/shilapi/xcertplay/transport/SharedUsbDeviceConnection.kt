@@ -36,11 +36,6 @@ internal class SharedUsbDeviceConnection private constructor(
         endpoint: android.hardware.usb.UsbEndpoint, buffer: ByteArray, offset: Int, length: Int, timeoutMillis: Int,
     ): Int = bulkTransferCompat(connection, endpoint, buffer, offset, length, timeoutMillis)
 
-    // bulkTransferErrno intentionally not overridden: it would require the raw-usbfs JNI
-    // (legacy_ncm_claim) which needs root / extra native code. The SharedUsbConnection default
-    // falls back to the framework bulkTransfer, which is correct for the framework-only wired
-    // stack on the CS75 (no root).
-
     override fun claimInterface(usbInterface: android.hardware.usb.UsbInterface, force: Boolean): Boolean =
         connection.claimInterface(usbInterface, force)
 

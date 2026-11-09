@@ -44,7 +44,7 @@ class Iap2WiredControlClient(
          * down (the NTDA3 stops sending iAP2 frames for minutes while video keeps streaming).
          * Null keeps the previous behaviour for a caller with no liveness signal.
          */
-        airPlayDataRecent: (() -> Boolean)? = null,
+        airPlayDataRecent: (() -> Boolean?)? = null,
     ): Iap2WiredControlResult {
         require(availableCurrentMilliAmps in 0..0xffff) {
             "availableCurrentMilliAmps must be in 0..65535"

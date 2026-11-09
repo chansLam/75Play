@@ -401,6 +401,12 @@ class CarPlayController(
 
     fun isClosed(): Boolean = closed
 
+    /**
+     * True once this controller has committed to USB, including the auto-detect path that runs
+     * when wireless is the saved preference but an iPhone is plugged in.
+     */
+    fun isWiredLink(): Boolean = phase == Phase.WIRED
+
     /** Nonblocking identity for an accepted, still-current primary screen session. */
     fun activeAirPlaySessionToken(): Any? {
         if (closed) return null
@@ -1088,52 +1094,19 @@ class CarPlayController(
     }
 
     /**
-     * Opens the data paths once the NCM CarPlay configuration is ready (the caller already verified
-     * [wiredCarPlayConfigurationReady]).
-     *
-     * Do NOT gate this on the GET_MODE first byte: per usbmuxd that reply is "3:3:3:0 in the
-     * initial mode, 5:3:3:0 otherwise" — the first byte is an initial/non-initial flag, not the
-     * Apple mode number, and the real mode is derived from bNumConfigurations (guess_mode). A device
-     * with 6 configurations is already in mode 4 (USB Ethernet + CDC-NCM), the correct working
-     * mode. Comparing that byte against mode 3 never matches and made the old code issue SET_MODE
-     * in an infinite loop (195 times in the 2026-11-08 report) without ever opening the data
-     * plane. So when the NCM configuration is present, open the data paths directly.
+     * Opens the data paths once the NCM CarPlay configuration is present. Presence of that
+     * configuration is the signal to open; a missing configuration goes through the 0x51
+     * re-enumeration path instead.
      */
     private fun ensureNcmModeThenOpenDataPaths(device: android.hardware.usb.UsbDevice) {
-        val host = wiredIphoneHost ?: return
         executor.execute {
             if (closed || phase != Phase.WIRED || wiredAborted.get()) return@execute
             if (wiredCarPlayConfigurationReady(device)) {
-                debugLog("wired NCM configuration ready; opening data paths directly (no Apple SET_MODE)")
+                debugLog("wired NCM configuration ready; opening data paths")
                 openWiredDataPaths(device)
-                return@execute
-            }
-            // Fallback only: the device is still in the initial mode with no NCM configuration.
-            // Ask for mode 4 (the mode LIVI uses); a STALL is treated as "already usable" and the
-            // re-enumeration poll / configuration check bounds the work, so this can never loop.
-            debugLog("wired NCM configuration absent; requesting Apple mode 4")
-            host.selectAppleModeAsync(
-                device,
-                com.shilapi.xcertplay.transport.IphoneUsbHost.APPLE_MODE_USB_ETHERNET_CDC_NCM,
-                executor,
-            ) { transition ->
-                when (transition) {
-                    is com.shilapi.xcertplay.transport.IphoneUsbHost.TransitionResult.ReenumerationRequested -> {
-                        if (closed || phase != Phase.WIRED || wiredAborted.get()) return@selectAppleModeAsync
-                        onStatus(CarPlayStatus.WaitingForReenumeration)
-                        wiredPollReenumeration(device, attempts = 0)
-                    }
-                    is com.shilapi.xcertplay.transport.IphoneUsbHost.TransitionResult.Failed -> {
-                        // A STALL here can mean the device is already usable; fall back rather than
-                        // failing outright when the CarPlay configuration is still present.
-                        if (wiredCarPlayConfigurationReady(device)) {
-                            debugLog("wired SET_MODE failed but configuration is ready; opening data paths")
-                            openWiredDataPaths(device)
-                        } else {
-                            fail(transition.error)
-                        }
-                    }
-                }
+            } else {
+                debugLog("wired NCM configuration absent; requesting re-enumeration")
+                beginWiredReenumeration(device, attempts = 0)
             }
         }
     }
@@ -1200,10 +1173,8 @@ class CarPlayController(
                 " status=${function.statusIn?.let { "0x${it.address.toString(16)}" } ?: "none"}" +
                 " unions=${configuration.unions}",
         )
-        // The phone may legitimately STALL SET_NTB_INPUT_SIZE / SET_MAX_DATAGRAM_SIZE when the
-        // matching bmNetworkCapabilities bit is clear, so log what it actually declares — and the
-        // raw configuration descriptor, because two NCM functions with no Union between them must
-        // be told apart by endpoint ownership rather than assumed order.
+        // Log the NCM capabilities and the raw configuration descriptor. Two NCM functions with
+        // no Union between them are told apart by endpoint ownership.
         debugLog(
             "ncm descriptors caps=${configuration.ncmCapabilities} unions=${configuration.unions} " +
                 "raw=${(configuration.platformConfiguration as? ByteArray)?.let { bytes ->
@@ -1257,17 +1228,6 @@ class CarPlayController(
             wiredNcm?.close()
         }
         wiredNcm = null
-        // Best-effort iAP2 CarPlay session end on the CSM channel while the USBMUX pipe is still
-        // open. Gated by default because the 0xE001 EndSession opcode/body is not catalogued here;
-        // send failure or a dead channel is swallowed and never blocks teardown.
-        if (com.shilapi.xcertplay.transport.WiredNcmTuning.endSessionOnClose) {
-            closeBestEffort("wired iAP2 EndSession 0xE001") {
-                val session = csm?.takeIf { !it.isClosed } ?: return@closeBestEffort
-                debugLog("wired sending iAP2 EndSession 0xE001 before USBMUX close")
-                session.sendRaw(0xE001, 2_000L) {}
-                debugLog("wired iAP2 EndSession 0xE001 sent")
-            }
-        }
         closeBestEffort("wired USBMUX session") {
             wiredUsbSession?.markAborted()
             wiredUsbSession?.close()
@@ -1406,9 +1366,9 @@ class CarPlayController(
                     }
                 },
                 airPlayTcpArrived = { wiredTcpArrived.get() },
-                airPlayDataRecent = { true },
+                airPlayDataRecent = { media.isDataRecent(WIRED_MEDIA_RECENT_MILLIS) },
             )
-            if (closed || wiredAborted.get() || phase == Phase.WIRED) {
+            if (shouldIgnoreWiredControlTerminal(closed, wiredAborted.get(), phase == Phase.WIRED)) {
                 debugLog("wired control loop finished after abort/detach")
                 return
             }
@@ -2604,6 +2564,7 @@ class CarPlayController(
         private const val ADAPTER_ADDRESS_PLACEHOLDER = "02:00:00:00:00:00"
         private const val WIRED_PERMISSION_POLL_TIMEOUT_MILLIS = 10_000L
         private const val WIRED_PERMISSION_POLL_INTERVAL_MILLIS = 400L
+        private const val WIRED_MEDIA_RECENT_MILLIS = 10_000L
         // 60s: the iPhone trust dialog appears only when unlocked/awake; a locked or slow-unlock
         // phone misses the old 15s budget. Per-step wait lives in LockdownPairingClient (10s).
         private const val WIRED_PAIR_TIMEOUT_MILLIS = 60_000L

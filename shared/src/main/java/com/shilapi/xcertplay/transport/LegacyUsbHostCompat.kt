@@ -214,34 +214,6 @@ internal object LegacyUsbHostCompat {
     }
 
     /**
-     * Raw class control transfer on the already-authorized usbfs fd.
-     *
-     * Returns the transferred byte count (>= 0) or -errno. Null when the native helper is
-     * unavailable on this build, so callers can fall back to the framework result without
-     * treating a missing so as a transfer failure.
-     */
-    internal fun rawControlTransfer(
-        fileDescriptor: Int,
-        requestType: Int,
-        request: Int,
-        value: Int,
-        index: Int,
-        buffer: ByteArray?,
-        length: Int,
-        timeoutMillis: Int,
-    ): Int? {
-        if (fileDescriptor < 0) return null
-        return try {
-            LegacyUsbHostNative.controlTransfer(
-                fileDescriptor, requestType, request, value, index, buffer, length, timeoutMillis,
-            )
-        } catch (error: LinkageError) {
-            Log.w(TAG, "usbfs control unavailable for request=0x${request.toString(16)}", error)
-            null
-        }
-    }
-
-    /**
      * One synchronous USBDEVFS_BULK transfer. Returns the transferred byte count (>= 0) or
      * -errno. Null when the native helper is unavailable on this build, so callers can fall back.
      */
@@ -274,22 +246,6 @@ private object LegacyUsbHostNative {
     external fun setInterface(fileDescriptor: Int, interfaceId: Int, alternateSetting: Int): Int
     external fun resetDevice(fileDescriptor: Int): Int
     external fun bounceInterface(fileDescriptor: Int, interfaceId: Int, alternateSetting: Int): Int
-
-    /**
-     * Raw USBDEVFS_CONTROL. Returns the transferred byte count (>= 0) or -errno on failure,
-     * so a device STALL (EPIPE) is distinguishable from a timeout (ETIMEDOUT) — the
-     * framework's UsbDeviceConnection.controlTransfer() reports every failure as -1.
-     */
-    external fun controlTransfer(
-        fileDescriptor: Int,
-        requestType: Int,
-        request: Int,
-        value: Int,
-        index: Int,
-        buffer: ByteArray?,
-        length: Int,
-        timeoutMillis: Int,
-    ): Int
 
     /**
      * Raw USBDEVFS_BULK, a single synchronous bulk transfer. Returns the transferred byte count

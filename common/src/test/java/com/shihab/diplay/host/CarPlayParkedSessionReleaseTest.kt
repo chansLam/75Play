@@ -56,6 +56,30 @@ class CarPlayParkedSessionReleaseTest {
     }
 
     @Test
+    fun sessionLossDeliveredBeforeParkingIsConsumedAfterParking() {
+        val owner = Any()
+        val controller = mock(CarPlayController::class.java)
+        CarPlayBackgroundSession.store(
+            controller,
+            mock(AndroidMediaSink::class.java),
+            1920,
+            720,
+            owner,
+            mock(CarPlaySessionDisplay::class.java),
+        ) { done ->
+            CarPlayBackgroundSession.clear(controller)
+            done()
+        }
+        val done = CountDownLatch(1)
+        CarPlayBackgroundSession.onParkedSessionLost = { done.countDown() }
+
+        CarPlayBackgroundSession.park(owner, "session ended")
+
+        assertTrue(done.await(5, TimeUnit.SECONDS))
+        assertFalse(CarPlayBackgroundSession.hasSession())
+    }
+
+    @Test
     fun releaseDoesNotStopASessionTheHostAlreadyAdopted() {
         val owner = Any()
         CarPlayBackgroundSession.store(
@@ -109,8 +133,14 @@ class CarPlayParkedSessionReleaseTest {
         ) { it() }
 
         assertFalse(stored)
+        assertTrue(CarPlayBackgroundSession.isReleasing())
         release.countDown()
         releaser.join(5_000)
+        val idleDeadline = System.nanoTime() + 2_000_000_000L
+        while (CarPlayBackgroundSession.isReleasing() && System.nanoTime() < idleDeadline) {
+            Thread.sleep(20)
+        }
+        assertFalse(CarPlayBackgroundSession.isReleasing())
     }
 
     @Test

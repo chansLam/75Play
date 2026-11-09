@@ -150,6 +150,7 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
                     appendLog("AirPlay session ended; returning to shell, will auto-reopen on recovery")
                     // Do not stay on a black/loading host: hand back to the shell. The foreground
                     // session recovery reconnects in the background and reopens the host on success.
+                    parkForShell("session ended")
                     returnToDiPlay()
                 }
             }
@@ -160,6 +161,7 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
                     wirelessStartup.disconnected()
                     activeScreenStreamTypes.clear()
                     appendLog("CarPlay transport error: $message; returning to shell for background recovery")
+                    parkForShell(message)
                     returnToDiPlay()
                 }
             }
@@ -445,7 +447,7 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
     }
 
     /** Drop this Activity as session owner without closing the controller. */
-    fun parkForShell() {
+    fun parkForShell(sessionLostReason: String? = null) {
         with(host) {
             if (sessionTeardownStarted.get()) return
             shuttingDown.set(true)
@@ -454,7 +456,7 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
             reconnectScheduled = false
             if (!CarPlayBackgroundSession.isOwner(this)) return
             controller?.attachUi(ParkedSessionListener, { _ -> })
-            CarPlayBackgroundSession.park(this)
+            CarPlayBackgroundSession.park(this, sessionLostReason)
         }
     }
 

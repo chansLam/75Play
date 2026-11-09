@@ -45,9 +45,6 @@ android {
     lint {
         // Play's floor does not apply to this car-only sideload APK.
         disable += "ExpiredTargetSdkVersion"
-        // lint's JavaDocParser crashes (NoSuchMethodError: java.util.List.removeLast()) on this
-        // toolchain; keep release vital lint from blocking the signed standalone build.
-        checkReleaseBuilds = false
     }
 
 

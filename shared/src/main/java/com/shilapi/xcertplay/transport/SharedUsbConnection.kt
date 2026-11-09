@@ -43,20 +43,6 @@ internal interface SharedUsbConnection {
         endpoint: UsbEndpoint, buffer: ByteArray, offset: Int, length: Int, timeoutMillis: Int,
     ): Int
 
-    /**
-     * The same bulk transfer issued through the raw usbfs ioctl, returning the byte count or a
-     * negative errno.
-     *
-     * The framework reports every failed bulk transfer as a bare -1, which makes a NAK from the
-     * accessory (ETIMEDOUT) indistinguishable from a stale endpoint (ENODEV) and from a latched
-     * stall (EPIPE) — three faults with completely different fixes. Only call this when the
-     * transfer is known not to have reached the wire: re-issuing a transfer that timed out could
-     * put a second copy of the same data on the bus.
-     */
-    fun bulkTransferErrno(
-        endpoint: UsbEndpoint, buffer: ByteArray, offset: Int, length: Int, timeoutMillis: Int,
-    ): Int = bulkTransfer(endpoint, buffer, offset, length, timeoutMillis)
-
     fun claimInterface(usbInterface: UsbInterface, force: Boolean): Boolean
     fun releaseInterface(usbInterface: UsbInterface): Boolean
     fun setInterface(usbInterface: UsbInterface): Boolean

@@ -6,8 +6,6 @@ import java.io.Closeable
 internal interface NcmIo : Closeable {
     fun submitOut(block: ByteArray, timeoutMillis: Int): NcmSubmit
     fun receive(timeoutMillis: Int, maxBytes: Int): ByteArray?
-    fun availableOutSlots(): Int
-    fun diagnostics(): String
     fun abort()
 }
 
@@ -19,11 +17,6 @@ internal sealed class NcmSubmit {
         val completedChunks: Int,
         val successBytes: Int,
     ) : NcmSubmit()
-
-    object Backpressured : NcmSubmit()
-
-    /** The native stream submitted only an NTB prefix; the interface must be rebuilt. */
-    object FatalPartialSubmit : NcmSubmit()
 
     class Failed(
         val transferred: Int,

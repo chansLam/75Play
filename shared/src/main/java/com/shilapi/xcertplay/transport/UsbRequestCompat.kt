@@ -2,8 +2,6 @@ package com.shilapi.xcertplay.transport
 
 import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbRequest
-import android.os.Build
-import com.shilapi.xcertplay.compat.realSdkInt
 import java.io.Closeable
 import java.nio.ByteBuffer
 import java.util.concurrent.ExecutionException
@@ -14,9 +12,9 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
 /**
- * Compatibility wrapper used by the Android 7 port for UsbRequest queue/wait behavior.
- * API 26+ uses the platform timeout overload; API 24/25 run blocking requestWait()
- * on one daemon worker and impose the timeout through Future.get().
+ * API 19-compatible wrapper for UsbRequest queue/wait behavior. The blocking platform
+ * requestWait() runs on one daemon worker and Future.get() supplies the timeout without
+ * linking the API 26 requestWait(long) overload into this class.
  */
 internal class UsbRequestCompat : Closeable {
     @Volatile
@@ -34,10 +32,6 @@ internal class UsbRequestCompat : Closeable {
     fun requestWait(connection: UsbDeviceConnection, timeoutMillis: Long): UsbRequest? {
         if (closed) return null
         val timeout = timeoutMillis.coerceAtLeast(1L)
-        if (realSdkInt() >= Build.VERSION_CODES.O) {
-            return connection.requestWait(timeout)
-        }
-
         var future = inFlight
         if (future == null) {
             if (closed) return null

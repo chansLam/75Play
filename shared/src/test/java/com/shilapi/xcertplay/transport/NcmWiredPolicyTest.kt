@@ -35,49 +35,9 @@ class NcmWiredPolicyTest {
     }
 
     @Test
-    fun fullJavaQueueIsBackpressureRatherThanACompletedUrb() {
-        val queued = ArrayDeque<ByteArray>()
-        val capacity = 2
-        val accepted = BooleanArray(3) { index ->
-            if (queued.size >= capacity) false else queued.add(byteArrayOf(index.toByte()))
-        }
-
-        assertEquals(listOf(true, true, false), accepted.toList())
-        assertEquals(2, queued.size)
-    }
-
-    @Test
-    fun noCompletionDiscardsAndUnreapedCancelRequestsReplug() {
-        val live = NcmOutSnapshot(
-            queued = 0, submitted = 2, completed = 1, cancelling = 0, reclaimFailed = 0,
-            stall = 0, nak = 1, noCompletion = 0, fatalSubmit = 0, latencyMs = 4,
-            replug = false, successBytes = 100,
-        )
-        val silent = live.copy(noCompletion = 1)
-        val partial = live.copy(fatalSubmit = 1)
-        val wedged = silent.copy(cancelling = 1, reclaimFailed = 1, replug = true)
-
-        assertEquals(NcmOutAction.CONTINUE, NcmSessionHealth.decide(live))
-        assertEquals(NcmOutAction.DISCARD, NcmSessionHealth.decide(silent))
-        assertEquals(NcmOutAction.DISCARD, NcmSessionHealth.decide(partial))
-        assertEquals(NcmOutAction.REPLUG, NcmSessionHealth.decide(wedged))
+    fun immediateHostRejectionIsDistinctFromANakThatWaited() {
         assertTrue(NcmSessionHealth.immediateRejection(0))
         assertFalse(NcmSessionHealth.immediateRejection(51))
-        assertTrue(NcmSessionHealth.immediateReplug(elapsedMs = 0, outHasSucceeded = true))
-        assertFalse(NcmSessionHealth.immediateReplug(elapsedMs = 0, outHasSucceeded = false))
-        assertFalse(NcmSessionHealth.immediateReplug(elapsedMs = 51, outHasSucceeded = true))
-        assertFalse(NcmSessionHealth.immediateReplug(elapsedMs = 800, outHasSucceeded = true))
-        assertEquals(silent, NcmOutSnapshot.parse(
-            "queued=0 submitted=2 completed=1 cancelling=0 reclaimFailed=0 stall=0 nak=1 " +
-                "noCompletion=1 fatalSubmit=0 latencyMs=4 replug=0 successBytes=100",
-        ))
-    }
-
-    @Test
-    fun partialNativeSubmitIsFatalRatherThanRetryableBackpressure() {
-        assertTrue(nativeSubmitResult(-1, 0) === NcmSubmit.FatalPartialSubmit)
-        assertTrue(nativeSubmitResult(0, 0) === NcmSubmit.Backpressured)
-        assertTrue(nativeSubmitResult(32768, 32768) is NcmSubmit.Accepted)
     }
 
     private fun putU16(target: ByteArray, offset: Int, value: Int) {
