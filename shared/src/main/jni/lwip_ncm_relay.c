@@ -58,6 +58,7 @@ typedef struct {
     ip_addr_t peer_ip;
     u16_t peer_port;
     int has_peer;
+    uint32_t tx_packet_count;
 } UdpRelay;
 
 typedef struct {
@@ -100,6 +101,9 @@ typedef struct {
 
     TcpRelayConn tcp_conns[MAX_RELAY_CONNS];
     UdpRelay udp_relays[MAX_UDP_RELAYS];
+
+    ip_addr_t peer_ip;
+    int has_peer_ip;
 
     pthread_t thread;
     atomic_int running;
@@ -277,6 +281,7 @@ static void close_udp_relay(LwipContext *ctx, UdpRelay *relay) {
     }
     relay->has_peer = 0;
     relay->port = 0;
+    relay->tx_packet_count = 0;
 }
 
 static void udp_relay_recv(void *arg, struct udp_pcb *upcb, struct pbuf *p,
@@ -411,6 +416,9 @@ static err_t tcp_relay_accept(void *arg, struct tcp_pcb *newpcb, err_t err) {
     LwipContext *ctx = (LwipContext *)arg;
     if (ctx == NULL || newpcb == NULL) return ERR_VAL;
 
+    ip_addr_copy(ctx->peer_ip, newpcb->remote_ip);
+    ctx->has_peer_ip = 1;
+
     int port = newpcb->local_port;
     LOGI("lwIP accepted TCP connection on port %d", port);
 
@@ -528,7 +536,17 @@ static void check_and_forward_udp_loopback(LwipContext *ctx) {
     for (int i = 0; i < MAX_UDP_RELAYS; i++) {
         UdpRelay *relay = &ctx->udp_relays[i];
         if (!relay->active || relay->loopback_fd < 0 || relay->lwip_pcb == NULL) continue;
-        if (!relay->has_peer) continue;
+
+        const ip_addr_t *dst_ip = NULL;
+        u16_t dst_port = 0;
+        if (relay->has_peer) {
+            dst_ip = &relay->peer_ip;
+            dst_port = relay->peer_port;
+        } else if (ctx->has_peer_ip) {
+            dst_ip = &ctx->peer_ip;
+            dst_port = (u16_t)relay->port;
+        }
+        if (dst_ip == NULL || dst_port == 0) continue;
 
         uint8_t buf[2048];
         while (1) {
@@ -537,10 +555,14 @@ static void check_and_forward_udp_loopback(LwipContext *ctx) {
                 struct pbuf *p = alloc_transport_pbuf((u16_t)n);
                 if (p != NULL) {
                     pbuf_take(p, buf, (u16_t)n);
-                    err_t err = udp_sendto(relay->lwip_pcb, p, &relay->peer_ip, relay->peer_port);
+                    err_t err = udp_sendto(relay->lwip_pcb, p, dst_ip, dst_port);
                     if (err != ERR_OK) {
                         LOGW("udp_sendto port %d failed: %d", relay->port, err);
+                    } else if (relay->tx_packet_count < 5 || (relay->tx_packet_count % 100 == 0)) {
+                        LOGI("lwIP UDP forwarded uplink port %d bytes=%zd count=%u",
+                             relay->port, n, relay->tx_packet_count);
                     }
+                    relay->tx_packet_count++;
                     pbuf_free(p);
                 } else {
                     LOGW("pbuf_alloc failed for udp forwarding on port %d, len=%zd", relay->port, n);
@@ -652,6 +674,21 @@ static void register_listeners_locked(LwipContext *ctx) {
             setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
             setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
 
+            int reuse = 1;
+            setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+
+            struct sockaddr_in sin;
+            memset(&sin, 0, sizeof(sin));
+            sin.sin_family = AF_INET;
+            sin.sin_port = htons((uint16_t)port);
+            sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+            int bind_res = bind(fd, (struct sockaddr *)&sin, sizeof(sin));
+            if (bind_res == 0) {
+                LOGI("lwIP UDP relay loopback bound to 127.0.0.1:%d (uplink ready)", port);
+            } else {
+                LOGI("lwIP UDP relay loopback bind 127.0.0.1:%d skipped (%d) (downlink ready)", port, errno);
+            }
+
             relay->active = 1;
             relay->port = port;
             relay->lwip_pcb = pcb;
@@ -659,6 +696,7 @@ static void register_listeners_locked(LwipContext *ctx) {
             relay->has_peer = 0;
             memset(&relay->peer_ip, 0, sizeof(relay->peer_ip));
             relay->peer_port = 0;
+            relay->tx_packet_count = 0;
 
             udp_recv(pcb, udp_relay_recv, relay);
             LOGI("lwIP listening on [fe80::2]:%d (UDP)", port);
@@ -830,6 +868,16 @@ static void input_ethernet(LwipContext *ctx, const uint8_t *data, int length) {
         uint8_t *raw = (uint8_t *)p->payload;
         uint16_t ethertype = (((uint16_t)raw[12]) << 8) | raw[13];
         if (ethertype == 0x86dd && length >= 54) {
+            const uint8_t *src_ip = raw + 14 + 8;
+            int is_zero = 1;
+            for (int i = 0; i < 16; i++) {
+                if (src_ip[i] != 0) { is_zero = 0; break; }
+            }
+            if (!is_zero && !ctx->has_peer_ip) {
+                memcpy(ip_2_ip6(&ctx->peer_ip)->addr, src_ip, 16);
+                IP_SET_TYPE_VAL(ctx->peer_ip, IPADDR_TYPE_V6);
+                ctx->has_peer_ip = 1;
+            }
             uint8_t next_hdr = raw[20]; // 14 + 6
             if (next_hdr == 6) { // TCP
                 ctx->stats_rx_tcp++;

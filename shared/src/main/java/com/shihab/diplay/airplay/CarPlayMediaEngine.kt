@@ -310,6 +310,7 @@ class CarPlayMediaEngine(
         // AirPlay audio (and its RTCP control) is carried over UDP, not TCP.
         session.registerUdpPort(dataPort)
         session.registerUdpPort(controlPort)
+        microphone?.let { session.registerUdpPort(it.port) }
         return linkedMapOf(
             "type" to type,
             "dataPort" to dataPort,

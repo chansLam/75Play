@@ -8,7 +8,12 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [29], manifest = Config.NONE)
 class CarPlayMediaEngineTest {
     @Test
     fun mediaLivenessRequiresARealPacket() {
@@ -118,8 +123,53 @@ class CarPlayMediaEngineTest {
         }
     }
 
-    private fun testSession(videoInCar: Boolean = false): AirPlaySession = AirPlaySession(
-        socket = Socket(),
+    @Test
+    fun onAudioRegistersMicrophoneUplinkPortWithTransportBridge() {
+        val registeredUdpPorts = mutableListOf<Int>()
+        val server = java.net.ServerSocket()
+        server.bind(java.net.InetSocketAddress(java.net.InetAddress.getByName("127.0.0.1"), 0))
+        val client = java.net.Socket()
+        client.connect(java.net.InetSocketAddress(java.net.InetAddress.getByName("127.0.0.1"), server.localPort))
+        val accepted = server.accept()
+        val session = testSession(
+            socket = accepted,
+            registerPort = { port, isTcp ->
+                if (!isTcp) registeredUdpPorts += port
+            },
+        )
+        val pairVerify = session.pairVerify
+        val sharedField = pairVerify.javaClass.getDeclaredField("sharedSecret").apply { isAccessible = true }
+        sharedField.set(pairVerify, ByteArray(32))
+
+        val engine = CarPlayMediaEngine(object : MediaSink {}, microphoneEnabled = true)
+        val stream = mapOf<String, Any?>(
+            "type" to 100L,
+            "audioType" to "speechrecognition",
+            "audioFormat" to 0x40000000L, // OPUS
+            "dataPort" to 49152L,
+            "streamConnectionID" to 1L,
+        )
+        try {
+            val response = engine.onAudio(session, 100, stream)
+            // Downlink dataPort and controlPort plus iPhone's mic dataPort
+            assertTrue("iPhone's mic dataPort must be registered with the transport bridge", 49152 in registeredUdpPorts)
+            assertEquals(3, registeredUdpPorts.size)
+            assertEquals(response?.get("dataPort"), registeredUdpPorts[0])
+            assertEquals(response?.get("controlPort"), registeredUdpPorts[1])
+            assertEquals(49152, registeredUdpPorts[2])
+        } finally {
+            session.close()
+            client.close()
+            server.close()
+        }
+    }
+
+    private fun testSession(
+        videoInCar: Boolean = false,
+        socket: Socket = Socket(),
+        registerPort: ((Int, Boolean) -> Unit)? = null,
+    ): AirPlaySession = AirPlaySession(
+        socket = socket,
         config = AirPlayConfig(
             deviceName = "test",
             deviceId = "02:00:00:00:00:02",
@@ -133,5 +183,6 @@ class CarPlayMediaEngineTest {
         mfi = null,
         listener = object : AirPlaySessionListener {},
         media = object : AirPlayMediaHandler {},
+        registerPort = registerPort,
     )
 }

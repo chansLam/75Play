@@ -64,6 +64,9 @@ internal class VideoDecoder(
     private var annexScratch = ByteArray(0)
     private var feedScratch = ByteArray(0)
     private val referenceChain = VideoReferenceChain()
+    // i.MX6 scanout: collapse back-to-back renders. Newer devices keep the paced path.
+    private val collapseScanoutBursts = realSdkInt() <= Build.VERSION_CODES.KITKAT
+    private val scanout = ScanoutGate()
     private var lastKeyFrameRequestNs = 0L
     /**
      * A new surface reconfigures the codec before the iPhone's opening IDR arrives.
@@ -617,70 +620,124 @@ internal class VideoDecoder(
     private fun queuedSlotOf(presentationUs: Long): Int =
         queuedPresentationUs.indices.firstOrNull { queuedPresentationUs[it] == presentationUs } ?: -1
 
+    private data class HeldOutput(
+        val index: Int,
+        val presentationUs: Long,
+        val flags: Int,
+        val size: Int,
+        val dequeuedNs: Long,
+    )
+
     private fun drainOutput(codec: MediaCodec) {
         val info = outputInfo
+        // On KitKat, hold the newest ready buffer across a non-blocking dequeue. If another
+        // output is already waiting, the older one is returned without rendering so the scanout
+        // buffer is not overwritten. The hold is one dequeue, not a sleep.
+        var held: HeldOutput? = null
+        fun releaseHeld(newerReady: Boolean): Boolean {
+            val frame = held ?: return false
+            held = null
+            return releaseOutput(codec, frame, newerReady)
+        }
         while (running) {
             val index = codec.dequeueOutputBuffer(info, 0)
             when {
-                index == MediaCodec.INFO_TRY_AGAIN_LATER -> return
+                index == MediaCodec.INFO_TRY_AGAIN_LATER -> {
+                    releaseHeld(false)
+                    return
+                }
                 index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> logOutputFormat(codec.outputFormat)
                 index >= 0 -> {
-                    val render = outputSurface != null
-                    // Parked output goes to the offscreen consumer: it keeps the codec's state, but it is
-                    // not shown, so it is neither paced nor counted.
-                    val shown = render && outputSurface !== parking?.surface
-                    val now = System.nanoTime()
-                    val slot = queuedSlotOf(info.presentationTimeUs)
-                    val queued = if (slot >= 0) queuedAtNanos[slot] else 0L
-                    val heldOverGap = queued in 1 until resumedAtNanos
-                    if (queued > 0 && !heldOverGap) stats.onDecodeLatency(now - queued)
-                    val delay = pacingDelay
-                    val paced = shown && delay != null && slot >= 0 && queuedPaced[slot]
-                    val localNs = info.presentationTimeUs * 1000
-                    val pauseHeld = paced && queuedBeforePause[slot]
-                    val targetNs = if (paced) {
-                        if (!heldOverGap && !pauseHeld) delay.onFrame(now - localNs)
-                        stats.onPacingDelay(delay.nanos)
-                        localNs + delay.nanos
-                    } else 0L
-                    // API 19 has no timed releaseOutputBuffer. Wait on this thread, in short
-                    // slices, and keep InterruptedException out of the decoder's failure path.
-                    if (paced && targetNs > 0L) {
-                        while (running) {
-                            val ahead = targetNs - System.nanoTime()
-                            if (ahead <= 1_000_000L || ahead > MAX_PACING_AHEAD_NS) break
-                            try {
-                                Thread.sleep((ahead / 1_000_000L).coerceAtMost(20L))
-                            } catch (_: InterruptedException) {
-                                running = false
-                                codec.releaseOutputBuffer(index, false)
-                                return
-                            }
+                    val frame = HeldOutput(
+                        index,
+                        info.presentationTimeUs,
+                        info.flags,
+                        info.size,
+                        System.nanoTime(),
+                    )
+                    if (collapseScanoutBursts) {
+                        if (held != null && releaseHeld(true)) {
+                            codec.releaseOutputBuffer(frame.index, false)
+                            return
                         }
+                        held = frame
+                    } else if (releaseOutput(codec, frame, newerReady = false)) {
+                        return
                     }
-                    if (paced && !heldOverGap && !pauseHeld && System.nanoTime() > targetNs + 5_000_000L) {
-                        stats.onLate()
-                    }
-                    // Decode every frame, but do not display a frame that is already late while a
-                    // newer one is queued. The reference chain stays intact and the picture catches up.
-                    val catchUp = paced && targetNs > 0L &&
-                        System.nanoTime() > targetNs + CATCH_UP_LATENESS_NS &&
-                        queue.pendingFrameCount() > 0
-                    codec.releaseOutputBuffer(index, render && !catchUp)
-                    consecutiveInputWithoutOutput = 0
-                    stallRebuildTracker.onOutput()
-                    if (shown) lastOutputRenderedNs = now
-                    if (shown && !catchUp) stats.onRendered()
-                    if (shown && !catchUp && !renderedFrameLogged) {
-                        renderedFrameLogged = true
-                        report("first frame rendered")
-                        AppLog.i(TAG, "video decoder rendered first frame bytes=${info.size}")
-                    }
-                    if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) return
                 }
-                else -> return
+                else -> {
+                    releaseHeld(false)
+                    return
+                }
             }
         }
+        releaseHeld(false)
+    }
+
+    /** @return true when the drain loop must stop (end of stream, or the worker was interrupted). */
+    private fun releaseOutput(codec: MediaCodec, frame: HeldOutput, newerReady: Boolean): Boolean {
+        val render = outputSurface != null
+        // Parked output goes to the offscreen consumer: it keeps the codec's state, but it is
+        // not shown, so it is neither paced nor counted.
+        val shown = render && outputSurface !== parking?.surface
+        val now = frame.dequeuedNs
+        val slot = queuedSlotOf(frame.presentationUs)
+        val queued = if (slot >= 0) queuedAtNanos[slot] else 0L
+        val heldOverGap = queued in 1 until resumedAtNanos
+        if (queued > 0 && !heldOverGap) stats.onDecodeLatency(now - queued)
+        val delay = pacingDelay
+        val paced = shown && delay != null && slot >= 0 && queuedPaced[slot]
+        val localNs = frame.presentationUs * 1000
+        val pauseHeld = paced && queuedBeforePause[slot]
+        val targetNs = if (paced) {
+            if (!heldOverGap && !pauseHeld) delay.onFrame(now - localNs)
+            stats.onPacingDelay(delay.nanos)
+            localNs + delay.nanos
+        } else 0L
+        // API 19 has no timed releaseOutputBuffer. Newer devices wait here. On KitKat the wait
+        // keeps a decoded buffer checked out while the i.MX6 VPU decodes the next input into the
+        // frame already on screen, so this path releases immediately and the scanout gate drops
+        // the extra frame instead.
+        if (!collapseScanoutBursts && paced && targetNs > 0L) {
+            while (running) {
+                val ahead = targetNs - System.nanoTime()
+                if (ahead <= 1_000_000L || ahead > MAX_PACING_AHEAD_NS) break
+                try {
+                    Thread.sleep((ahead / 1_000_000L).coerceAtMost(20L))
+                } catch (_: InterruptedException) {
+                    running = false
+                    codec.releaseOutputBuffer(frame.index, false)
+                    return true
+                }
+            }
+        }
+        if (paced && !heldOverGap && !pauseHeld && System.nanoTime() > targetNs + 5_000_000L) {
+            stats.onLate()
+        }
+        // Decode every frame, but do not display a frame that is already late while a
+        // newer one is queued. The reference chain stays intact and the picture catches up.
+        val catchUp = paced && targetNs > 0L &&
+            System.nanoTime() > targetNs + CATCH_UP_LATENESS_NS &&
+            queue.pendingFrameCount() > 0
+        val show = showOnScanout(
+            scanout,
+            System.nanoTime(),
+            toScreen = shown,
+            catchUp = catchUp,
+            newerReady = newerReady,
+            collapseBursts = collapseScanoutBursts,
+        )
+        codec.releaseOutputBuffer(frame.index, if (shown) show else render)
+        consecutiveInputWithoutOutput = 0
+        stallRebuildTracker.onOutput()
+        if (shown) lastOutputRenderedNs = now
+        if (show) stats.onRendered()
+        if (show && !renderedFrameLogged) {
+            renderedFrameLogged = true
+            report("first frame rendered")
+            AppLog.i(TAG, "video decoder rendered first frame bytes=${frame.size}")
+        }
+        return frame.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
     }
 
     private fun logOutputFormat(format: MediaFormat) {
@@ -715,6 +772,7 @@ internal class VideoDecoder(
     private fun releaseDecoder() {
         val codec = decoder
         decoder = null
+        scanout.reset()
         if (codec != null) {
             try {
                 codec.stop()
