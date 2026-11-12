@@ -8,9 +8,12 @@ import android.graphics.RectF
 import android.view.View
 import android.view.animation.LinearInterpolator
 import com.shihab.diplay.host.R
+import com.shihab.diplay.ui.theme.ShellMotion
+import com.shihab.diplay.ui.theme.ShellSpacing
+import com.shihab.diplay.ui.theme.ShellType
 
 /**
- * 连接过程。一条玻璃槽，液体按阶段往前流，五个圆点标出准备、网络、手机、握手、画面。
+ * Connection progress with five explicit stages: preparation, network, phone, handshake, and video.
  * 只在连接过程中显示。
  */
 class ConnectFlowView(context: Context) : View(context) {
@@ -65,7 +68,7 @@ class ConnectFlowView(context: Context) : View(context) {
         }
         if (pulseAnimator != null) return
         pulseAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 1100
+            duration = ShellMotion.MODAL * 2
             repeatCount = ValueAnimator.INFINITE
             interpolator = LinearInterpolator()
             addUpdateListener {
@@ -90,35 +93,31 @@ class ConnectFlowView(context: Context) : View(context) {
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val width = View.MeasureSpec.getSize(widthMeasureSpec)
-        textPaint.textSize = sp(11f)
-        val nodeR = GlassColors.dp(context, 6).toFloat()
+        textPaint.textSize = sp(ShellType.CAPTION)
+        val nodeR = GlassColors.dp(context, ShellSpacing.SMALL).toFloat()
         val textH = textPaint.descent() - textPaint.ascent()
-        val wanted = (nodeR + GlassColors.dp(context, 4) + nodeR * 1.25f +
-            GlassColors.dp(context, 8) + textH + GlassColors.dp(context, 4)).toInt()
+        val wanted = (nodeR + GlassColors.dp(context, ShellSpacing.EXTRA_SMALL) + nodeR * 1.25f +
+            GlassColors.dp(context, ShellSpacing.SMALL) + textH +
+            GlassColors.dp(context, ShellSpacing.EXTRA_SMALL)).toInt()
         setMeasuredDimension(width, wanted.coerceAtLeast(LayoutMetrics.connectFlowH(context)))
     }
 
     override fun onDraw(canvas: Canvas) {
         val count = ConnectFlow.COUNT
-        val inset = GlassColors.dp(context, 10).toFloat()
+        val inset = GlassColors.dp(context, ShellSpacing.MEDIUM).toFloat()
         val span = width - inset * 2
         if (span <= 0f) return
         val seg = span / count
-        var size = sp(11f)
-        textPaint.textSize = size
-        while (textPaint.measureText(longestTitle()) > seg && size > sp(8f)) {
-            size -= 1f
-            textPaint.textSize = size
-        }
-        val nodeR = GlassColors.dp(context, 6).toFloat()
-        val cy = nodeR + GlassColors.dp(context, 4).toFloat()
+        textPaint.textSize = sp(ShellType.CAPTION)
+        val nodeR = GlassColors.dp(context, ShellSpacing.SMALL).toFloat()
+        val cy = nodeR + GlassColors.dp(context, ShellSpacing.EXTRA_SMALL).toFloat()
         val current = activeIndex
         val fraction = when {
             current < 0 -> 0f
             current >= count -> 1f
             else -> ((current + pulse) / count).coerceIn(0f, 1f)
         }
-        val trackH = GlassColors.dp(context, 5).toFloat()
+        val trackH = GlassColors.dp(context, ShellSpacing.EXTRA_SMALL).toFloat()
         track.set(inset, cy - trackH / 2f, inset + span, cy + trackH / 2f)
         fillPaint.color = GlassColors.plateBottom()
         canvas.drawRoundRect(track, trackH / 2f, trackH / 2f, fillPaint)
@@ -141,7 +140,7 @@ class ConnectFlowView(context: Context) : View(context) {
                 fillPaint.color = GlassColors.ACCENT
                 canvas.drawCircle(x, cy, r, fillPaint)
             } else {
-                fillPaint.color = if (now) withAlpha(GlassColors.ACCENT, 0x55) else GlassColors.plateTop()
+                fillPaint.color = if (now) GlassColors.withAlpha(GlassColors.ACCENT, 0x55) else GlassColors.plateTop()
                 canvas.drawCircle(x, cy, r, fillPaint)
             }
             val title = context.getString(ConnectFlow.titleRes(i))
@@ -150,7 +149,7 @@ class ConnectFlowView(context: Context) : View(context) {
                 done -> GlassColors.TEXT_BODY
                 else -> GlassColors.MUTED
             }
-            val baseline = cy + r + GlassColors.dp(context, 4) - textPaint.ascent()
+            val baseline = cy + r + GlassColors.dp(context, ShellSpacing.EXTRA_SMALL) - textPaint.ascent()
             canvas.drawText(title, x, baseline, textPaint)
         }
     }
@@ -169,8 +168,5 @@ class ConnectFlowView(context: Context) : View(context) {
         return best
     }
 
-    private fun withAlpha(argb: Int, alpha: Int): Int =
-        (argb and 0x00FFFFFF) or ((alpha.coerceIn(0, 255)) shl 24)
-
-    private fun sp(value: Float): Float = value * resources.displayMetrics.scaledDensity
+    private fun sp(value: Float): Float = LayoutMetrics.textPx(context, value)
 }

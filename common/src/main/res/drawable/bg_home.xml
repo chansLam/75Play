@@ -1,19 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 壳层底（暗）：夜景留在画面里，只在上下轻轻压一点。 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
-        <bitmap
-            android:src="@drawable/bg_home_photo"
-            android:gravity="fill" />
+        <bitmap android:src="@drawable/bg_home_photo" android:gravity="fill" />
     </item>
     <item>
         <shape>
             <gradient
                 android:angle="270"
-                android:startColor="#40000000"
-                android:centerColor="#14000000"
-                android:endColor="#59000000"
-                android:centerY="0.5" />
+                android:startColor="#5200050C"
+                android:centerColor="#2800050C"
+                android:endColor="#7000050C"
+                android:centerY="0.52" />
         </shape>
     </item>
 </layer-list>

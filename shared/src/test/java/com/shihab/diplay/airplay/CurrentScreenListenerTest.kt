@@ -1,6 +1,9 @@
 package com.shihab.diplay.airplay
 
 import java.io.Closeable
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.ServerSocket
 import java.net.Socket
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
@@ -104,6 +107,28 @@ class CurrentScreenListenerTest {
     }
 
     @Test
+    fun onlyDeliveredFramesUpdateMediaLiveness() {
+        val sink = RecordingSink()
+        val current = AtomicBoolean(true)
+        var packets = 0
+        val listener = currentScreenListener(
+            110,
+            sink,
+            onData = { packets++ },
+            isCurrent = current::get,
+        )
+
+        listener.onCodec(VideoCodec.H264)
+        listener.onConfig(config)
+        listener.onFrame(frame)
+        listener.onFrame(timedFrame, 1L, 2L)
+        current.set(false)
+        listener.onFrame(frame)
+
+        assertEquals(2, packets)
+    }
+
+    @Test
     fun onScreenStopsTheReplacedStreamsListenerForTheSameKey() {
         val sink = RecordingSink()
         val engine = CarPlayMediaEngine(sink)
@@ -139,6 +164,7 @@ class CurrentScreenListenerTest {
         } finally {
             engine.onSessionClosed(session)
             session.close()
+            peer?.close()
         }
     }
 
@@ -158,8 +184,21 @@ class CurrentScreenListenerTest {
         ScreenStream::class.java.getDeclaredField("listener").apply { isAccessible = true }
             .get(screen) as ScreenStream.Listener
 
-    private fun testSession(): AirPlaySession = AirPlaySession(
-        socket = Socket(),
+    private var peer: Socket? = null
+
+    /** onScreen refuses a socket with no peer; the listener checks happen after that. */
+    private fun testSession(): AirPlaySession {
+        val server = ServerSocket(0)
+        val client = Socket()
+        client.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), server.localPort))
+        val accepted = server.accept()
+        server.close()
+        peer = client
+        return sessionOn(accepted)
+    }
+
+    private fun sessionOn(socket: Socket): AirPlaySession = AirPlaySession(
+        socket = socket,
         config = AirPlayConfig(
             deviceName = "test",
             deviceId = "02:00:00:00:00:02",

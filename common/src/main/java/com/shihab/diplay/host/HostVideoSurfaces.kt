@@ -102,8 +102,8 @@ internal class HostVideoSurfaces(
             owner.replace(surface, releaseOnDetach = false)
             bridge.log("SurfaceView video surface created valid=${surface.isValid}")
             bridge.attach(surface)
-            // A still CarPlay screen sends no frames, so ask for one instead of showing the parked gap.
-            if (bridge.smoothVideo()) bridge.refreshMainPicture()
+            // The new surface is bound. Parked decoders need a keyframe; a still screen sends none.
+            bridge.refreshMainPicture()
             bridge.videoSize()?.let { (width, height) -> bridge.layout(width, height) }
         }
 
@@ -118,8 +118,9 @@ internal class HostVideoSurfaces(
             // beginSurfaceDetach stops new codecs from targeting this surface immediately. Waiting for
             // confirmation belongs off the UI thread so KitKat does not ANR during back-to-shell / app
             // switches. The SurfaceHolder may invalidate the Surface after this returns; workers must
-            // already have left (or be leaving) via the queued detach.
-            beginDetachAsync(surface, parkMain = bridge.smoothVideo()) { confirmed ->
+            // already have left (or be leaving) via the queued detach. Direct SurfaceView parks
+            // the decoder so the rebuilt surface can take a keyframe instead of being released.
+            beginDetachAsync(surface, parkMain = true) { confirmed ->
                 owner.clear(surface)
                 bridge.log("SurfaceView video surface destroyed detachConfirmed=$confirmed")
             }

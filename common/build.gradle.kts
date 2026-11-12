@@ -24,6 +24,7 @@ android {
         // The UI suite covers several SDKs and locale-specific resource sandboxes.
         unitTests.all { it.maxHeapSize = "1g" }
     }
+
 }
 
 dependencies {

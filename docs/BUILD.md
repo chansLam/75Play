@@ -19,13 +19,20 @@
 
 ABI 仅 `armeabi-v7a`（见各模块 `abiFilters` / `Application.mk`）。
 
+libopus 与 lwIP 源码不入库。本地编原生库、CI 和发布都会先执行：
+
+```sh
+python3 scripts/prepare-libopus.py
+python3 scripts/prepare-lwip.py
+```
+
 ## 调试包
 
 ```sh
 ./gradlew :mobile:assembleDebug
 ```
 
-产物：`mobile/build/outputs/apk/debug/mobile-debug.apk`（无 MFi 时不能独立完成认证）。
+产物：`mobile/build/outputs/apk/debug/mobile-debug.apk`（无 MFi 时不能独立完成认证）。Debug 包含多 dex，Dalvik 会在 `MultiDex.install` 崩溃，不能装到目标车机；车上安装用 `assembleStandaloneRelease` 的单 dex 包。
 
 与 CI 一致的检查（见 `.github/workflows/android.yml`）：
 
@@ -68,8 +75,9 @@ powershell -ExecutionPolicy Bypass -File scripts\build-cs75plus-release.ps1
 
 ## 应用内更新
 
-- 打开主界面时检查本仓库 stable Release（成功后约 24h 内不重复）；也可在 **关于 → 检查更新** 手动触发。
-- Release 须同时提供 `75Play-vX.Y.Z-release.apk` 与同名 `.sha256`，且通过包名、`versionCode`、签名证书校验后才调安装器。
+- 打开主界面时检查本仓库 **稳定版** Release（成功后约 24h 内不重复）；也可在 **关于 → 检查更新** 手动触发。
+- 只接受标签 `vX.Y.Z` 或 `vX.Y.Z-cs75plus`。带 `-beta`、`-alpha`、`-rc` 的预发布不会被选中。
+- Release 须同时提供 `75Play-vX.Y.Z-release.apk` 与同名 `.sha256`，且通过包名、`versionCode`、签名证书校验后才调安装器。预发布文件名带后缀（如 `75Play-v2.0.5-beta-release.apk`），正式版为 `75Play-v2.0.5-release.apk`。
 
 ## 打 tag 发布（Actions）
 
@@ -88,10 +96,13 @@ powershell -ExecutionPolicy Bypass -File scripts\build-cs75plus-release.ps1
 
 发布前清单：
 
-1. 提高 `versionName` / `versionCode`
-2. 更新 `CHANGELOG.md` 与 `site/config.json`
-3. `python scripts/build_site.py`
-4. `git tag vX.Y.Z && git push origin vX.Y.Z`
+1. 确认 `mobile/build.gradle.kts` 的 `versionName` / `versionCode`（如 `2.0.5` / `205`）
+2. 在 `CHANGELOG.md` 增加同名小节（标题必须是 `## 2.0.5`，与标签去掉 `v` 后一致）
+3. 更新 `site/config.json` 的 `version`、`tag`、`apk_asset`，以及 `site/content.json`
+4. `python scripts/build_site.py`
+5. `git tag v2.0.5 && git push origin v2.0.5`
+
+带 `-beta` / `-alpha` / `-rc` 的标签会自动标成 GitHub 预发布；无后缀标签为正式 Release。Actions 会先准备 libopus 与 lwIP，再打签名包。产物名来自 `site/config.json` 的 `apk_asset`。
 
 改仓库名时同步 `site/config.json` 的 `github_repository`，以及应用内更新检查用的仓库常量。
 

@@ -7,6 +7,7 @@ import android.content.pm.ProviderInfo
 import android.content.pm.PackageManager
 import android.database.Cursor
 import android.net.Uri
+import android.os.Environment
 import androidx.core.content.FileProvider
 import org.junit.Assert.*
 import org.junit.Before
@@ -25,74 +26,80 @@ class DiagnosticExportFallbackTest {
     private val context get() = RuntimeEnvironment.getApplication()
     private val reports get() = File(context.getExternalFilesDir(null)!!, "diagnostic-reports")
     private val privateReports get() = File(context.filesDir, "diagnostic-reports")
+    private val downloads get() = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
 
     @Before fun cleanReports() {
         reports.deleteRecursively()
         privateReports.deleteRecursively()
+        downloads.deleteRecursively()
+        downloads.mkdirs()
         registerReportProvider()
     }
 
-    @Test fun androidNineSavesUtf8WithoutAPickerOrStoragePermission() {
+    @Test fun androidNineDefaultsToOneFileInDownloads() {
         val report = "DiPlay · تقرير\nUSB: waiting\n"
         val saved = DiagnosticExportStore.saveWithoutPicker(context, "DiPlay-test.txt", report)
         assertFalse(saved.savedInApp)
-        val file = reports.listFiles()!!.single()
+        val file = File(downloads, "DiPlay-test.txt")
         assertEquals(report, file.readText(Charsets.UTF_8))
-        assertEquals(file.absolutePath, saved.savedPath)
-        assertEquals("content", saved.uri.scheme)
-        assertEquals("${context.packageName}.diagnostic-reports", saved.uri.authority)
+        assertEquals(file.canonicalPath, File(saved.savedPath!!).canonicalPath)
+        assertEquals("file", saved.uri.scheme)
         assertEquals(report, read(saved.uri))
-        assertEquals("text/plain", context.contentResolver.getType(saved.uri))
-        val info = context.packageManager.resolveContentProvider(saved.uri.authority!!, 0)!!
-        assertFalse(info.exported)
-        assertTrue(info.grantUriPermissions)
+        assertFalse(reports.exists())
     }
 
-    @Test @Config(sdk = [29]) fun missingDownloadsFallsBackToAReadablePrivateReport() {
+    @Test @Config(sdk = [29]) fun missingMediaStoreFallsBackToLegacyDownloads() {
         val provider = MissingDownloadsProvider()
         provider.attachInfo(context, ProviderInfo().apply { authority = "media" })
         ShadowContentResolver.registerProviderInternal("media", provider)
         val saved = DiagnosticExportStore.saveWithoutPicker(context, "DiPlay-test.txt", "report")
         assertTrue(provider.insertAttempted)
         assertFalse(saved.savedInApp)
-        assertEquals("report", reports.listFiles()!!.single().readText())
+        assertEquals("report", File(downloads, "DiPlay-test.txt").readText())
+        assertFalse(reports.exists())
         assertEquals("report", read(saved.uri))
     }
 
-    @Test fun selectedWritableUsbVolumeReceivesTheSameUtf8Report() {
+    @Test fun selectedWritableUsbVolumeIsTheOnlySavedLocation() {
         val usb = File(context.cacheDir, "usb-volume").apply {
             deleteRecursively()
             mkdirs()
         }
         val content = "DiPlay USB report\nAPI=19\n"
         val saved = DiagnosticExportStore.saveWithoutPicker(context, "DiPlay-test-usb.txt", content, usb)
-        val copy = File(usb, "DiPlay-test-usb.txt")
+        val copy = File(usb, "DiPlay-test-usb.txt").canonicalFile
         assertTrue(copy.isFile)
         assertEquals(content, copy.readText(Charsets.UTF_8))
-        // Windows may report an 8.3 short path from one side and the long path from the other.
-        assertEquals(listOf(copy.canonicalFile), saved.copyPaths.map { File(it).canonicalFile })
+        assertEquals(copy, File(saved.savedPath!!).canonicalFile)
         assertFalse(File(usb, "DiPlay").exists())
+        assertFalse(reports.exists())
+        assertTrue(downloads.listFiles().orEmpty().isEmpty())
         assertEquals(content, read(saved.uri))
+        assertTrue(saved.delete(context))
+        assertFalse(copy.exists())
     }
 
     @Test fun unavailableSelectedUsbVolumeDoesNotClaimSuccess() {
         val blocked = File(context.cacheDir, "not-a-directory").apply { writeText("block") }
-        val saved = DiagnosticExportStore.saveWithoutPicker(context, "DiPlay-test-usb.txt", "report", blocked)
-        assertFalse(saved.copyPaths.any { it.startsWith(blocked.absolutePath) })
-        assertEquals("report", read(saved.uri))
+        assertThrows(IOException::class.java) {
+            DiagnosticExportStore.saveWithoutPicker(context, "DiPlay-test-usb.txt", "report", blocked)
+        }
+        assertTrue(downloads.listFiles().orEmpty().isEmpty())
+        assertFalse(reports.exists())
     }
     @Test fun anEarlierShareUriCannotReadALaterExport() {
-        val first = DiagnosticExportStore.saveWithoutPicker(context, "DiPlay-test.txt", "first")
-        val second = DiagnosticExportStore.saveWithoutPicker(context, "DiPlay-test.txt", "second")
+        val first = DiagnosticExportStore.saveWithoutPicker(context, "DiPlay-first.txt", "first")
+        val second = DiagnosticExportStore.saveWithoutPicker(context, "DiPlay-second.txt", "second")
         assertNotEquals(first.uri, second.uri)
         assertEquals("first", read(first.uri))
         assertEquals("second", read(second.uri))
     }
 
-    @Test fun onlyEightExternalExportsAreRetained() {
+    @Test fun defaultExportsRemainInDownloads() {
         var latest: Uri? = null
-        repeat(12) { latest = DiagnosticExportStore.saveWithoutPicker(context, "DiPlay-test.txt", "report $it").uri }
-        assertEquals(8, reports.listFiles()!!.size)
+        repeat(12) { latest = DiagnosticExportStore.saveWithoutPicker(context, "DiPlay-test-$it.txt", "report $it").uri }
+        assertEquals(12, downloads.listFiles()!!.size)
+        assertFalse(reports.exists())
         assertEquals("report 11", read(latest!!))
     }
 
@@ -111,10 +118,16 @@ class DiagnosticExportFallbackTest {
     }
 
     @Test fun unavailableExternalStorageStillSavesPrivately() {
+        val blockedRoot = blockedDownloads()
         val unavailableExternal = object : ContextWrapper(context) {
             override fun getExternalFilesDir(type: String?): File? = null
         }
-        val saved = DiagnosticExportStore.saveWithoutPicker(unavailableExternal, "DiPlay-test.txt", "report")
+        val saved = DiagnosticExportStore.saveWithoutPicker(
+            unavailableExternal,
+            "DiPlay-test.txt",
+            "report",
+            defaultDownloadsRoot = blockedRoot,
+        )
         assertTrue(saved.savedInApp)
         assertNull(saved.savedPath)
         assertEquals("report", read(saved.uri))
@@ -122,30 +135,58 @@ class DiagnosticExportFallbackTest {
     }
 
     @Test fun unwritableExternalStorageStillSavesPrivately() {
+        val blockedRoot = blockedDownloads()
         reports.writeText("blocks directory creation")
-        val saved = DiagnosticExportStore.saveWithoutPicker(context, "DiPlay-test.txt", "report")
+        val saved = DiagnosticExportStore.saveWithoutPicker(
+            context,
+            "DiPlay-test.txt",
+            "report",
+            defaultDownloadsRoot = blockedRoot,
+        )
         assertTrue(saved.savedInApp)
         assertEquals("report", read(saved.uri))
         assertEquals("blocks directory creation", reports.readText())
     }
 
     @Test fun unavailableExternalAndPrivateStorageDoesNotReportSuccess() {
+        val blockedRoot = blockedDownloads()
         reports.writeText("blocks directory creation")
         privateReports.writeText("blocks directory creation")
         assertThrows(IOException::class.java) {
-            DiagnosticExportStore.saveWithoutPicker(context, "DiPlay-test.txt", "report")
+            DiagnosticExportStore.saveWithoutPicker(
+                context,
+                "DiPlay-test.txt",
+                "report",
+                defaultDownloadsRoot = blockedRoot,
+            )
         }
     }
 
     @Test fun onlyEightPrivateExportsAreRetainedWhenExternalStorageIsUnavailable() {
+        val blockedRoot = blockedDownloads()
         reports.writeText("blocks directory creation")
         var latest: Uri? = null
-        repeat(12) { latest = DiagnosticExportStore.saveWithoutPicker(context, "DiPlay-test.txt", "report $it").uri }
+        repeat(12) {
+            latest = DiagnosticExportStore.saveWithoutPicker(
+                context,
+                "DiPlay-test.txt",
+                "report $it",
+                defaultDownloadsRoot = blockedRoot,
+            ).uri
+        }
         assertEquals(8, privateReports.listFiles()!!.size)
         assertEquals("report 11", read(latest!!))
     }
 
     private fun read(uri: Uri) = context.contentResolver.openInputStream(uri)!!.bufferedReader().use { it.readText() }
+
+    private fun blockedDownloads(): File {
+        return File(context.cacheDir, "blocked-downloads").apply {
+            deleteRecursively()
+            parentFile!!.mkdirs()
+            writeText("blocks directory creation")
+        }
+    }
 
     private fun registerReportProvider() {
         val authority = "${context.packageName}.diagnostic-reports"

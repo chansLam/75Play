@@ -1,19 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 壳层底（浅）：日景照片直接露出来。 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
-        <bitmap
-            android:src="@drawable/bg_home_light_photo"
-            android:gravity="fill" />
+        <bitmap android:src="@drawable/bg_home_light_photo" android:gravity="fill" />
     </item>
     <item>
         <shape>
             <gradient
                 android:angle="270"
-                android:startColor="#14000000"
-                android:centerColor="#00000000"
-                android:endColor="#22000000"
-                android:centerY="0.55" />
+                android:startColor="#26FFFFFF"
+                android:centerColor="#0FFFFFFF"
+                android:endColor="#38070D14"
+                android:centerY="0.50" />
         </shape>
     </item>
 </layer-list>

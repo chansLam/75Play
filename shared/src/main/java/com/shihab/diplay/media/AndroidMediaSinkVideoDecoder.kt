@@ -64,9 +64,18 @@ internal class VideoDecoder(
     private var annexScratch = ByteArray(0)
     private var feedScratch = ByteArray(0)
     private val referenceChain = VideoReferenceChain()
+    // i.MX6 scanout: collapse back-to-back renders. Newer devices keep the paced path.
+    private val collapseScanoutBursts = realSdkInt() <= Build.VERSION_CODES.KITKAT
+    private val scanout = ScanoutGate()
     private var lastKeyFrameRequestNs = 0L
+    /**
+     * A new surface reconfigures the codec before the iPhone's opening IDR arrives.
+     * Requesting a keyframe in that gap makes iOS reset the encoder; the IDR already on the
+     * wire is the picture, and everything after it trickles in. Hold the request so a fresh
+     * SETUP can play, and let a reused mid-GOP ask once this window passes.
+     */
+    @Volatile private var holdInitialKeyFrameUntilNs = 0L
     private var consecutiveInputWithoutOutput = 0
-    private var staleFramesDropped = 0
     private val stallRebuildTracker = DecoderStallRebuildTracker()
     private var lastOutputRenderedNs = 0L
     private var surfaceAttachedAtNs = if (surface != null) System.nanoTime() else 0L
@@ -88,6 +97,9 @@ internal class VideoDecoder(
     }
 
     fun setSurface(surface: Surface?) {
+        // Arm the hold before the worker runs, so a keyframe ask queued in the same
+        // surface-created turn cannot reset the iPhone's opening IDR.
+        if (surface != null) holdInitialKeyFrameUntilNs = System.nanoTime() + INITIAL_PICTURE_GRACE_NS
         queue.offer(VideoJob.SurfaceChanged(surface))
     }
 
@@ -143,18 +155,12 @@ internal class VideoDecoder(
                                 val now = System.nanoTime()
                                 val rendering = lastOutputRenderedNs != 0L &&
                                     now - lastOutputRenderedNs < MIN_OUTPUT_STALL_NS
-                                if (now - job.receivedNs > MAX_FRAME_AGE_NS && rendering) {
-                                    staleFramesDropped++
-                                    if (staleFramesDropped == 1 || staleFramesDropped % 30 == 0) {
-                                        report(
-                                            "video stale frame dropped count=$staleFramesDropped " +
-                                                "(decoder behind, keeping feed)",
-                                        )
-                                    }
-                                } else if (now - job.receivedNs > MAX_FRAME_AGE_NS) {
+                                if (now - job.receivedNs > MAX_FRAME_AGE_NS && !rendering) {
                                     queue.discardFrames()
                                     recover("video backlog exceeded 800 ms")
                                 } else {
+                                    // A late frame is still fed. Skipping it breaks every following
+                                    // predicted frame and the picture freezes until the next keyframe.
                                     feed(job.nalus, job.length, localTimeOf(job))
                                 }
                             } finally {
@@ -166,8 +172,13 @@ internal class VideoDecoder(
                         // Once per new surface, so it skips the rate limit an earlier request may still hold.
                         // Ask even before the codec exists: the keyframe can be the first thing it decodes.
                         is VideoJob.RefreshPicture -> {
-                            lastKeyFrameRequestNs = System.nanoTime()
-                            requestKeyFrame()
+                            // Surface attach asks immediately, then changeSurface holds the first
+                            // second so that request does not reset an opening IDR.
+                            if (holdInitialKeyFrameUntilNs == 0L || System.nanoTime() >= holdInitialKeyFrameUntilNs) {
+                                holdInitialKeyFrameUntilNs = 0L
+                                lastKeyFrameRequestNs = System.nanoTime()
+                                requestKeyFrame()
+                            }
                         }
                         is VideoJob.Resync -> recoverBacklog("video queue overflow")
                         null -> Unit
@@ -226,8 +237,7 @@ internal class VideoDecoder(
         val surface = outputSurface ?: return
         val codec = config.codec
         val codecData = config.codecData
-        val mime = if (codec == VideoCodec.H265) MediaFormat.MIMETYPE_VIDEO_HEVC
-        else MediaFormat.MIMETYPE_VIDEO_AVC
+        val mime = if (codec == VideoCodec.H265) VIDEO_HEVC_MIME else VIDEO_AVC_MIME
         val csd = if (codec == VideoCodec.H265) {
             MediaCodecSupport.hevcCodecSpecificData(codecData).takeIf { it.isNotEmpty() }
                 ?.let { listOf(it) } ?: emptyList()
@@ -273,13 +283,11 @@ internal class VideoDecoder(
         }
     }
 
-    /** MediaCodec.getName() only exists on API 21+; on older devices it throws NoSuchMethodError. */
+    /** MediaCodec.getName() is optional and reached through an API-19-safe reflection helper. */
     private fun safeDecoderName(codec: MediaCodec): String =
-        if (realSdkInt() >= Build.VERSION_CODES.LOLLIPOP) {
-            runCatching { codec.name }.getOrDefault("unknown")
-        } else {
-            "unknown"
-        }
+        runCatching {
+            platformMediaCodec("decoderName", arrayOf(MediaCodec::class.java), codec) as String
+        }.getOrDefault("unknown")
 
     private data class DecoderAttempt(val codecName: String?, val tuned: Boolean)
 
@@ -287,9 +295,8 @@ internal class VideoDecoder(
         MediaFormat.createVideoFormat(mime, width, height).apply {
             if (tuned) {
                 setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, MAX_INPUT_SIZE)
-                // KEY_PRIORITY is API 23. A faked SDK_INT must not set it on KitKat.
-                if (realSdkInt() >= Build.VERSION_CODES.M) {
-                    setInteger(MediaFormat.KEY_PRIORITY, 0)
+                runCatching {
+                    platformMediaCodec("setRealtimePriority", arrayOf(MediaFormat::class.java), this)
                 }
             }
             csd.forEachIndexed { index, bytes -> setByteBuffer("csd-$index", ByteBuffer.wrap(bytes)) }
@@ -306,9 +313,16 @@ internal class VideoDecoder(
             val format = buildFormat(mime, csd, attempt.tuned)
             val codec = attempt.codecName?.let { MediaCodec.createByCodecName(it) } ?: createDecoder(mime)
             candidate = codec
-            if (attempt.tuned && realSdkInt() >= Build.VERSION_CODES.R &&
-                codec.codecInfo.getCapabilitiesForType(mime).isFeatureSupported("low-latency")) {
-                format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
+            if (attempt.tuned) {
+                runCatching {
+                    platformMediaCodec(
+                        "enableLowLatency",
+                        arrayOf(MediaCodec::class.java, MediaFormat::class.java, String::class.java),
+                        codec,
+                        format,
+                        mime,
+                    )
+                }
             }
             codec.configure(format, surface, null, 0)
             codec.start()
@@ -327,41 +341,22 @@ internal class VideoDecoder(
     }
 
     /**
-     * Software AVC fallback. [MediaCodecList] with [MediaCodecList.REGULAR_CODECS] and
-     * `isSoftwareOnly` are API 21 / 29; KitKat scans the legacy list for `OMX.google.`.
+     * Software fallback uses the API 16 codec list and the standard `OMX.google.` prefix.
      */
-    private fun softwareDecoderName(mime: String): String? {
-        if (realSdkInt() >= Build.VERSION_CODES.Q) {
-            return runCatching {
-                MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.firstOrNull {
-                    !it.isEncoder && it.isSoftwareOnly && mime in it.supportedTypes
-                }?.name
-            }.getOrNull()
-        }
-        @Suppress("DEPRECATION")
-        return runCatching {
-            (0 until MediaCodecList.getCodecCount()).firstNotNullOfOrNull { index ->
-                val info = MediaCodecList.getCodecInfoAt(index)
-                info.name.takeIf {
-                    !info.isEncoder && it.startsWith("OMX.google.") && mime in info.supportedTypes
-                }
-            }
-        }.getOrNull()
-    }
+    private fun softwareDecoderName(mime: String): String? = runCatching {
+        platformMediaCodec("softwareDecoderName", arrayOf(String::class.java), mime) as String?
+    }.getOrNull()
 
     private fun createDecoder(mime: String): MediaCodec {
-        if (realSdkInt() >= Build.VERSION_CODES.Q &&
-            mime == MediaFormat.MIMETYPE_VIDEO_HEVC &&
-            preferSoftwareHevcDecoder
-        ) {
-            val software = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.firstOrNull {
-                !it.isEncoder && it.isSoftwareOnly && mime in it.supportedTypes
-            }
+        if (mime == VIDEO_HEVC_MIME && preferSoftwareHevcDecoder) {
+            val software = runCatching {
+                platformMediaCodec("softwareDecoderName", arrayOf(String::class.java), mime) as String?
+            }.getOrNull()
             if (software != null) {
                 try {
-                    return MediaCodec.createByCodecName(software.name)
+                    return MediaCodec.createByCodecName(software)
                 } catch (error: Exception) {
-                    AppLog.w(TAG, "software HEVC decoder unavailable name=${software.name}", error)
+                    AppLog.w(TAG, "software HEVC decoder unavailable name=$software", error)
                 }
             }
         }
@@ -381,17 +376,39 @@ internal class VideoDecoder(
             when (outcome) {
                 DetachOutcome.NOT_RENDERING -> Unit
                 DetachOutcome.PARKED -> {
-                    val consumer = parking ?: ParkingOutput(width, height).also { parking = it }
-                    try {
-                        if (realSdkInt() < 23) throw IllegalStateException("Surface parking requires Android 6")
-                        checkNotNull(decoder).setOutputSurface(consumer.surface)
-                        outputSurface = consumer.surface
-                        AppLog.i(TAG, "video decoder parked off screen")
-                    } catch (error: Exception) {
-                        AppLog.w(TAG, "video decoder could not park; releasing it", error)
+                    // KitKat ImageReader rejects the codec color format (getNumPlanesFromFormat).
+                    // Building a parking surface there throws and leaves the picture black on return.
+                    // Release the decoder; the rebuilt SurfaceView asks for a keyframe.
+                    val codec = checkNotNull(decoder)
+                    val canMoveSurface = runCatching {
+                        platformMediaCodec(
+                            "supportsOutputSurface",
+                            arrayOf(MediaCodec::class.java),
+                            codec,
+                        ) as Boolean
+                    }.getOrDefault(false)
+                    if (!canMoveSurface) {
                         outcome = DetachOutcome.RELEASED
                         outputSurface = null
                         releaseDecoder()
+                        AppLog.i(TAG, "video decoder released on surface detach")
+                    } else {
+                        val consumer = parking ?: ParkingOutput(width, height).also { parking = it }
+                        try {
+                            platformMediaCodec(
+                                "setOutputSurface",
+                                arrayOf(MediaCodec::class.java, Surface::class.java),
+                                codec,
+                                consumer.surface,
+                            )
+                            outputSurface = consumer.surface
+                            AppLog.i(TAG, "video decoder parked off screen")
+                        } catch (error: Exception) {
+                            AppLog.w(TAG, "video decoder could not park; releasing it", error)
+                            outcome = DetachOutcome.RELEASED
+                            outputSurface = null
+                            releaseDecoder()
+                        }
                     }
                 }
                 DetachOutcome.RELEASED -> {
@@ -422,9 +439,14 @@ internal class VideoDecoder(
             return
         }
         val codec = decoder
-        if (codec != null && realSdkInt() >= Build.VERSION_CODES.M) {
+        if (codec != null) {
             try {
-                codec.setOutputSurface(surface)
+                platformMediaCodec(
+                    "setOutputSurface",
+                    arrayOf(MediaCodec::class.java, Surface::class.java),
+                    codec,
+                    surface,
+                )
                 // A new surface is a new picture. Report the next shown frame again so the host
                 // can uncover; setOutputSurface itself does not reset the codec.
                 renderedFrameLogged = false
@@ -438,22 +460,29 @@ internal class VideoDecoder(
         val pending = lastConfig
         if (pending != null) {
             configureDecoder(pending)
-            // A freshly configured codec has no reference frames. Ask immediately; waiting for
-            // the next P-frame left the new surface black for a whole GOP.
+            // A freshly configured codec has no reference frames. A reused stream is mid-GOP and
+            // needs a keyframe, but a stream that just started is already sending one. Asking in
+            // this gap resets the iPhone encoder and the picture sticks on that first frame.
             if (decoder != null) {
-                lastKeyFrameRequestNs = System.nanoTime()
-                requestKeyFrame()
+                holdInitialKeyFrameUntilNs = System.nanoTime() + INITIAL_PICTURE_GRACE_NS
             }
         }
     }
 
     /**
-     * Keep decoding while the host view does not exist yet. On Android 6+ the codec can move
-     * onto that view with setOutputSurface and the next frame is already a picture. KitKat has
-     * no such move, so this returns false and the view's own surface waits for a keyframe.
+     * Keep decoding while the host view does not exist only when the runtime exposes the optional
+     * surface-switch method. KitKat returns false and waits for the view's own surface.
      */
     private fun ensureParkingSurface(): Boolean {
-        if (realSdkInt() < Build.VERSION_CODES.M) return false
+        val codec = decoder ?: return false
+        val canMoveSurface = runCatching {
+            platformMediaCodec(
+                "supportsOutputSurface",
+                arrayOf(MediaCodec::class.java),
+                codec,
+            ) as Boolean
+        }.getOrDefault(false)
+        if (!canMoveSurface) return false
         return try {
             val consumer = parking ?: ParkingOutput(width, height).also { parking = it }
             outputSurface = consumer.surface
@@ -558,6 +587,7 @@ internal class VideoDecoder(
 
     private fun recover(reason: String) {
         AppLog.w(TAG, "Video recovery: $reason; waiting for keyframe")
+        holdInitialKeyFrameUntilNs = 0L
         stats.onRecovery()
         report("recovery: $reason; waiting for keyframe")
         // Recreate with codec-specific data: flush can discard CSD before the first output.
@@ -569,6 +599,7 @@ internal class VideoDecoder(
     /** Clear backlog and request an I-frame without destroying MediaCodec (avoids black-screen loops). */
     private fun recoverBacklog(reason: String) {
         AppLog.w(TAG, "Video backlog recovery: $reason; requesting keyframe without destroying decoder")
+        holdInitialKeyFrameUntilNs = 0L
         stats.onRecovery()
         report("backlog: $reason; requesting keyframe")
         referenceChain.reset()
@@ -577,6 +608,10 @@ internal class VideoDecoder(
 
     private fun requestKeyFrameIfDue() {
         val now = System.nanoTime()
+        if (holdInitialKeyFrameUntilNs != 0L) {
+            if (now < holdInitialKeyFrameUntilNs) return
+            holdInitialKeyFrameUntilNs = 0L
+        }
         if (lastKeyFrameRequestNs != 0L && now - lastKeyFrameRequestNs < 1_000_000_000L) return
         lastKeyFrameRequestNs = now
         requestKeyFrame()
@@ -585,87 +620,143 @@ internal class VideoDecoder(
     private fun queuedSlotOf(presentationUs: Long): Int =
         queuedPresentationUs.indices.firstOrNull { queuedPresentationUs[it] == presentationUs } ?: -1
 
+    private data class HeldOutput(
+        val index: Int,
+        val presentationUs: Long,
+        val flags: Int,
+        val size: Int,
+        val dequeuedNs: Long,
+    )
+
     private fun drainOutput(codec: MediaCodec) {
         val info = outputInfo
+        // On KitKat, hold the newest ready buffer across a non-blocking dequeue. If another
+        // output is already waiting, the older one is returned without rendering so the scanout
+        // buffer is not overwritten. The hold is one dequeue, not a sleep.
+        var held: HeldOutput? = null
+        fun releaseHeld(newerReady: Boolean): Boolean {
+            val frame = held ?: return false
+            held = null
+            return releaseOutput(codec, frame, newerReady)
+        }
         while (running) {
             val index = codec.dequeueOutputBuffer(info, 0)
             when {
-                index == MediaCodec.INFO_TRY_AGAIN_LATER -> return
+                index == MediaCodec.INFO_TRY_AGAIN_LATER -> {
+                    releaseHeld(false)
+                    return
+                }
                 index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> logOutputFormat(codec.outputFormat)
                 index >= 0 -> {
-                    val render = outputSurface != null
-                    // Parked output goes to the offscreen consumer: it keeps the codec's state, but it is
-                    // not shown, so it is neither paced nor counted.
-                    val shown = render && outputSurface !== parking?.surface
-                    val now = System.nanoTime()
-                    val slot = queuedSlotOf(info.presentationTimeUs)
-                    val queued = if (slot >= 0) queuedAtNanos[slot] else 0L
-                    val heldOverGap = queued in 1 until resumedAtNanos
-                    if (queued > 0 && !heldOverGap) stats.onDecodeLatency(now - queued)
-                    val delay = pacingDelay
-                    val paced = shown && delay != null && slot >= 0 && queuedPaced[slot]
-                    val localNs = info.presentationTimeUs * 1000
-                    val pauseHeld = paced && queuedBeforePause[slot]
-                    val targetNs = if (paced) {
-                        if (!heldOverGap && !pauseHeld) delay.onFrame(now - localNs)
-                        stats.onPacingDelay(delay.nanos)
-                        localNs + delay.nanos
-                    } else 0L
-                    // API 19 has no timed releaseOutputBuffer. Wait on this thread, in short
-                    // slices, and keep InterruptedException out of the decoder's failure path.
-                    if (paced && targetNs > 0L) {
-                        while (running) {
-                            val ahead = targetNs - System.nanoTime()
-                            if (ahead <= 1_000_000L || ahead > MAX_PACING_AHEAD_NS) break
-                            try {
-                                Thread.sleep((ahead / 1_000_000L).coerceAtMost(20L))
-                            } catch (_: InterruptedException) {
-                                running = false
-                                codec.releaseOutputBuffer(index, false)
-                                return
-                            }
+                    val frame = HeldOutput(
+                        index,
+                        info.presentationTimeUs,
+                        info.flags,
+                        info.size,
+                        System.nanoTime(),
+                    )
+                    if (collapseScanoutBursts) {
+                        if (held != null && releaseHeld(true)) {
+                            codec.releaseOutputBuffer(frame.index, false)
+                            return
                         }
+                        held = frame
+                    } else if (releaseOutput(codec, frame, newerReady = false)) {
+                        return
                     }
-                    if (paced && !heldOverGap && !pauseHeld && System.nanoTime() > targetNs + 5_000_000L) {
-                        stats.onLate()
-                    }
-                    codec.releaseOutputBuffer(index, render)
-                    if (shown) {
-                        stats.onRendered()
-                        consecutiveInputWithoutOutput = 0
-                        staleFramesDropped = 0
-                        stallRebuildTracker.onOutput()
-                        lastOutputRenderedNs = now
-                    }
-                    if (shown && !renderedFrameLogged) {
-                        renderedFrameLogged = true
-                        report("first frame rendered")
-                        AppLog.i(TAG, "video decoder rendered first frame bytes=${info.size}")
-                    }
-                    if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) return
                 }
-                else -> return
+                else -> {
+                    releaseHeld(false)
+                    return
+                }
             }
         }
+        releaseHeld(false)
+    }
+
+    /** @return true when the drain loop must stop (end of stream, or the worker was interrupted). */
+    private fun releaseOutput(codec: MediaCodec, frame: HeldOutput, newerReady: Boolean): Boolean {
+        val render = outputSurface != null
+        // Parked output goes to the offscreen consumer: it keeps the codec's state, but it is
+        // not shown, so it is neither paced nor counted.
+        val shown = render && outputSurface !== parking?.surface
+        val now = frame.dequeuedNs
+        val slot = queuedSlotOf(frame.presentationUs)
+        val queued = if (slot >= 0) queuedAtNanos[slot] else 0L
+        val heldOverGap = queued in 1 until resumedAtNanos
+        if (queued > 0 && !heldOverGap) stats.onDecodeLatency(now - queued)
+        val delay = pacingDelay
+        val paced = shown && delay != null && slot >= 0 && queuedPaced[slot]
+        val localNs = frame.presentationUs * 1000
+        val pauseHeld = paced && queuedBeforePause[slot]
+        val targetNs = if (paced) {
+            if (!heldOverGap && !pauseHeld) delay.onFrame(now - localNs)
+            stats.onPacingDelay(delay.nanos)
+            localNs + delay.nanos
+        } else 0L
+        // API 19 has no timed releaseOutputBuffer. Newer devices wait here. On KitKat the wait
+        // keeps a decoded buffer checked out while the i.MX6 VPU decodes the next input into the
+        // frame already on screen, so this path releases immediately and the scanout gate drops
+        // the extra frame instead.
+        if (!collapseScanoutBursts && paced && targetNs > 0L) {
+            while (running) {
+                val ahead = targetNs - System.nanoTime()
+                if (ahead <= 1_000_000L || ahead > MAX_PACING_AHEAD_NS) break
+                try {
+                    Thread.sleep((ahead / 1_000_000L).coerceAtMost(20L))
+                } catch (_: InterruptedException) {
+                    running = false
+                    codec.releaseOutputBuffer(frame.index, false)
+                    return true
+                }
+            }
+        }
+        if (paced && !heldOverGap && !pauseHeld && System.nanoTime() > targetNs + 5_000_000L) {
+            stats.onLate()
+        }
+        // Decode every frame, but do not display a frame that is already late while a
+        // newer one is queued. The reference chain stays intact and the picture catches up.
+        val catchUp = paced && targetNs > 0L &&
+            System.nanoTime() > targetNs + CATCH_UP_LATENESS_NS &&
+            queue.pendingFrameCount() > 0
+        val show = showOnScanout(
+            scanout,
+            System.nanoTime(),
+            toScreen = shown,
+            catchUp = catchUp,
+            newerReady = newerReady,
+            collapseBursts = collapseScanoutBursts,
+        )
+        codec.releaseOutputBuffer(frame.index, if (shown) show else render)
+        consecutiveInputWithoutOutput = 0
+        stallRebuildTracker.onOutput()
+        if (shown) lastOutputRenderedNs = now
+        if (show) stats.onRendered()
+        if (show && !renderedFrameLogged) {
+            renderedFrameLogged = true
+            report("first frame rendered")
+            AppLog.i(TAG, "video decoder rendered first frame bytes=${frame.size}")
+        }
+        return frame.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
     }
 
     private fun logOutputFormat(format: MediaFormat) {
         report("output format requested=${width}x${height} " +
-            "coded=${format.intOrNull(MediaFormat.KEY_WIDTH)}x${format.intOrNull(MediaFormat.KEY_HEIGHT)} " +
+            "coded=${format.intOrNull("width")}x${format.intOrNull("height")} " +
             "crop=${format.intOrNull("crop-left")},${format.intOrNull("crop-top")}," +
             "${format.intOrNull("crop-right")},${format.intOrNull("crop-bottom")} " +
-            "stride=${format.intOrNull(MediaFormat.KEY_STRIDE)} slice=${format.intOrNull(MediaFormat.KEY_SLICE_HEIGHT)} " +
-            "color=${format.intOrNull(MediaFormat.KEY_COLOR_STANDARD)}/${format.intOrNull(MediaFormat.KEY_COLOR_RANGE)}/${format.intOrNull(MediaFormat.KEY_COLOR_TRANSFER)}")
+            "stride=${format.intOrNull("stride")} slice=${format.intOrNull("slice-height")} " +
+            "color=${format.intOrNull("color-standard")}/${format.intOrNull("color-range")}/${format.intOrNull("color-transfer")}")
         AppLog.i(
             TAG,
             "video decoder output format " +
-                "size=${format.intOrNull(MediaFormat.KEY_WIDTH)}x" +
-                "${format.intOrNull(MediaFormat.KEY_HEIGHT)} " +
-                "stride=${format.intOrNull(MediaFormat.KEY_STRIDE)} " +
-                "slice=${format.intOrNull(MediaFormat.KEY_SLICE_HEIGHT)} " +
-                "standard=${format.intOrNull(MediaFormat.KEY_COLOR_STANDARD)} " +
-                "range=${format.intOrNull(MediaFormat.KEY_COLOR_RANGE)} " +
-                "transfer=${format.intOrNull(MediaFormat.KEY_COLOR_TRANSFER)}",
+                "size=${format.intOrNull("width")}x" +
+                "${format.intOrNull("height")} " +
+                "stride=${format.intOrNull("stride")} " +
+                "slice=${format.intOrNull("slice-height")} " +
+                "standard=${format.intOrNull("color-standard")} " +
+                "range=${format.intOrNull("color-range")} " +
+                "transfer=${format.intOrNull("color-transfer")}",
         )
     }
 
@@ -681,6 +772,7 @@ internal class VideoDecoder(
     private fun releaseDecoder() {
         val codec = decoder
         decoder = null
+        scanout.reset()
         if (codec != null) {
             try {
                 codec.stop()
@@ -699,9 +791,10 @@ internal class VideoDecoder(
 
     private companion object {
         const val TAG = "xcertplay-usb"
+        const val VIDEO_AVC_MIME = "video/avc"
+        const val VIDEO_HEVC_MIME = "video/hevc"
         // KitKat / i.MX6: 8 MB KEY_MAX_INPUT_SIZE reservations stress 2 GB Dalvik heaps.
-        val MAX_INPUT_SIZE: Int =
-            if (realSdkInt() < 21) 3 * 1024 * 1024 else 8 * 1024 * 1024
+        const val MAX_INPUT_SIZE = 3 * 1024 * 1024
         const val INPUT_TIMEOUT_US = 10_000L
         // A paced frame more than this ahead is treated as a bad mapping and shown at once.
         const val MAX_PACING_AHEAD_NS = 1_000_000_000L
@@ -714,7 +807,11 @@ internal class VideoDecoder(
         const val PAUSE_HELD_FRAMES = 3
         const val MIN_OUTPUT_STALL_NS = 1_500_000_000L
         const val SURFACE_WARMUP_NS = 3_500_000_000L
+        // Long enough for the opening IDR of a fresh SETUP to be queued (this car delivered it
+        // about 300 ms after the decoder came up) and short enough that a reused GOP still asks.
+        const val INITIAL_PICTURE_GRACE_NS = 1_000_000_000L
         const val MAX_FRAME_AGE_NS = 800_000_000L
+        const val CATCH_UP_LATENESS_NS = 80_000_000L
         val START_CODE = byteArrayOf(0x00, 0x00, 0x00, 0x01)
     }
 }

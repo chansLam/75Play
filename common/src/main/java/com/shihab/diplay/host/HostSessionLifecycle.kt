@@ -147,10 +147,11 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
                     activeAirPlaySession = null
                     CarPlayBackgroundSession.active = false
                     activeScreenStreamTypes.clear()
-                    showVideoLoading()
-                    setConnectionStage(getString(R.string.carplay_session_ended_reconnecting))
-                    appendLog("AirPlay session ended; reconnecting from scratch")
-                    reconnectAfterLoss("AirPlay session ended")
+                    appendLog("AirPlay session ended; returning to shell, will auto-reopen on recovery")
+                    // Do not stay on a black/loading host: hand back to the shell. The foreground
+                    // session recovery reconnects in the background and reopens the host on success.
+                    parkForShell("session ended")
+                    returnToDiPlay()
                 }
             }
 
@@ -159,10 +160,9 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
                     if (wirelessStartup.isStale(controllerGeneration)) return@runOnUiThread
                     wirelessStartup.disconnected()
                     activeScreenStreamTypes.clear()
-                    showVideoLoading()
-                    setConnectionStage(getString(R.string.transport_error_reconnecting))
-                    appendLog("CarPlay transport error: $message; reconnecting from scratch")
-                    reconnectAfterLoss("CarPlay transport error: $message")
+                    appendLog("CarPlay transport error: $message; returning to shell for background recovery")
+                    parkForShell(message)
+                    returnToDiPlay()
                 }
             }
 
@@ -242,12 +242,18 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
             sidePanel?.visibility = View.VISIBLE
             sidePanelTick.run()
         }
-        CarPlayBackgroundSession.store(snapshot.controller, snapshot.sink, snapshot.width, snapshot.height,
+        val stored = CarPlayBackgroundSession.store(snapshot.controller, snapshot.sink, snapshot.width, snapshot.height,
             this, snapshot.display) { completion ->
             runOnUiThread {
                 sessionShutdown(false, "DiPlay disconnect", completion)
                 finish()
             }
+        }
+        if (!stored) {
+            controller = null
+            sink = null
+            sessionDisplay = null
+            return false
         }
         if (snapshot.width > 0 && snapshot.height > 0) {
             activeDisplaySize = CarPlayHostActivity.DisplaySize(snapshot.width, snapshot.height)
@@ -379,11 +385,18 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
         )
         sessionDisplay = display
         videoView?.let { sessionUpdateVideoLayout(it.width, it.height) }
-        CarPlayBackgroundSession.store(next, renderer, size.width, size.height, this, display) { completion ->
+        val stored = CarPlayBackgroundSession.store(next, renderer, size.width, size.height, this, display) { completion ->
             runOnUiThread {
                 sessionShutdown(terminateProcess = false, reason = "DiPlay disconnect", completion = completion)
                 finish()
             }
+        }
+        if (!stored) {
+            controller = null
+            sink = null
+            runCatching { next.close() }
+            appendLog("CarPlay session is already stopping; this host did not replace it")
+            return
         }
         try {
             val service = Intent(this, DiPlaySessionService::class.java)
@@ -434,7 +447,7 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
     }
 
     /** Drop this Activity as session owner without closing the controller. */
-    fun parkForShell() {
+    fun parkForShell(sessionLostReason: String? = null) {
         with(host) {
             if (sessionTeardownStarted.get()) return
             shuttingDown.set(true)
@@ -442,8 +455,8 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
             reconnectRunnable = null
             reconnectScheduled = false
             if (!CarPlayBackgroundSession.isOwner(this)) return
-            controller?.attachUi(object : AirPlaySessionListener {}, { _ -> })
-            CarPlayBackgroundSession.park(this)
+            controller?.attachUi(ParkedSessionListener, { _ -> })
+            CarPlayBackgroundSession.park(this, sessionLostReason)
         }
     }
 
@@ -537,5 +550,16 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
             }
         }
             }
+    }
+}
+
+/** Does not capture a host Activity. The shell decides whether to reconnect. */
+private object ParkedSessionListener : AirPlaySessionListener {
+    override fun onSessionEnded(session: AirPlaySession) {
+        CarPlayBackgroundSession.releaseParked("session ended")
+    }
+
+    override fun onTransportError(message: String) {
+        CarPlayBackgroundSession.releaseParked(message)
     }
 }

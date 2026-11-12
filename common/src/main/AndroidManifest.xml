@@ -6,18 +6,20 @@
     <!-- Optional: shell status-bar cellular bars. Units without a radio hide the icon. -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Legacy storage access for Android 4.4 crash/diagnostic exports on head units -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
     <!-- Optional, user-authorized startup of the car's own hotspot. -->
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
 
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <!-- Optional: floating ball over other apps (install-time on KitKat). -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- Granted only when installed as a privileged system app (/system/priv-app via root).
+         A normal sideload cannot hold it, so the reflective grant then simply fails and the
+         system permission dialog is shown. -->
+    <uses-permission android:name="android.permission.MANAGE_USB" />
     <queries>
         <!-- Legacy OEM package query (not a BYD HUD product feature). Keep for HomeScreenMonitor tests / ROMs that still expose it. -->
         <package android:name="com.byd.carsettings" />
@@ -73,6 +75,12 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/usb_device_filter" />
         </activity>
         <activity
             android:name="com.shihab.diplay.CarAppLauncherActivity"

@@ -13,6 +13,9 @@ import android.widget.PopupWindow
 import android.widget.ScrollView
 import android.widget.TextView
 import com.shihab.diplay.host.ImmersiveBars
+import com.shihab.diplay.ui.theme.ShellComponentSize
+import com.shihab.diplay.ui.theme.ShellShape
+import com.shihab.diplay.ui.theme.ShellSpacing
 
 /**
  * Compact glass dropdown (PopupWindow) for 1920×720 head units.
@@ -52,7 +55,12 @@ object GlassDropdown {
         lateinit var popup: PopupWindow
         val col = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(2), dp(2), dp(2), dp(2))
+            setPadding(
+                dp(ShellSpacing.EXTRA_SMALL),
+                dp(ShellSpacing.EXTRA_SMALL),
+                dp(ShellSpacing.EXTRA_SMALL),
+                dp(ShellSpacing.EXTRA_SMALL),
+            )
         }
         labels.forEachIndexed { i, lab ->
             val opt = TextView(ctx).apply {
@@ -64,7 +72,7 @@ object GlassDropdown {
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
                     background = GradientDrawable().apply {
                         setColor(GlassColors.ACCENT_SOFT_FILL)
-                        cornerRadius = dp(8).toFloat()
+                        setCornerRadius(dp(ShellShape.EXTRA_SMALL).toFloat())
                     }
                 }
                 includeFontPadding = true
@@ -84,8 +92,8 @@ object GlassDropdown {
                 col.addView(View(ctx).apply {
                     setBackgroundColor(GlassColors.DIVIDER)
                     layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1).apply {
-                        leftMargin = dp(10)
-                        rightMargin = dp(10)
+                        leftMargin = dp(ShellSpacing.MEDIUM)
+                        rightMargin = dp(ShellSpacing.MEDIUM)
                     }
                 })
             }
@@ -100,9 +108,9 @@ object GlassDropdown {
         val dm = ctx.resources.displayMetrics
         val screenW = dm.widthPixels
         val screenH = dm.heightPixels
-        val margin = dp(6)
+        val margin = dp(ShellSpacing.SMALL)
         // 尽量贴着触发控件，避免悬在半空。
-        val gap = dp(2)
+        val gap = dp(ShellSpacing.EXTRA_SMALL)
         val longest = labels.maxOfOrNull { it.length } ?: 0
         // 与设置页 cap 下拉同档：按文案定宽，不跟整行拉伸。
         val widthDp = when {
@@ -114,11 +122,11 @@ object GlassDropdown {
         // 仅当触发控件是紧凑 cap（不太宽）时略跟宽，避免比按钮还窄。
         val popupW = if (anchor.width in 1 until preferred) {
             preferred
-        } else if (anchor.width in preferred..(preferred + dp(40))) {
+        } else if (anchor.width in preferred..(preferred + dp(ShellSpacing.SECTION))) {
             anchor.width
         } else {
             preferred
-        }.coerceAtMost(screenW - margin * 2).coerceAtLeast(dp(160))
+        }.coerceAtMost(screenW - margin * 2).coerceAtLeast(dp(ShellComponentSize.DROPDOWN_MIN_WIDTH))
 
         scroller.measure(
             View.MeasureSpec.makeMeasureSpec(popupW, View.MeasureSpec.EXACTLY),
@@ -143,7 +151,7 @@ object GlassDropdown {
         val popupH = contentH
             .coerceAtMost(avail)
             .coerceAtMost((screenH * 0.5f).toInt())
-            .coerceAtLeast(dp(48))
+            .coerceAtLeast(dp(ShellSpacing.MIN_TOUCH_TARGET))
 
         // focusable=false：不抢 Activity 焦点，避免车机侧边系统导航栏闪一下。
         showing?.dismiss()
@@ -151,7 +159,7 @@ object GlassDropdown {
         showing = popup
         popup.isOutsideTouchable = true
         popup.isTouchable = true
-        popup.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+        popup.setBackgroundDrawable(ColorDrawable(GlassColors.TRANSPARENT))
         popup.inputMethodMode = PopupWindow.INPUT_METHOD_NOT_NEEDED
         scroller.systemUiVisibility = ImmersiveBars.visibilityFlags()
 

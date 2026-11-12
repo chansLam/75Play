@@ -8,9 +8,12 @@ import com.shihab.diplay.network.CarHotspotStatus
 import com.shihab.diplay.connect.ShellPhonePicker
 import com.shihab.diplay.host.CarPlayBackgroundSession
 import com.shihab.diplay.host.FloatingBall
+import com.shihab.diplay.host.GenericSwcLearn
 import com.shihab.diplay.host.ImmersiveBars
+import com.shihab.diplay.ui.FragmentSetting
 import com.shihab.diplay.ui.shell.ShellChrome
 import com.shihab.diplay.ui.shell.ShellNavigator
+import com.shihab.diplay.wallpaper.WallpaperDailyRefresh
 import com.shihab.diplay.ui.shell.ShellStatusProbe
 
 import android.annotation.SuppressLint
@@ -38,6 +41,7 @@ import android.os.SystemClock
 import java.util.concurrent.atomic.AtomicInteger
 import android.provider.Settings
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
@@ -163,8 +167,16 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
             // 全局顶部温度栏：读取长安车机 coagent.ac 空调服务，主页 + CarPlay 宿主上方常驻显示
             // 室外/车内/设定温度。用 Application 上下文，系统浮层（TYPE_PHONE）在所有界面之上。
             // 设置 → 显示 里的开关可关闭（默认开启）。
-            if (DiPlayPreferences.temperatureBarEnabled(applicationContext)) {
-                com.shihab.diplay.host.TemperatureBar.show(applicationContext)
+            val tempBarOn = DiPlayPreferences.temperatureBarEnabled(applicationContext)
+            AsyncDiagnosticLog.append(ActiveSessionLog.current, "TemperatureBar: switch enabled=$tempBarOn")
+            if (tempBarOn) {
+                runCatching { com.shihab.diplay.host.TemperatureBar.show(applicationContext) }
+                    .onFailure {
+                        AsyncDiagnosticLog.append(
+                            ActiveSessionLog.current,
+                            "TemperatureBar.show threw ${it.javaClass.simpleName}: ${it.message}",
+                        )
+                    }
             }
             consumeConnectFailure()
             // Diagnostic probe walks Bluetooth/USB; keep it off the first-paint critical path.
@@ -257,7 +269,12 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         // the session; hasSession covers the return from CarPlay if that callback already happened.
         // While stop() is in flight, hasSession stays true for waiters — do not show play/disconnect.
         if (isCarPlayConnecting() || CarPlayBackgroundSession.isStopping()) return false
-        return CarPlayBackgroundSession.active || CarPlayBackgroundSession.hasSession()
+        if (CarPlayBackgroundSession.active) return true
+        // A restart clears the live controller but keeps the stop action so the next attempt can
+        // reuse the owner. That bookkeeping is not a live connection: require a real controller,
+        // otherwise the shell keeps showing "connected" after an unexpected drop and the manual
+        // connect path races a session that no longer exists.
+        return CarPlayBackgroundSession.hasSession() && CarPlayBackgroundSession.snapshot() != null
     }
     override fun isCarPlayConnecting(): Boolean =
         // Only the explicit connect flow flags — do NOT use hasSession()&&!active here:
@@ -294,6 +311,19 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
     override fun rebuildTheme() {
         configureNightController()
         applyShell()
+    }
+
+    override fun applyShellWallpaper() {
+        shellChrome.applyWallpaper()
+    }
+
+    override fun refreshDailyWallpaper() {
+        WallpaperDailyRefresh.refreshIfDue(this) {
+            if (isFinishing || isDestroyed) return@refreshIfDue
+            shellChrome.applyWallpaper()
+            (supportFragmentManager.findFragmentByTag(ShellNavigator.SETTINGS) as? FragmentSetting)
+                ?.refreshWallpaperStatus()
+        }
     }
 
     private val headlightThemeWatch = HeadlightThemeWatch(this) {
@@ -620,6 +650,11 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         shellChrome.discardPages()
         showPage(page)
     }
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (GenericSwcLearn.onKey(event)) return true
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onStart() {
         super.onStart()
         wifiEnableAttempts = 0
@@ -636,6 +671,21 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
 
     override fun onResume() {
         super.onResume()
+        refreshDailyWallpaper()
+        // coagent.ac may finish starting after the first show(); re-probe register + snapshot
+        // every time the home page resumes.
+        if (DiPlayPreferences.temperatureBarEnabled(applicationContext)) {
+            com.shihab.diplay.host.CoagentAcBridge.nudge()
+        }
+        CarPlayBackgroundSession.setParkedSessionLost(this) {
+            if (isFinishing || isDestroyed) return@setParkedSessionLost
+            handler.post {
+                if (isFinishing || isDestroyed) return@post
+                if (DiPlayPreferences.autoConnect(this) && !CarPlayBackgroundSession.hasSession()) {
+                    connect(DiPlayPreferences.autoConnectWireless(this))
+                }
+            }
+        }
         if (AirPlayPersistence.loadFloatingBallEnabled(this)) {
             FloatingBall.show(
                 applicationContext,
@@ -721,6 +771,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         runCatching { TerminalOverlay.dismiss(this) }
         // P1 leak兜底：选机用的单线程 ExecutorService 是非 daemon，不 shutdown 会随 Activity 泄漏。
         runCatching { phonePicker.shutdown() }
+        CarPlayBackgroundSession.clearParkedSessionLost(this)
         super.onDestroy()
     }
 

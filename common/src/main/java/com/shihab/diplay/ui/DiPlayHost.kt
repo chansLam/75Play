@@ -1,8 +1,8 @@
 package com.shihab.diplay.ui
 
 /**
- * Contract the host Activity (DiPlayActivity) implements so the glass-morphism
- * Fragments can reach business actions without touching the view layer.
+ * Contract implemented by DiPlayActivity so shell Fragments can invoke business actions without
+ * owning Activity behavior.
  */
 interface DiPlayHost {
     fun dp(value: Int): Int
@@ -36,6 +36,9 @@ interface DiPlayHost {
     fun versionString(): String
     /** 夜间模式等主题偏好变化时重建 shell（Fragment 重渲染读新色板）。 */
     fun rebuildTheme()
+    fun applyShellWallpaper()
+    /** 每日模式且日期不是今天时在后台下载。 */
+    fun refreshDailyWallpaper()
     /** 切到主页（车机软件管理在主页）。 */
     fun showHome()
     /** 悬浮小白点开关：立即 show/hide，并写入偏好。 */

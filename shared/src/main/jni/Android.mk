@@ -51,3 +51,63 @@ LOCAL_C_INCLUDES := $(LOCAL_PATH)/libopus/include \
 LOCAL_CFLAGS := -O2 -DOPUS_BUILD -DFIXED_POINT=1 -DDISABLE_FLOAT_API -DUSE_ALLOCA
 LOCAL_LDLIBS := -lm
 include $(BUILD_SHARED_LIBRARY)
+
+# Userspace lwIP TCP/IP stack for NCM Ethernet relay (wired CarPlay, no VpnService/TUN).
+# The pinned upstream lwIP source is restored by scripts/prepare-lwip.py
+# (into shared/src/main/jni/lwip) before ndk-build, mirroring libopus handling.
+ifeq ($(wildcard $(LOCAL_PATH)/lwip/src/include/lwip/opt.h),)
+$(error lwip sources missing: run scripts/prepare-lwip.py)
+endif
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := lwip_ncm_relay
+LOCAL_SRC_FILES := lwip_ncm_relay.c \
+    lwip/src/core/init.c \
+    lwip/src/core/def.c \
+    lwip/src/core/inet_chksum.c \
+    lwip/src/core/ip.c \
+    lwip/src/core/mem.c \
+    lwip/src/core/memp.c \
+    lwip/src/core/netif.c \
+    lwip/src/core/pbuf.c \
+    lwip/src/core/raw.c \
+    lwip/src/core/sys.c \
+    lwip/src/core/tcp.c \
+    lwip/src/core/tcp_in.c \
+    lwip/src/core/tcp_out.c \
+    lwip/src/core/timeouts.c \
+    lwip/src/core/udp.c \
+    lwip/src/core/ipv4/etharp.c \
+    lwip/src/core/ipv4/icmp.c \
+    lwip/src/core/ipv4/ip4.c \
+    lwip/src/core/ipv4/ip4_addr.c \
+    lwip/src/core/ipv4/ip4_frag.c \
+    lwip/src/core/ipv6/ethip6.c \
+    lwip/src/core/ipv6/icmp6.c \
+    lwip/src/core/ipv6/inet6.c \
+    lwip/src/core/ipv6/ip6.c \
+    lwip/src/core/ipv6/ip6_addr.c \
+    lwip/src/core/ipv6/mld6.c \
+    lwip/src/core/ipv6/nd6.c \
+    lwip/src/netif/ethernet.c
+LOCAL_C_INCLUDES := $(LOCAL_PATH)/lwip_port \
+    $(LOCAL_PATH)/lwip/src/include
+LOCAL_CFLAGS := -O2 -Wno-unused-parameter -Wno-sign-compare
+LOCAL_LDLIBS := -llog
+include $(BUILD_SHARED_LIBRARY)
+
+# usbfs fallbacks for Android 9 and older head units (API 19: no framework
+# setConfiguration, and a vendor driver can hold the NCM interface). Loaded by
+# LegacyUsbHostNative / LegacyNcmNative; without these two .so files every wired
+# CarPlay connection fails with setConfiguration errno=null, activeConfig stays 1.
+include $(CLEAR_VARS)
+LOCAL_MODULE := usb_host_compat
+LOCAL_SRC_FILES := usb_host_compat.c
+LOCAL_CFLAGS := -Wall -Wextra
+include $(BUILD_SHARED_LIBRARY)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := legacy_ncm_claim
+LOCAL_SRC_FILES := legacy_ncm_claim.c
+LOCAL_CFLAGS := -Wall -Wextra
+include $(BUILD_SHARED_LIBRARY)

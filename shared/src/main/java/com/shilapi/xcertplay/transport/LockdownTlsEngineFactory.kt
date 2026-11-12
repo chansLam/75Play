@@ -1,0 +1,201 @@
+package com.shilapi.xcertplay.transport
+
+import android.annotation.SuppressLint
+import java.io.ByteArrayInputStream
+import java.nio.charset.StandardCharsets
+import java.security.GeneralSecurityException
+import java.security.KeyFactory
+import java.security.KeyStore
+import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
+import java.security.spec.PKCS8EncodedKeySpec
+import java.util.Base64
+import javax.net.ssl.KeyManagerFactory
+import org.conscrypt.Conscrypt
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLEngine
+import javax.net.ssl.X509TrustManager
+
+/**
+ * Builds an unstarted client TLS engine for the dedicated USB Lockdown channel.
+ *
+ * Matching the locked transport behavior, the engine does not authenticate the peer certificate.
+ * It must not be reused for internet or general-purpose TLS connections.
+ */
+object LockdownTlsEngineFactory {
+    @Throws(GeneralSecurityException::class)
+    fun create(pairRecord: LockdownPairRecord): SSLEngine {
+        val password = charArrayOf('l', 'o', 'c', 'k', 'd', 'o', 'w', 'n')
+        // Lockdown presents the root identity from the pair record for both the session and
+        // service TLS channels. HostCertificate is part of pairing, not this TLS identity.
+        val privateKeyPem = pairRecord.rootPrivateKeyPem
+        val certificatePem = pairRecord.rootCertificatePem
+        var privateKeyDer: ByteArray? = null
+        try {
+            privateKeyDer = decodePkcs8Pem(privateKeyPem)
+            val privateKey = KeyFactory.getInstance("RSA")
+                .generatePrivate(PKCS8EncodedKeySpec(privateKeyDer))
+            val certificate = CertificateFactory.getInstance("X.509")
+                .generateCertificate(ByteArrayInputStream(certificatePem)) as X509Certificate
+            val keyStore = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
+                load(null, password)
+                setKeyEntry(KEY_ALIAS, privateKey, password, arrayOf(certificate))
+            }
+            val defaultAlgorithm = runCatching { KeyManagerFactory.getDefaultAlgorithm() }.getOrNull()
+            val candidateAlgorithms = sequenceOf(defaultAlgorithm, "X509", "PKIX", "SunX509")
+                .filterNotNull()
+                .filter { it.isNotBlank() }
+                .distinct()
+            var kmf: KeyManagerFactory? = null
+            var lastKmfError: Throwable? = null
+            for (algo in candidateAlgorithms) {
+                try {
+                    kmf = KeyManagerFactory.getInstance(algo).apply {
+                        init(keyStore, password)
+                    }
+                    break
+                } catch (e: Throwable) {
+                    lastKmfError = e
+                }
+                try {
+                    val conscryptProvider = runCatching { Conscrypt.newProvider() }.getOrNull()
+                    if (conscryptProvider != null) {
+                        kmf = KeyManagerFactory.getInstance(algo, conscryptProvider).apply {
+                            init(keyStore, password)
+                        }
+                        break
+                    }
+                } catch (e: Throwable) {
+                    lastKmfError = e
+                }
+            }
+            val keyManagers = kmf?.keyManagers ?: throw GeneralSecurityException(
+                "No supported KeyManagerFactory found (tried: ${candidateAlgorithms.joinToString(",")})",
+                lastKmfError,
+            )
+            // Some Android 4.4/5.1 vendor providers expose only TLSv1 through the generic
+            // "TLS" SSLContext alias, while the version-specific factory supports TLSv1.2.
+            // Never downgrade Lockdown to TLSv1.0/1.1.
+            // Bundled Conscrypt supplies real TLS 1.2 on API 19 vendor ROMs whose
+            // AndroidOpenSSL alias may report TLSv1.2 but expose only TLSv1/SSLv3.
+            // Record why the bundled candidate was rejected: without it, the next #67-style
+            // report cannot tell "Conscrypt broken" from "platform lacks TLS 1.2".
+            val conscryptNotes = mutableListOf<String>()
+            // On some vendor ROMs (e.g. Allwinner T3 Android 4.4) the Conscrypt native library
+            // does not auto-load. Try explicit load first so we get a clear error reason.
+            runCatching {
+                System.loadLibrary("conscrypt_jni")
+            }.onFailure {
+                conscryptNotes += "explicit loadLibrary failed: ${it.javaClass.simpleName}"
+            }
+            val bundled = runCatching {
+                SSLContext.getInstance("TLS", Conscrypt.newProvider()).apply {
+                    init(keyManagers, arrayOf(UsbLockdownTrustManager), null)
+                }
+            }.onFailure {
+                conscryptNotes += "init failed: ${it.javaClass.simpleName}: ${it.message?.take(120)}"
+            }.getOrNull()?.let { candidate ->
+                val protocols = candidate.createSSLEngine().supportedProtocols
+                if (!protocols.contains("TLSv1.2")) {
+                    conscryptNotes += "engine supportedProtocols=${protocols.joinToString(",")}"
+                    null
+                } else {
+                    candidate
+                }
+            }
+            val context = bundled ?: sequenceOf("TLSv1.2", "TLS")
+                .mapNotNull { protocol ->
+                    runCatching {
+                        SSLContext.getInstance(protocol).apply {
+                            init(keyManagers, arrayOf(UsbLockdownTrustManager), null)
+                        }
+                    }.getOrNull()
+                }
+                .firstOrNull { candidate ->
+                    candidate.createSSLEngine().supportedProtocols.any {
+                        it == "TLSv1.2" || it == "TLSv1.3"
+                    }
+                } ?: throw GeneralSecurityException(
+                    buildString {
+                        append("The Android TLS provider cannot negotiate TLSv1.2 or TLSv1.3; ")
+                        append("USB Lockdown requires a compatible security provider")
+                        if (conscryptNotes.isNotEmpty()) {
+                            append("; bundled Conscrypt rejected: ")
+                            append(conscryptNotes.joinToString("; "))
+                        }
+                    }
+                )
+            return context.createSSLEngine(PEER_HOST, PEER_PORT).apply {
+                useClientMode = true
+                // Verify the actual returned engine, not just a test instance: on some vendor
+                // ROMs the supported protocols differ between engine instances from the same
+                // context. If this fails, TlsDuplexChannel would hit the same wall.
+                val actual = supportedProtocols.toSet()
+                if (!actual.contains("TLSv1.2") && !actual.contains("TLSv1.3")) {
+                    throw GeneralSecurityException(
+                        "Selected TLS engine reports no TLSv1.2/1.3 " +
+                            "(supported=${actual.joinToString(",").ifEmpty { "none" }})" +
+                            if (conscryptNotes.isNotEmpty()) {
+                                "; bundled Conscrypt rejected: " + conscryptNotes.joinToString("; ")
+                            } else {
+                                ""
+                            }
+                    )
+                }
+                val targetProtocols = supportedProtocols.filter { it == "TLSv1.2" || it == "TLSv1.3" }
+                if (targetProtocols.isNotEmpty()) {
+                    runCatching { enabledProtocols = targetProtocols.toTypedArray() }
+                }
+            }
+        } finally {
+            password.fill('\u0000')
+            privateKeyPem.fill(0)
+            certificatePem.fill(0)
+            privateKeyDer?.fill(0)
+        }
+    }
+
+    private fun decodePkcs8Pem(pem: ByteArray): ByteArray {
+        val begin = pem.indexOf(BEGIN_PRIVATE_KEY)
+        val end = pem.indexOf(END_PRIVATE_KEY, begin + BEGIN_PRIVATE_KEY.size)
+        if (begin < 0 || end < 0) throw GeneralSecurityException("Invalid PKCS#8 private key PEM")
+        val encoded = pem.copyOfRange(begin + BEGIN_PRIVATE_KEY.size, end)
+        return try {
+            Base64.getMimeDecoder().decode(encoded)
+        } catch (error: IllegalArgumentException) {
+            throw GeneralSecurityException("Invalid PKCS#8 private key PEM", error)
+        } finally {
+            encoded.fill(0)
+        }
+    }
+
+    private fun ByteArray.indexOf(needle: ByteArray, startIndex: Int = 0): Int {
+        if (needle.isEmpty()) return startIndex.coerceIn(0, size)
+        for (offset in startIndex.coerceAtLeast(0)..size - needle.size) {
+            var matches = true
+            for (index in needle.indices) {
+                if (this[offset + index] != needle[index]) {
+                    matches = false
+                    break
+                }
+            }
+            if (matches) return offset
+        }
+        return -1
+    }
+
+    @SuppressLint("CustomX509TrustManager", "TrustAllX509TrustManager")
+    private object UsbLockdownTrustManager : X509TrustManager {
+        override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
+
+        override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
+
+        override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
+    }
+
+    private const val KEY_ALIAS = "lockdown-host"
+    private const val PEER_HOST = "Device"
+    private const val PEER_PORT = 0
+    private val BEGIN_PRIVATE_KEY = "-----BEGIN PRIVATE KEY-----".toByteArray(StandardCharsets.US_ASCII)
+    private val END_PRIVATE_KEY = "-----END PRIVATE KEY-----".toByteArray(StandardCharsets.US_ASCII)
+}

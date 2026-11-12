@@ -7,6 +7,7 @@ import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
+import android.view.View.MeasureSpec
 import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.widget.Button
@@ -21,6 +22,8 @@ import com.shihab.diplay.OemSettingsIntents
 import com.shihab.diplay.compat.waitForMillis
 import com.shihab.diplay.host.R
 import com.shihab.diplay.ui.settings.GlassSettingsRows
+import com.shihab.diplay.ui.theme.ShellShape
+import com.shihab.diplay.ui.theme.ShellSpacing
 
 /**
  * 主页右侧车机应用网格：枚举 / 隐藏·排序 prefs / 拖拽换位 / 管理弹窗 / 启动与卸载。
@@ -55,7 +58,8 @@ internal class HomeAppGrid(
     private val handler: Handler,
 ) {
     /** 车机软件网格；管理弹窗勾选后据此重绘。 */
-    private var appGrid: LinearLayout? = null
+    private var appGrid: AppFlow? = null
+    private var appScroll: ScrollView? = null
     // 应用网格拖拽排序状态
     private var visibleApps: List<CarAppCatalog.App> = emptyList()
     private var dragIndex = -1
@@ -86,14 +90,15 @@ internal class HomeAppGrid(
             orientation = LinearLayout.VERTICAL
             background = HudPanelDrawable(ctx)
             setPadding(
-                LayoutMetrics.cardPadH(ctx), LayoutMetrics.cardPadV(ctx),
-                LayoutMetrics.cardPadH(ctx), LayoutMetrics.cardPadV(ctx),
+                LayoutMetrics.cardPadH(ctx),
+                LayoutMetrics.cardPadV(ctx),
+                LayoutMetrics.cardPadH(ctx),
+                LayoutMetrics.cardPadV(ctx),
             )
         }
         val headRow = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = LayoutMetrics.rowMinH(ctx)
         }
         headRow.addView(label(ctx, ctx.getString(R.string.home_head_unit_apps), LayoutMetrics.cardTitleSize(ctx), GlassColors.TEXT_PRIMARY, true).apply {
             maxLines = 1
@@ -109,27 +114,35 @@ internal class HomeAppGrid(
             minWidth = LayoutMetrics.manageBtnMinW(ctx)
             minHeight = LayoutMetrics.manageBtnMinH(ctx)
             minimumHeight = LayoutMetrics.manageBtnMinH(ctx)
-            // KitKat Button 默认全大写/额外 padding 会挤字；清掉。
             includeFontPadding = true
             setPadding(LayoutMetrics.ghostPadH(ctx), LayoutMetrics.ghostPadV(ctx), LayoutMetrics.ghostPadH(ctx), LayoutMetrics.ghostPadV(ctx))
             setOnClickListener { showManageDialog(ctx) }
         }
-        FocusSupport.attachStrokeOverlay(manageBtn, cornerRadiusDp = 16)
-        headRow.addView(manageBtn)
+        FocusSupport.attachStrokeOverlay(manageBtn, cornerRadiusDp = ShellShape.MEDIUM)
+        headRow.addView(manageBtn, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { leftMargin = dp(ShellSpacing.SMALL) })
         card.addView(headRow)
-        card.addView(GlassSettingsRows.titleTick(ctx))
-        val grid = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        val tick = GlassSettingsRows.titleTick(ctx)
+        (tick.layoutParams as? LinearLayout.LayoutParams)?.width = ViewGroup.LayoutParams.MATCH_PARENT
+        card.addView(tick)
+        val grid = AppFlow(ctx)
         appGrid = grid
         grid.addView(label(ctx, ctx.getString(R.string.home_loading), LayoutMetrics.homeMutedTextSize(ctx), GlassColors.TEXT_BODY).apply {
-            setPadding(0, dp(8), 0, 0)
+            setPadding(0, dp(ShellSpacing.SMALL), 0, 0)
         })
         val scroll = ScrollView(ctx).apply {
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
-            addView(grid)
+            isFillViewport = false
+            addView(grid, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
-        card.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f).apply {
-            topMargin = LayoutMetrics.cardTitleGap(ctx)
-        })
+        appScroll = scroll
+        card.addView(scroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            0,
+            1f,
+        ).apply { topMargin = LayoutMetrics.cardTitleGap(ctx) })
         reloadAppGrid()
         return card
     }
@@ -155,50 +168,37 @@ internal class HomeAppGrid(
         reloadAppGrid()
     }
 
-    private fun renderAppGrid(grid: LinearLayout, apps: List<CarAppCatalog.App>) {
+    private fun renderAppGrid(grid: ViewGroup, apps: List<CarAppCatalog.App>) {
         grid.removeAllViews()
         val ctx = grid.context
         // 隐藏项过滤 + 自定义排序（用户拖动保存的顺序优先，未排序的按原字母序）
         visibleApps = sortApps(apps.filterNot { isHidden(it.packageName) })
         if (visibleApps.isEmpty()) {
-            grid.addView(label(ctx, ctx.getString(R.string.app_launcher_no_apps), 14f, GlassColors.TEXT_MUTED).apply { setPadding(0, dp(10), 0, 0) })
+            grid.addView(label(ctx, ctx.getString(R.string.app_launcher_no_apps), LayoutMetrics.homeMutedTextSize(ctx), GlassColors.TEXT_MUTED).apply { setPadding(0, dp(ShellSpacing.MEDIUM), 0, 0) })
             return
         }
         renderAppRows(grid)
     }
 
-    private fun appColumns(ctx: android.content.Context): Int = LayoutMetrics.appColumns(ctx)
-
-    private fun renderAppRows(grid: LinearLayout) {
+    private fun renderAppRows(grid: ViewGroup) {
         grid.removeAllViews()
         val ctx = grid.context
-        val columns = appColumns(ctx)
-        visibleApps.chunked(columns).forEach { rowApps ->
-            val row = LinearLayout(ctx).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.TOP
-            }
-            rowApps.forEach { app ->
-                row.addView(buildAppTile(ctx, app, grid), tileLp(ctx))
-            }
-            // 末行不足时补空白格，避免唯一项 weight=1 撑满整行。
-            repeat(columns - rowApps.size) {
-                row.addView(View(ctx), tileLp(ctx))
-            }
-            grid.addView(row)
+        visibleApps.forEach { app ->
+            grid.addView(buildAppTile(ctx, app, grid), tileLp(ctx))
         }
     }
 
-    private fun tileLp(ctx: android.content.Context): LinearLayout.LayoutParams {
+    private fun tileLp(ctx: android.content.Context): ViewGroup.MarginLayoutParams {
         val m = LayoutMetrics.appTileMargin(ctx)
-        return LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-            setMargins(m, m, m, m)
-        }
+        return ViewGroup.MarginLayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { setMargins(m, m, m, m) }
     }
 
-    private fun buildAppTile(ctx: android.content.Context, app: CarAppCatalog.App, grid: LinearLayout): View {
+    private fun buildAppTile(ctx: android.content.Context, app: CarAppCatalog.App, grid: ViewGroup): View {
         val iconDp = LayoutMetrics.appIconDp(ctx)
-        val tile = SquareTile(ctx).apply {
+        val tile = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setBackgroundResource(GlassColors.appTileBg())
@@ -216,9 +216,11 @@ internal class HomeAppGrid(
             contentDescription = app.label
         }
         val icon = ImageView(ctx).apply {
+            // Keep the icon square: fix the ImageView to a square and do NOT let adjustViewBounds
+            // re-flow it to the drawable's own (possibly non-square) bounds. FIT_CENTER scales any
+            // launcher icon proportionally inside the square, so it never gets squashed or stretched.
             layoutParams = LinearLayout.LayoutParams(dp(iconDp), dp(iconDp))
             scaleType = ImageView.ScaleType.FIT_CENTER
-            adjustViewBounds = true
         }
         val drawable = CarAppCatalog.icon(ctx, app, dp(iconDp - 4))
         if (drawable != null) icon.setImageDrawable(drawable)
@@ -226,12 +228,12 @@ internal class HomeAppGrid(
         tile.addView(TextView(ctx).apply {
             text = app.label
             textSize = LayoutMetrics.appLabelSize(ctx)
-            setTextColor(GlassColors.TEXT_BODY)
+            setTextColor(GlassColors.TEXT_PRIMARY)
             gravity = Gravity.CENTER_HORIZONTAL
-            maxLines = 1
+            maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
             includeFontPadding = false
-            setPadding(0, dp(6), 0, 0)
+            setPadding(0, dp(ShellSpacing.SMALL), 0, 0)
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -241,7 +243,7 @@ internal class HomeAppGrid(
     }
 
     /** 应用格：点按打开；按住不动松手确认卸载；按住后拖动排序。滑动交给外层 ScrollView。 */
-    private fun handleTileTapAndDrag(v: View, e: MotionEvent, app: CarAppCatalog.App, grid: LinearLayout): Boolean {
+    private fun handleTileTapAndDrag(v: View, e: MotionEvent, app: CarAppCatalog.App, grid: ViewGroup): Boolean {
         val idx = visibleApps.indexOf(app)
         if (idx < 0) return false
         when (e.actionMasked) {
@@ -282,7 +284,7 @@ internal class HomeAppGrid(
                 }
                 moveDragFloat(e.rawX, e.rawY)
                 // 落点跟浮起的图标，不跟被图标挡住的指尖。格子先不动，避免拆掉当前触摸目标。
-                val target = indexUnderFinger(grid, e.rawX, e.rawY - dp(28))
+                val target = indexUnderFinger(grid, e.rawX, e.rawY - dp(ShellSpacing.TRIPLE_EXTRA_LARGE))
                 if (target >= 0) {
                     hoverIndex = target
                     highlightDrop(grid, target)
@@ -317,10 +319,10 @@ internal class HomeAppGrid(
     }
 
     private fun startDragFloat(source: View) =
-        dragFloat.show(source, lastRawX, lastRawY, dp(28))
+        dragFloat.show(source, lastRawX, lastRawY, dp(ShellSpacing.TRIPLE_EXTRA_LARGE))
 
     private fun moveDragFloat(rawX: Float, rawY: Float) =
-        dragFloat.move(rawX, rawY, dp(28))
+        dragFloat.move(rawX, rawY, dp(ShellSpacing.TRIPLE_EXTRA_LARGE))
 
     private fun dismissDragFloat() = dragFloat.dismiss()
 
@@ -336,7 +338,7 @@ internal class HomeAppGrid(
         return true
     }
 
-    private fun highlightDrop(grid: LinearLayout, target: Int) {
+    private fun highlightDrop(grid: ViewGroup, target: Int) {
         val cell = if (target == dragIndex) null else cellAt(grid, target)
         if (cell === dropHighlight) return
         dropHighlight?.alpha = 1f
@@ -350,47 +352,34 @@ internal class HomeAppGrid(
     }
 
     /** 用已布局格子的中心找落点。刚重绘、宽高还是 0 时不换位。 */
-    private fun indexUnderFinger(grid: LinearLayout, rawX: Float, rawY: Float): Int {
-        var index = 0
+    private fun indexUnderFinger(grid: ViewGroup, rawX: Float, rawY: Float): Int {
         var best = -1
         var bestDist = Float.MAX_VALUE
-        for (r in 0 until grid.childCount) {
-            val row = grid.getChildAt(r) as? LinearLayout ?: continue
-            for (c in 0 until row.childCount) {
-                if (index >= visibleApps.size) return best
-                val cell = row.getChildAt(c)
-                if (cell.width > 0 && cell.height > 0) {
-                    val loc = IntArray(2)
-                    cell.getLocationOnScreen(loc)
-                    val dx = rawX - (loc[0] + cell.width / 2f)
-                    val dy = rawY - (loc[1] + cell.height / 2f)
-                    val dist = dx * dx + dy * dy
-                    val reachX = cell.width * 0.7f
-                    val reachY = cell.height * 0.7f
-                    if (dist < bestDist && dx * dx <= reachX * reachX && dy * dy <= reachY * reachY) {
-                        bestDist = dist
-                        best = index
-                    }
-                }
-                index++
+        val count = minOf(grid.childCount, visibleApps.size)
+        for (index in 0 until count) {
+            val cell = grid.getChildAt(index)
+            if (cell.width <= 0 || cell.height <= 0) continue
+            val loc = IntArray(2)
+            cell.getLocationOnScreen(loc)
+            val dx = rawX - (loc[0] + cell.width / 2f)
+            val dy = rawY - (loc[1] + cell.height / 2f)
+            val dist = dx * dx + dy * dy
+            val reachX = cell.width * 0.7f
+            val reachY = cell.height * 0.7f
+            if (dist < bestDist && dx * dx <= reachX * reachX && dy * dy <= reachY * reachY) {
+                bestDist = dist
+                best = index
             }
         }
         return best
     }
 
-    private fun cellAt(grid: LinearLayout, index: Int): View? {
-        var cursor = 0
-        for (r in 0 until grid.childCount) {
-            val row = grid.getChildAt(r) as? LinearLayout ?: continue
-            for (c in 0 until row.childCount) {
-                if (cursor == index) return row.getChildAt(c)
-                cursor++
-            }
-        }
-        return null
+    private fun cellAt(grid: ViewGroup, index: Int): View? {
+        if (index !in visibleApps.indices || index >= grid.childCount) return null
+        return grid.getChildAt(index)
     }
 
-    private fun endDrag(grid: LinearLayout, save: Boolean) {
+    private fun endDrag(grid: ViewGroup, save: Boolean) {
         dismissDragFloat()
         clearDropHighlight()
         val source = dragView
@@ -527,15 +516,90 @@ internal class HomeAppGrid(
             if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
 
-    /** 列宽由权重算出，高度跟宽度，应用格是正方形。 */
-    private class SquareTile(ctx: android.content.Context) : LinearLayout(ctx) {
+    /**
+     * 等距网格：固定列数（[LayoutMetrics.appColumns]），列宽均分可用宽度，行高取所有格子的统一高度；
+     * 每格内部由 tile 自己把图标与文字水平垂直居中。行列严格对齐，不再按内容宽度流式换行。
+     */
+    private class AppFlow(ctx: android.content.Context) : ViewGroup(ctx) {
+        private var columns = LayoutMetrics.appColumns(ctx)
+        /** 一格（含左右 margin）的外宽；列步长。 */
+        private var stride = 0
+        /** tile 自身宽（已扣左右 margin）。 */
+        private var cellW = 0
+        /** 一行（含上下 margin）的统一外高。 */
+        private var rowH = 0
+
         override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-            super.onMeasure(widthMeasureSpec, heightMeasureSpec)
-            val side = measuredWidth
-            if (side > 0 && measuredHeight != side) {
-                val exact = MeasureSpec.makeMeasureSpec(side, MeasureSpec.EXACTLY)
-                super.onMeasure(exact, exact)
+            val widthMode = MeasureSpec.getMode(widthMeasureSpec)
+            val widthSize = MeasureSpec.getSize(widthMeasureSpec)
+            val m = LayoutMetrics.appTileMargin(context)
+            columns = LayoutMetrics.appColumns(context)
+            // 网格宽度：有可用宽度就吃满它，列均分才整齐；未约束时按列数估一个舒适宽。
+            val gridW = when (widthMode) {
+                MeasureSpec.EXACTLY -> widthSize
+                MeasureSpec.AT_MOST -> widthSize.coerceAtMost(Int.MAX_VALUE / 4)
+                else -> {
+                    val icon = LayoutMetrics.appIconDp(context)
+                    (columns * (icon + LayoutMetrics.dp(context, 20) + 2 * m)).coerceAtMost(Int.MAX_VALUE / 4)
+                }
+            }
+            stride = gridW / columns
+            cellW = (stride - 2 * m).coerceAtLeast(0)
+            // 子项默认是 wrap_content。若只给 AT_MOST，竖向 LinearLayout 会按图标宽度收拢，
+            // MATCH_PARENT 的应用名也被收成图标宽，随后 layout() 把格子拉满却不再测量文字。
+            val wSpec = MeasureSpec.makeMeasureSpec(cellW, MeasureSpec.EXACTLY)
+            // 第一遍：高度不约束，量出每格自然高，取最大值作为统一行高。
+            var maxRow = 0
+            for (i in 0 until childCount) {
+                val child = getChildAt(i)
+                if (child.visibility == GONE) continue
+                child.layoutParams.width = cellW
+                measureChild(child, wSpec, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
+                val lp = child.layoutParams as MarginLayoutParams
+                maxRow = maxOf(maxRow, child.measuredHeight + lp.topMargin + lp.bottomMargin)
+            }
+            rowH = maxRow
+            // 第二遍：把每格高撑到统一行高，格子底与文字基线逐行对齐。
+            val hSpec = MeasureSpec.makeMeasureSpec((rowH - 2 * m).coerceAtLeast(0), MeasureSpec.EXACTLY)
+            for (i in 0 until childCount) {
+                val child = getChildAt(i)
+                if (child.visibility == GONE) continue
+                measureChild(child, wSpec, hSpec)
+            }
+            val rows = if (childCount == 0) 0 else (childCount + columns - 1) / columns
+            val wantH = rows * rowH
+            val measuredW = when (widthMode) {
+                MeasureSpec.EXACTLY -> widthSize
+                else -> gridW
+            }
+            val heightMode = MeasureSpec.getMode(heightMeasureSpec)
+            val measuredH = when (heightMode) {
+                MeasureSpec.EXACTLY -> MeasureSpec.getSize(heightMeasureSpec)
+                MeasureSpec.AT_MOST -> wantH.coerceAtMost(MeasureSpec.getSize(heightMeasureSpec))
+                else -> wantH
+            }
+            setMeasuredDimension(measuredW, measuredH)
+        }
+
+        override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+            if (columns <= 0 || rowH <= 0 || stride <= 0) return
+            val m = LayoutMetrics.appTileMargin(context)
+            var index = 0
+            for (i in 0 until childCount) {
+                val child = getChildAt(i)
+                if (child.visibility == GONE) continue
+                val col = index % columns
+                val row = index / columns
+                val left = col * stride + m
+                val top = row * rowH + m
+                child.layout(left, top, left + cellW, top + rowH - 2 * m)
+                index++
             }
         }
+
+        override fun generateLayoutParams(attrs: android.util.AttributeSet?) = MarginLayoutParams(context, attrs)
+        override fun generateDefaultLayoutParams() = MarginLayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
+        override fun generateLayoutParams(p: LayoutParams) = MarginLayoutParams(p)
+        override fun checkLayoutParams(p: LayoutParams) = p is MarginLayoutParams
     }
 }

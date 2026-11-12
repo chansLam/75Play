@@ -28,6 +28,54 @@ internal object NativeChaCha {
         sealedLength: Int,
     ): ByteArray?
 
+    /** Writes plaintext into [destination] at [destinationOffset]. Returns its length, or -1. */
+    @JvmStatic
+    external fun nativeOpenRangeInto(
+        key: ByteArray,
+        nonce: ByteArray,
+        aad: ByteArray,
+        aadOffset: Int,
+        aadLength: Int,
+        sealed: ByteArray,
+        sealedOffset: Int,
+        sealedLength: Int,
+        destination: ByteArray,
+        destinationOffset: Int,
+    ): Int
+
+    /**
+     * Seals [plainLength] bytes into [destination] at [destinationOffset].
+     * [counter] is the AirPlay little-endian nonce. Returns the sealed length, or -1.
+     */
+    @JvmStatic
+    external fun nativeSealInto(
+        key: ByteArray,
+        counter: Long,
+        aad: ByteArray,
+        aadOffset: Int,
+        aadLength: Int,
+        plain: ByteArray,
+        plainOffset: Int,
+        plainLength: Int,
+        destination: ByteArray,
+        destinationOffset: Int,
+    ): Int
+
+    /**
+     * Decrypts a screen frame. [counter] is the AirPlay little-endian nonce.
+     * Returns the plaintext length, -2 when the tag does not match, or -1 when the
+     * frame cannot be decrypted this way.
+     */
+    @JvmStatic
+    external fun nativeOpenFrameInto(
+        key: ByteArray,
+        counter: Long,
+        aad: ByteArray,
+        sealed: ByteArray,
+        sealedLength: Int,
+        destination: ByteArray,
+    ): Int
+
     /**
      * Decrypts [inputLength] bytes at the start of direct [input] into the start of direct [output].
      * Returns the plaintext length, or -1 when the tag does not match.

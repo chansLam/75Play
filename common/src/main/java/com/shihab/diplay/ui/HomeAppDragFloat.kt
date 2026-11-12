@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.shihab.diplay.ui
 
-import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.view.Gravity
 import android.view.View
@@ -50,7 +49,8 @@ internal class HomeAppDragFloat {
                         textSize = child.textSize / ctx.resources.displayMetrics.scaledDensity
                         typeface = child.typeface
                         gravity = Gravity.CENTER_HORIZONTAL
-                        maxLines = 1
+                        maxLines = 2
+                        ellipsize = android.text.TextUtils.TruncateAt.END
                     }, LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -59,7 +59,7 @@ internal class HomeAppDragFloat {
             }
         }
         val window = PopupWindow(floatTile, w, h, false).apply {
-            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            setBackgroundDrawable(ColorDrawable(GlassColors.TRANSPARENT))
             isClippingEnabled = false
             isTouchable = false
             isFocusable = false

@@ -190,6 +190,21 @@ internal object DiPlayPreferences {
         homeApps(context).edit().putString(KEY_APP_ORDER, packages.joinToString(",")).apply()
     }
 
+    fun wallpaperMode(context: Context): String? = prefs(context).getString("wallpaper_mode", null)
+    fun saveWallpaperMode(context: Context, key: String) {
+        prefs(context).edit().putString("wallpaper_mode", key).apply()
+    }
+    fun wallpaperDailySource(context: Context): String? = prefs(context).getString("wallpaper_daily_source", null)
+    fun saveWallpaperDailySource(context: Context, key: String) {
+        prefs(context).edit().putString("wallpaper_daily_source", key).apply()
+    }
+    fun wallpaperDailyDay(context: Context): String? = prefs(context).getString("wallpaper_daily_day", null)
+    fun saveWallpaperDailyDay(context: Context, day: String?) {
+        val editor = prefs(context).edit()
+        if (day == null) editor.remove("wallpaper_daily_day") else editor.putString("wallpaper_daily_day", day)
+        editor.apply()
+    }
+
     private const val HOME_APP_LIST = "home_app_list"
     private const val KEY_HIDDEN_PACKAGES = "hidden_packages"
     private const val KEY_APP_ORDER = "app_order"

@@ -80,7 +80,7 @@ internal object WirelessIap2LinkRunner {
         var controlResult: Iap2WirelessControlResult? = null
         var lastBootstrapError: Throwable? = null
         var attempt = 0
-        val maxAttempts = 2
+        val maxAttempts = 4
 
         while (attempt < maxAttempts && !isStaleWirelessRun(generation)) {
             attempt++
@@ -154,14 +154,14 @@ internal object WirelessIap2LinkRunner {
                 if (readActiveSession() != null || wirelessActiveReported.get() || isStaleWirelessRun(generation)) {
                     break
                 }
-                // The same SDP lookup already used its budget. A second pass waits the same way.
-                if (e.message?.contains("Timed out connecting AOSP RFCOMM") == true) break
-                if (attempt < maxAttempts) {
-                    try {
-                        Thread.sleep(1000L)
-                    } catch (_: InterruptedException) {
-                        break
-                    }
+                val retryRfcommTimeout = e is java.io.IOException &&
+                    e.message?.startsWith("Timed out connecting AOSP RFCOMM") == true &&
+                    attempt < 2
+                if (!retryRfcommTimeout) break
+                try {
+                    Thread.sleep(1000L)
+                } catch (_: InterruptedException) {
+                    break
                 }
             }
         }

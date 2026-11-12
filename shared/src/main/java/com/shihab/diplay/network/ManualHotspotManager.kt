@@ -2,7 +2,6 @@ package com.shihab.diplay.network
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.net.wifi.SoftApConfiguration
 import android.net.wifi.WifiConfiguration
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -275,37 +274,20 @@ class ManualHotspotManager(
     private fun readApConfiguration(): ManualApConfiguration? =
         readSoftApConfiguration() ?: readLegacyApConfiguration()
 
-    @SuppressLint("PrivateApi")
     private fun readSoftApConfiguration(): ManualApConfiguration? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
-        return try {
-            val method = WifiManager::class.java.getMethod("getSoftApConfiguration")
-            val configuration = method.invoke(wifiManager) as? SoftApConfiguration
-                ?: return null
-            val ssid = configuration.ssid ?: return null
-            val bandAndChannel = run {
-                val band = (
-                    SoftApConfiguration::class.java
-                        .getMethod("getBand")
-                        .invoke(configuration) as? Number
-                    )?.toInt()
-                val channel = SoftApConfiguration::class.java
-                    .getMethod("getChannel")
-                    .invoke(configuration) as? Number
-                if (band == null || channel == null) null else band to channel.toInt()
-            }
-            val band = bandAndChannel?.first
-            val channel = bandAndChannel?.second ?: 0
-            ManualApConfiguration(
-                ssid = ssid,
-                band = band,
-                channel = channel,
-                frequencyMHz = wifiChannelToFrequencyMhz(channel, band),
-                security = mapSoftApSecurity(configuration.securityType),
-            )
-        } catch (_: Throwable) {
-            null
-        }
+        val snapshot = runCatching {
+            Class.forName("com.shihab.diplay.network.PlatformSoftApReader")
+                .getMethod("read", WifiManager::class.java)
+                .invoke(null, wifiManager) as? SoftApSnapshot
+        }.getOrNull() ?: return null
+        return ManualApConfiguration(
+            ssid = snapshot.ssid,
+            band = snapshot.band,
+            channel = snapshot.channel,
+            frequencyMHz = wifiChannelToFrequencyMhz(snapshot.channel, snapshot.band),
+            security = snapshot.security,
+        )
     }
 
     @SuppressLint("PrivateApi")
@@ -333,15 +315,6 @@ class ManualHotspotManager(
         } catch (_: Throwable) {
             null
         }
-    }
-
-    private fun mapSoftApSecurity(securityType: Int): Iap2WirelessSecurity = when (securityType) {
-        SoftApConfiguration.SECURITY_TYPE_OPEN -> Iap2WirelessSecurity.NONE
-        SoftApConfiguration.SECURITY_TYPE_WPA2_PSK -> Iap2WirelessSecurity.WPA_WPA2
-        SoftApConfiguration.SECURITY_TYPE_WPA3_SAE_TRANSITION ->
-            Iap2WirelessSecurity.WPA3_TRANSITION
-        SoftApConfiguration.SECURITY_TYPE_WPA3_SAE -> Iap2WirelessSecurity.WPA3_ONLY
-        else -> Iap2WirelessSecurity.WPA_WPA2
     }
 
     private fun mapWifiConfigurationSecurity(

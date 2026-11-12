@@ -27,8 +27,6 @@ import com.shihab.diplay.airplay.AirPlaySafeArea
 import com.shihab.diplay.airplay.AirPlaySessionListener
 import com.shihab.diplay.airplay.CarPlayDisplayScale
 import com.shihab.diplay.airplay.CarPlayMediaEngine
-import com.shihab.diplay.airplay.CarPlaySmartDisplayZoom
-import com.shihab.diplay.compat.realSdkInt
 import com.shihab.diplay.host.R
 import com.shihab.diplay.location.AndroidCarPlayLocationProvider
 import com.shihab.diplay.media.AndroidMediaSink
@@ -86,16 +84,25 @@ object CarPlayRuntimeConfigFactory {
         synchronized(manualHotspotLock) {
             if (AirPlayPersistence.loadWirelessHotspotMode(ctx) != WirelessHotspotMode.MANUAL) return
             if (AirPlayPersistence.loadManualHotspotSsid(ctx).isNotBlank()) return
-            val generated = ManualHotspotProvisioning.generate()
+            val adopted = com.shihab.diplay.network.CarHotspotStatus.savedSoftAp(ctx)
+            val generated = if (adopted != null) {
+                ManualHotspotProvisioning.Generated(adopted.ssid, adopted.passphrase)
+            } else {
+                ManualHotspotProvisioning.defaults()
+            }
             AirPlayPersistence.saveManualHotspotSsid(ctx, generated.ssid)
             AirPlayPersistence.saveManualHotspotPassphrase(ctx, generated.passphrase)
-            AirPlayPersistence.saveManualHotspotSecurity(ctx, ManualHotspotSecurity.WPA2)
+            AirPlayPersistence.saveManualHotspotSecurity(
+                ctx,
+                if (generated.passphrase.isEmpty()) ManualHotspotSecurity.OPEN
+                else ManualHotspotSecurity.WPA2,
+            )
         }
     }
 
     /**
      * Loads connection inputs from persistence. When manual hotspot mode has no SSID yet,
-     * [provisionManualHotspot] invents and persists seamless credentials.
+     * [provisionManualHotspot] copies the head unit SoftAP, or the built-in 75Play defaults.
      */
     fun fromPersistence(ctx: Context): CarPlayRuntimeConfigInputs {
         provisionManualHotspot(ctx)
@@ -232,9 +239,9 @@ internal object CarPlaySessionFactory {
         val smoothVideo = AirPlayPersistence.loadSmoothVideo(ctx)
         val sessionHevc = false
         // The phone reads this /info during the background handshake and keeps it when the host
-        // adopts the session. The display fields below are the ones that handshake used to omit:
-        // physical size (otherwise 200 mm), KitKat's advertised frame rate, the safe area, and any
-        // extra view areas the dock, split screen or side panel need.
+        // adopts the session. Physical size still comes from the smart-zoom basis. The frame
+        // rate is the saved setting (default 30): advertising 60 on KitKat makes the phone
+        // encode faster than this i.MX6 can decode.
         val physical = AirPlayDisplaySettings.resolvePhysicalSizeMm(
             currentWidthPixels = safeWidth,
             currentHeightPixels = safeHeight,
@@ -243,13 +250,12 @@ internal object CarPlaySessionFactory {
             referenceMillimeters = AirPlayPersistence.loadWidthPhysicalMm(ctx),
             basis = AirPlayPersistence.loadPhysicalSizeBasis(ctx),
         )
-        val reportedFps = if (realSdkInt() <= 19) CarPlaySmartDisplayZoom.advertisedFps(fps) else fps
         val baseDisplay = AirPlayDisplayConfig(
             widthPixels = safeWidth,
             heightPixels = safeHeight,
             widthPhysicalMm = physical.widthMm,
             heightPhysicalMm = physical.heightMm,
-            fps = reportedFps,
+            fps = fps,
             primaryInputDevice = if (AndroidTvInputMode.shouldUseKnobAsPrimaryInput(ctx)) 3 else 1,
         )
         val scaled = headlessDisplay(
@@ -278,7 +284,7 @@ internal object CarPlaySessionFactory {
             model = model,
             oemLabel = AirPlayPersistence.defaultOemLabel(ctx),
             icons = listOf(loadAirPlayIcon(ctx)),
-            videoInCar = false,
+            videoInCar = true,
             mainBufferedAudio = AirPlayPersistence.loadMainBufferedAudio(ctx),
         )
 

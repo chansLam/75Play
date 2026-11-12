@@ -147,7 +147,7 @@ class CarPlayController(
         WifiScanPause.restoreIfNeeded(context.applicationContext)
     }
 
-    private enum class Phase { IDLE, MFI, WIRELESS }
+    private enum class Phase { IDLE, MFI, WIRELESS, WIRED }
 
     private val appContext = context.applicationContext
     private val diagnosticAttempt = diagnosticAttempts.incrementAndGet()
@@ -180,6 +180,20 @@ class CarPlayController(
     @Volatile private var mfiSession: MfiSession? = null
     @Volatile private var csm: Iap2Session? = null
     @Volatile private var activeSession: AirPlaySession? = null
+    // Wired (USB) CarPlay state, wired alongside the wireless path below. All fields are owned
+    // by the single-threaded executor; they are only torn down by close().
+    @Volatile private var wiredIphoneHost: com.shilapi.xcertplay.transport.IphoneUsbHost? = null
+    private val wiredAborted = AtomicBoolean(false)
+    private val wiredGeneration = AtomicInteger(0)
+    private val wiredTcpArrived = AtomicBoolean(false)
+    private val wiredPermissionPollGeneration = AtomicInteger(0)
+    @Volatile private var wiredUsbSession: com.shilapi.xcertplay.transport.Iap2UsbSession? = null
+    @Volatile private var wiredNcm: com.shilapi.xcertplay.transport.NcmUsbBridge? = null
+    @Volatile private var wiredLwip: com.shilapi.xcertplay.network.LwipNcmBridge? = null
+    @Volatile private var wiredAirPlayServer: java.net.ServerSocket? = null
+    @Volatile private var wiredAirPlaySession: AirPlaySession? = null
+    private val wiredHostId = java.util.UUID.randomUUID().toString().uppercase(java.util.Locale.US)
+    private val wiredSystemBuid = java.util.UUID.randomUUID().toString().uppercase(java.util.Locale.US)
     @Volatile private var requestedDashboardUrl: String? = airPlayConfig.cluster?.initialUrl
     private val clusterUiLock = Any()
     @Volatile private var clusterUiStream: Pair<AirPlaySession, Int>? = null
@@ -342,6 +356,7 @@ class CarPlayController(
             )
             if (
                 config.transport == CarPlayTransport.WIRELESS &&
+                phase == Phase.WIRELESS &&
                 !closed &&
                 activeSession === session &&
                 isBluetoothHandoffCommand(type) &&
@@ -385,6 +400,12 @@ class CarPlayController(
     }
 
     fun isClosed(): Boolean = closed
+
+    /**
+     * True once this controller has committed to USB, including the auto-detect path that runs
+     * when wireless is the saved preference but an iPhone is plugged in.
+     */
+    fun isWiredLink(): Boolean = phase == Phase.WIRED
 
     /** Nonblocking identity for an accepted, still-current primary screen session. */
     fun activeAirPlaySessionToken(): Any? {
@@ -446,6 +467,49 @@ class CarPlayController(
         } catch (_: Exception) {
             false
         }
+    }
+
+    /** Pinch at the centre of the CarPlay frame. Maps zoom; other screens ignore the gesture. */
+    fun zoomMap(zoomIn: Boolean) {
+        if (closed) return
+        val session = activeSession ?: return
+        touchExecutor.execute {
+            if (closed || activeSession !== session) return@execute
+            val steps = 5
+            for (step in 0..steps) {
+                val spread = if (zoomIn) 0.06 + step * 0.035 else 0.28 - step * 0.035
+                session.sendTouch(
+                    listOf(
+                        AirPlayContact(0, 0.5 - spread, 0.5, true),
+                        AirPlayContact(1, 0.5 + spread, 0.5, true),
+                    ),
+                )
+                if (!sleepTouch(20)) return@execute
+            }
+            session.sendTouch(emptyList())
+        }
+    }
+
+    /**
+     * Tap the upper-right control where CarPlay maps keep the 2D / 3D / heading button.
+     * The spot is fixed in the video frame, so a map that draws that button elsewhere will miss.
+     */
+    fun cycleMapView() {
+        if (closed) return
+        val session = activeSession ?: return
+        touchExecutor.execute {
+            if (closed || activeSession !== session) return@execute
+            session.sendTouch(listOf(AirPlayContact(0, 0.90, 0.16, true)))
+            if (!sleepTouch(50)) return@execute
+            session.sendTouch(emptyList())
+        }
+    }
+
+    private fun sleepTouch(millis: Long): Boolean = try {
+        Thread.sleep(millis)
+        !closed
+    } catch (_: InterruptedException) {
+        false
     }
 
     /** Moves CarPlay on the main screen to its declared view area [index], for example another dock edge. */
@@ -554,6 +618,9 @@ class CarPlayController(
         closeReceivers()
         availabilityPollGeneration.incrementAndGet()
         wirelessGeneration.incrementAndGet()
+        wiredAborted.set(true)
+        wiredGeneration.incrementAndGet()
+        wiredPermissionPollGeneration.incrementAndGet()
         touchExecutor.shutdownNow()
         tunnelExecutor.shutdownNow()
         val service = wirelessListener
@@ -568,6 +635,7 @@ class CarPlayController(
                     mfiSession = null
                     wirelessRuntimeIdentification = null
                     wirelessAirPlayEndpoint = null
+                    closeWiredResources()
                     closeBestEffort("location provider") { locationProvider?.close() }
                 } finally {
                     executor.shutdownNow()
@@ -789,8 +857,601 @@ class CarPlayController(
             }
             debugLog("location provider prewarmed=$started")
         }
-        startWireless()
+        if (config.transport == CarPlayTransport.WIRED) {
+            startWired()
+        } else if (detectIphoneOnUsb()) {
+            // Auto-detect: an iPhone attached on USB means the user wants the wired path even
+            // when the configured transport is WIRELESS. USB enumeration needs no permission.
+            debugLog("startPhone auto-detect: iPhone present on USB host; using wired path")
+            startWired()
+        } else {
+            startWireless()
+        }
     }
+
+    /**
+     * True when a CarPlay iPhone is currently enumerated on the USB host. Purely enumerates the
+     * device list (no permission, no open), so it is safe to call synchronously from [startPhone].
+     */
+    private fun detectIphoneOnUsb(): Boolean {
+        val usbManager = appContext.getSystemService(android.content.Context.USB_SERVICE)
+            as? android.hardware.usb.UsbManager
+            ?: return false
+        return runCatching {
+            com.shilapi.xcertplay.transport.IphoneUsbHost(
+                appContext,
+                usbManager,
+                com.shilapi.xcertplay.transport.IphoneUsbMatcher.appleVendor(),
+                onDiagnostic = ::connectionDiagnostic,
+            ).discover().isNotEmpty()
+        }.getOrDefault(false)
+    }
+
+    /**
+     * Wired (USB) CarPlay bring-up. Detection-first: poll for the iPhone USB device, request
+     * framework permission, open the iAP2 USBMUX session and NCM, then run USBMUX/Lockdown,
+     * iAP2 control and the loopback AirPlay bridge. Every step runs on [executor] and reports
+     * through [onStatus] so the same UI surfaces used by the wireless path apply.
+     */
+    private fun startWired() {
+        if (closed) return
+        phase = Phase.WIRED
+        onStatus(CarPlayStatus.DiscoveringIphone)
+        connectionDiagnostic("wired start transport=USB")
+        val usbManager = appContext.getSystemService(android.content.Context.USB_SERVICE)
+            as? android.hardware.usb.UsbManager
+            ?: run { fail(IllegalStateException("USB host service is unavailable")); return }
+        val host = com.shilapi.xcertplay.transport.IphoneUsbHost(
+            appContext,
+            usbManager,
+            com.shilapi.xcertplay.transport.IphoneUsbMatcher.appleVendor(),
+            onDiagnostic = ::connectionDiagnostic,
+        )
+        wiredIphoneHost = host
+        wiredAborted.set(false)
+        wiredGeneration.incrementAndGet()
+        checkWiredIphoneAvailability()
+    }
+
+    private fun checkWiredIphoneAvailability() {
+        if (closed || phase != Phase.WIRED || wiredAborted.get()) return
+        val host = wiredIphoneHost ?: return
+        val device = runCatching { host.discover().firstOrNull() }.getOrElse {
+            debugLog("wired discover failed: ${it.message}")
+            null
+        }
+        if (device == null) {
+            onStatus(CarPlayStatus.WaitingForIphone)
+            scheduleAvailabilityPoll(phase, check = ::checkWiredIphoneAvailability)
+        } else {
+            debugLog(
+                "wired iPhone discovered vid=0x${device.vendorId.toString(16)} " +
+                    "pid=0x${device.productId.toString(16)}",
+            )
+            connectionDiagnostic("wired iPhone attached vid=0x${device.vendorId.toString(16)}")
+            requestWiredIphonePermission(device)
+        }
+    }
+
+    private fun requestWiredIphonePermission(device: android.hardware.usb.UsbDevice) {
+        mainHandler.post { doRequestWiredIphonePermission(device) }
+    }
+
+    private fun doRequestWiredIphonePermission(device: android.hardware.usb.UsbDevice) {
+        if (closed || phase != Phase.WIRED || wiredAborted.get()) return
+        val host = wiredIphoneHost ?: return
+        try {
+            when (val request = host.requestPermission(device)) {
+                is com.shilapi.xcertplay.transport.IphoneUsbHost.PermissionRequest.AlreadyGranted -> {
+                    debugLog("wired iPhone USB permission already granted")
+                    onWiredIphonePermission(device)
+                }
+                is com.shilapi.xcertplay.transport.IphoneUsbHost.PermissionRequest.Requested -> {
+                    debugLog("wired iPhone USB permission requested")
+                    onStatus(CarPlayStatus.RequestingIphonePermission)
+                    pollWiredIphonePermission(device)
+                }
+            }
+        } catch (error: Throwable) {
+            fail(error)
+        }
+    }
+
+    private fun pollWiredIphonePermission(device: android.hardware.usb.UsbDevice) {
+        val generation = wiredPermissionPollGeneration.incrementAndGet()
+        val deadlineNanos = System.nanoTime() + WIRED_PERMISSION_POLL_TIMEOUT_MILLIS * 1_000_000L
+        val check = object : Runnable {
+            override fun run() {
+                try {
+                    if (closed || generation != wiredPermissionPollGeneration.get()) return
+                    val hasPerm = runCatching {
+                        (appContext.getSystemService(android.content.Context.USB_SERVICE)
+                            as? android.hardware.usb.UsbManager)?.hasPermission(device) == true
+                    }.getOrDefault(false)
+                    if (hasPerm) {
+                        onWiredIphonePermission(device)
+                        return
+                    }
+                    if (System.nanoTime() >= deadlineNanos) {
+                        onStatus(
+                            CarPlayStatus.Failed(
+                                "iPhone USB permission was not granted; replug and retry",
+                            ),
+                        )
+                        return
+                    }
+                    mainHandler.postDelayed(this, WIRED_PERMISSION_POLL_INTERVAL_MILLIS)
+                } catch (error: Throwable) {
+                    fail(error)
+                }
+            }
+        }
+        mainHandler.postDelayed(check, WIRED_PERMISSION_POLL_INTERVAL_MILLIS)
+    }
+
+    private fun onWiredIphonePermission(device: android.hardware.usb.UsbDevice) {
+        if (closed || phase != Phase.WIRED || wiredAborted.get()) return
+        wiredPermissionPollGeneration.incrementAndGet()
+        // A freshly attached iPhone first enumerates as an ordinary USB device; only after the
+        // vendor 0x51 transition request does it re-enumerate into the CarPlay (USBMUX+NCM)
+        // configuration. Opening data paths before that fails with "exposes no USBMUX CarPlay
+        // configuration", so confirm the configuration is ready first and re-enumerate if not.
+        if (wiredCarPlayConfigurationReady(device)) {
+            ensureNcmModeThenOpenDataPaths(device)
+        } else {
+            debugLog("wired iPhone has no CarPlay configuration yet; requesting re-enumeration")
+            beginWiredReenumeration(device, attempts = 0)
+        }
+    }
+
+    private fun wiredCarPlayConfigurationReady(device: android.hardware.usb.UsbDevice): Boolean =
+        runCatching { com.shilapi.xcertplay.transport.IphoneCarPlayConfiguration.find(device) != null }
+            .getOrDefault(false)
+
+    /**
+     * Requests the Apple vendor 0x51 transition so the iPhone re-enumerates into the CarPlay
+     * configuration, then waits for it. Mirrors the upstream re-enumeration state machine
+     * (beginReenumeration -> requestCarPlayReenumerationAsync -> pollReenumeration).
+     */
+    private fun beginWiredReenumeration(
+        device: android.hardware.usb.UsbDevice,
+        attempts: Int,
+    ) {
+        if (closed || phase != Phase.WIRED || wiredAborted.get()) return
+        onStatus(CarPlayStatus.SelectingConfiguration)
+        val host = wiredIphoneHost ?: return
+        host.requestCarPlayReenumerationAsync(device, executor) { transition ->
+            when (transition) {
+                is com.shilapi.xcertplay.transport.IphoneUsbHost.TransitionResult.ReenumerationRequested -> {
+                    if (closed || phase != Phase.WIRED || wiredAborted.get()) return@requestCarPlayReenumerationAsync
+                    onStatus(CarPlayStatus.WaitingForReenumeration)
+                    wiredPollReenumeration(device, attempts)
+                }
+                is com.shilapi.xcertplay.transport.IphoneUsbHost.TransitionResult.Failed -> {
+                    // The 0x51 request may STALL when the device is already transitioning or already
+                    // in CarPlay mode; fall back to a configuration inspection before counting a failure.
+                    if (wiredCarPlayConfigurationReady(device)) {
+                        onWiredIphonePermission(device)
+                    } else if (attempts < MAX_WIRED_REENUMERATION_ATTEMPTS) {
+                        mainHandler.postDelayed(
+                            { beginWiredReenumeration(device, attempts + 1) },
+                            WIRED_REENUMERATION_RETRY_MILLIS,
+                        )
+                    } else {
+                        fail(transition.error)
+                    }
+                }
+            }
+        }
+    }
+
+    /** Polls for the re-enumerated iPhone that now exposes the CarPlay configuration. */
+    private fun wiredPollReenumeration(
+        previous: android.hardware.usb.UsbDevice,
+        attempts: Int,
+    ) {
+        val started = System.nanoTime()
+        val poll = object : Runnable {
+            override fun run() {
+                try {
+                    if (closed || phase != Phase.WIRED || wiredAborted.get()) return
+                    val elapsed = (System.nanoTime() - started) / 1_000_000
+                    val host = wiredIphoneHost ?: return
+                    val found = runCatching { host.discover().firstOrNull() }.getOrNull()
+                    val ready = found != null && wiredCarPlayConfigurationReady(found)
+                    val isNewDevice = found != null &&
+                        (found.deviceId != previous.deviceId || found.deviceName != previous.deviceName)
+                    if (found != null && (ready || isNewDevice || elapsed >= WIRED_REENUMERATION_READY_EARLY_MILLIS)) {
+                        debugLog(
+                            "wired re-enumeration settled after ${elapsed}ms " +
+                                "ready=$ready newDevice=$isNewDevice",
+                        )
+                        // The device object changed during re-enumeration; re-acquire permission
+                        // (it may need a fresh grant on Android 4.x) then re-check the configuration.
+                        requestWiredIphonePermission(found)
+                        return
+                    }
+                    if (elapsed >= WIRED_REENUMERATION_TIMEOUT_MILLIS) {
+                        if (attempts < MAX_WIRED_REENUMERATION_ATTEMPTS) {
+                            beginWiredReenumeration(previous, attempts + 1)
+                        } else {
+                            fail(
+                                com.shilapi.xcertplay.transport.IphoneUsbException.DeviceUnavailable(
+                                    "iPhone did not expose the CarPlay USB configuration after " +
+                                        "re-enumeration; replug and retry",
+                                ),
+                            )
+                        }
+                        return
+                    }
+                    mainHandler.postDelayed(this, WIRED_REENUMERATION_POLL_MILLIS)
+                } catch (error: Throwable) {
+                    fail(error)
+                }
+            }
+        }
+        mainHandler.postDelayed(poll, WIRED_REENUMERATION_POLL_MILLIS)
+    }
+
+    /**
+     * Opens the data paths once the NCM CarPlay configuration is present. Presence of that
+     * configuration is the signal to open; a missing configuration goes through the 0x51
+     * re-enumeration path instead.
+     */
+    private fun ensureNcmModeThenOpenDataPaths(device: android.hardware.usb.UsbDevice) {
+        executor.execute {
+            if (closed || phase != Phase.WIRED || wiredAborted.get()) return@execute
+            if (wiredCarPlayConfigurationReady(device)) {
+                debugLog("wired NCM configuration ready; opening data paths")
+                openWiredDataPaths(device)
+            } else {
+                debugLog("wired NCM configuration absent; requesting re-enumeration")
+                beginWiredReenumeration(device, attempts = 0)
+            }
+        }
+    }
+
+    private fun openWiredDataPaths(device: android.hardware.usb.UsbDevice) {
+        val host = wiredIphoneHost ?: return
+        wiredAborted.set(false)
+        val generation = wiredGeneration.incrementAndGet()
+        debugLog("wired opening iPhone USB data paths")
+        onStatus(CarPlayStatus.SelectingConfiguration)
+        onStatus(CarPlayStatus.OpeningDataPaths)
+        host.openIap2UsbSessionAsync(device, executor, null) { result ->
+            when (result) {
+                is com.shilapi.xcertplay.transport.IphoneUsbHost.Iap2SessionResult.Connected -> {
+                    val session = result.session
+                    wiredUsbSession = session
+                    if (closed || wiredAborted.get() || generation != wiredGeneration.get()) {
+                        session.markAborted()
+                        session.close()
+                        return@openIap2UsbSessionAsync
+                    }
+                    wiredChain(3, "iAP2 USB session opened (USBMUX fd ready)")
+                    try {
+                        val ncm = openWiredNcm(device.vendorId, session)
+                        wiredNcm = ncm
+                        if (closed || wiredAborted.get() || generation != wiredGeneration.get()) {
+                            ncm.markAborted()
+                            ncm.close()
+                            session.markAborted()
+                            session.close()
+                            return@openIap2UsbSessionAsync
+                        }
+                        runWiredStack(session, ncm)
+                    } catch (error: Throwable) {
+                        session.close()
+                        if (!closed && !wiredAborted.get() && generation == wiredGeneration.get()) fail(error)
+                    }
+                }
+                is com.shilapi.xcertplay.transport.IphoneUsbHost.Iap2SessionResult.Failed -> {
+                    if (!closed && !wiredAborted.get() && generation == wiredGeneration.get()) fail(result.error)
+                }
+            }
+        }
+    }
+
+    private fun openWiredNcm(
+        vendorId: Int,
+        usbSession: com.shilapi.xcertplay.transport.Iap2UsbSession,
+    ): com.shilapi.xcertplay.transport.NcmUsbBridge {
+        val configuration = usbSession.carPlayConfiguration
+            ?: throw com.shilapi.xcertplay.transport.IphoneUsbException.Protocol(
+                "iPhone exposes no CarPlay configuration for NCM",
+            )
+        val function = com.shilapi.xcertplay.transport.NcmFunctionDiscovery.find(configuration)
+            ?: throw com.shilapi.xcertplay.transport.IphoneUsbException.Protocol(
+                "iPhone configuration does not expose an NCM function",
+            )
+        wiredChain(4, "NCM config=${configuration.id} function found")
+        debugLog(
+            "ncm config=${configuration.id} control=${function.control.id}/" +
+                "${com.shilapi.xcertplay.transport.IphoneCarPlayConfiguration.alternateSetting(function.control)}" +
+                " data=${function.data.id}/${com.shilapi.xcertplay.transport.IphoneCarPlayConfiguration.alternateSetting(function.data)}" +
+                " in=0x${function.bulkIn.address.toString(16)} out=0x${function.bulkOut.address.toString(16)}" +
+                " status=${function.statusIn?.let { "0x${it.address.toString(16)}" } ?: "none"}" +
+                " unions=${configuration.unions}",
+        )
+        // Log the NCM capabilities and the raw configuration descriptor. Two NCM functions with
+        // no Union between them are told apart by endpoint ownership.
+        debugLog(
+            "ncm descriptors caps=${configuration.ncmCapabilities} unions=${configuration.unions} " +
+                "raw=${(configuration.platformConfiguration as? ByteArray)?.let { bytes ->
+                    bytes.take(400).joinToString(" ") { "%02x".format(it) }
+                } ?: "unavailable"}",
+        )
+        // Re-entry guard: a previous NCM bridge whose kernel endpoints died after a UI/surface
+        // destroy must never be reused (previous.log: surface recreate -> instant raw(1) EPERM on
+        // the old bridge while counters still read completed=591). Close any stale bridge before
+        // opening a fresh one; normal first entry sees wiredNcm == null and skips this.
+        wiredNcm?.let { stale ->
+            debugLog(
+                "wired re-entry: closing stale NCM bridge " +
+                    "identity=${System.identityHashCode(stale)} before fresh open",
+            )
+            closeBestEffort("stale wired NCM (re-entry)") {
+                stale.markAborted()
+                stale.close()
+            }
+        }
+        wiredNcm = null
+        val ncm = com.shilapi.xcertplay.transport.NcmUsbBridge.open(
+            sharedConnection = usbSession.retainConnectionForNcm(),
+            function = function,
+            expectedConfiguration = configuration.id,
+            vendorId = vendorId,
+            useAsyncRead = com.shilapi.xcertplay.compat.realSdkInt() >= 21,
+            onDiagnostic = ::connectionDiagnostic,
+        )
+        debugLog("wired NCM bridge FRESH open identity=${System.identityHashCode(ncm)}")
+        wiredChain(5, "NCM bridge opened (bulk endpoints claimed)")
+        return ncm
+    }
+
+    /** Tears down every wired (USB) resource acquired during this session. Called from [close]. */
+    private fun closeWiredResources() {
+        // Mark first so blocking bulk/control calls unwind instead of wedging the teardown thread.
+        wiredAborted.set(true)
+        closeBestEffort("wired AirPlay session") {
+            wiredAirPlaySession?.close()
+        }
+        wiredAirPlaySession = null
+        wiredAirPlayServer?.close()
+        wiredAirPlayServer = null
+        closeBestEffort("wired lwIP") {
+            wiredLwip?.close()
+        }
+        wiredLwip = null
+        closeBestEffort("wired NCM") {
+            wiredNcm?.markAborted()
+            wiredNcm?.close()
+        }
+        wiredNcm = null
+        closeBestEffort("wired USBMUX session") {
+            wiredUsbSession?.markAborted()
+            wiredUsbSession?.close()
+        }
+        wiredUsbSession = null
+        wiredIphoneHost = null
+        csm?.close()
+        csm = null
+    }
+
+    private fun wiredChain(step: Int, message: String) {
+        debugLog("WIRED-CHAIN [$step/16] $message")
+    }
+
+    /**
+     * Runs the wired control stack after NCM is open: USBMUX, Lockdown pairing, the CarKit
+     * (com.apple.carkit.service) channel, the iAP2 CSM control loop, and the loopback AirPlay
+     * bridge that relays iPhone TCP into this process's Conscrypt AirPlay socket. This mirrors
+     * the upstream userspaceNetworkEnabled path but keeps the AirPlay listener in-process
+     * (no VPN/TUN), which is exactly what this head unit's kernel requires.
+     */
+    private fun runWiredStack(
+        usbSession: com.shilapi.xcertplay.transport.Iap2UsbSession,
+        ncm: com.shilapi.xcertplay.transport.NcmUsbBridge,
+    ) {
+        if (closed || wiredAborted.get()) return
+        try {
+            val mux = com.shilapi.xcertplay.transport.Iap2UsbMuxHost.open(usbSession, onDiagnostic = ::connectionDiagnostic)
+            wiredChain(6, "USBMUX host opened")
+            debugLog("wired USBMUX host opened")
+            onStatus(CarPlayStatus.Pairing)
+            val pairingClient = com.shilapi.xcertplay.transport.LockdownPairingClient(mux)
+            val carKitClient = com.shilapi.xcertplay.transport.LockdownCarKitClient(mux)
+            val saved = com.shilapi.xcertplay.transport.WiredLockdownStore.load(appContext)
+            val carkitStream = if (saved != null) {
+                try {
+                    debugLog("wired reusing saved lockdown record")
+                    carKitClient.open(saved, config.label)
+                } catch (error: Exception) {
+                    if (closed || error is com.shilapi.xcertplay.transport.LockdownPairingException.Cancelled) {
+                        throw error
+                    }
+                    debugLog("wired saved lockdown record rejected (${error.message}); pairing again")
+                    com.shilapi.xcertplay.transport.WiredLockdownStore.clear(appContext)
+                    val paired = pairingClient.pair(
+                        label = config.label,
+                        hostId = wiredHostId,
+                        systemBuid = wiredSystemBuid,
+                        totalTimeoutMillis = WIRED_PAIR_TIMEOUT_MILLIS,
+                        isCancelled = { closed },
+                    )
+                    com.shilapi.xcertplay.transport.WiredLockdownStore.save(appContext, paired.pairRecord)
+                    carKitClient.open(paired, config.label)
+                }
+            } else {
+                val paired = pairingClient.pair(
+                    label = config.label,
+                    hostId = wiredHostId,
+                    systemBuid = wiredSystemBuid,
+                    totalTimeoutMillis = WIRED_PAIR_TIMEOUT_MILLIS,
+                    isCancelled = { closed },
+                )
+                com.shilapi.xcertplay.transport.WiredLockdownStore.save(appContext, paired.pairRecord)
+                debugLog("wired lockdown pair record created")
+                carKitClient.open(paired, config.label)
+            }
+            wiredChain(7, "Lockdown pairing ok (saved=${saved != null})")
+            onStatus(CarPlayStatus.ConnectingControl)
+            wiredChain(8, "CarKit service opened")
+            debugLog("wired com.apple.carkit.service stream opened")
+            if (closed || wiredAborted.get()) return
+            // Adapt the upstream (com.shilapi) Lockdown byte stream to this project's iAP2
+            // byte stream interface. Both interfaces are structurally identical.
+            val adaptedCarkit = object : com.shihab.diplay.transport.BlockingDuplexByteStream {
+                override fun send(data: ByteArray) = carkitStream.send(data)
+                override fun recv(maxBytes: Int, timeoutMillis: Long): ByteArray? =
+                    carkitStream.recv(maxBytes, timeoutMillis)
+                override fun close() = carkitStream.close()
+            }
+            val csm = com.shihab.diplay.iap2.session.Iap2Session.open(
+                adaptedCarkit,
+                traceContext = "wired",
+                onTrace = ::debugLog,
+                onArtwork = ::onArtworkTransfer,
+            )
+            this.csm = csm
+            wiredChain(9, "iAP2 CSM channel opened")
+            debugLog("wired iAP2 CSM channel opened")
+
+            val ncmHostMac = ncm.hostMac ?: config.hostMac
+            if (closed || wiredAborted.get()) return
+            debugLog("ncm using hostMac=${ncmHostMac.hexString()}")
+            val airPlayPort = startWiredAirPlayServer(ncm, ncmHostMac)
+            wiredChain(10, "loopback AirPlay listener attached")
+            wiredChain(11, "NCM/lwIP transport attached (userspace)")
+            val mfi = mfiSession?.client
+                ?: throw com.shilapi.xcertplay.transport.IphoneUsbException.DeviceUnavailable(
+                    "MFi coprocessor client is unavailable",
+                )
+            wiredChain(12, "MFi coprocessor client ready")
+            val endpoint = com.shihab.diplay.transport.Iap2WiredCarPlayEndpoint(
+                ipv6Addresses = listOf(config.linkLocal),
+                airPlayPort = airPlayPort,
+                publicKey = identity.publicKeyHex,
+                sourceVersion = airPlayConfig.sourceVersion,
+                deviceIdentifier = ncmHostMac.hexString(),
+            )
+            onStatus(CarPlayStatus.RunningControl)
+            debugLog(
+                "wired iAP2 runtime control starting " +
+                    "location=${config.identification.locationInformationEnabled} " +
+                    "vehicleStatus=${config.identification.vehicleStatusEnabled}",
+            )
+            wiredTcpArrived.set(false)
+            val result = com.shihab.diplay.transport.Iap2WiredControlClient(
+                csm,
+                com.shihab.diplay.mfi.Iap2MfiAuthenticationClient(mfi),
+            ).run(
+                identification = config.identification,
+                endpoint = endpoint,
+                availableCurrentMilliAmps = config.availableCurrentMilliAmps,
+                // Keep the iAP2 control loop alive for the whole session: a fixed 60s deadline used
+                // to return TIMED_OUT right after a successful connect, stopping iAP2 receive while
+                // media kept streaming; the iPhone then saw an unmaintained link and sent EOF ~20s
+                // later (the "dies after ~1 minute" fault). NO_TIMEOUT keeps the bounded 60s handshake
+                // but runs live control until closed/aborted.
+                timeoutMillis = com.shihab.diplay.transport.Iap2WiredControlClient.NO_TIMEOUT_MILLIS,
+                locationProvider = locationProvider,
+                vehicleStatusProvider = vehicleStatusProvider,
+                onIncoming = ::onRouteFrame,
+                onProgress = { message ->
+                    debugLog("wired $message")
+                    if (message == "iap2 tx=0x4301 carplay-start-session") {
+                        wiredChain(14, "iAP2 StartSession (0x4301) sent; waiting for iPhone mDNS/TCP")
+                        if (wiredAirPlaySession == null) wiredTcpArrived.set(false)
+                    }
+                },
+                airPlayTcpArrived = { wiredTcpArrived.get() },
+                airPlayDataRecent = { media.isDataRecent(WIRED_MEDIA_RECENT_MILLIS) },
+            )
+            if (shouldIgnoreWiredControlTerminal(closed, wiredAborted.get(), phase == Phase.WIRED)) {
+                debugLog("wired control loop finished after abort/detach")
+                return
+            }
+            onStatus(
+                when (result.terminal) {
+                    com.shihab.diplay.transport.Iap2WiredControlTerminal.TIMED_OUT ->
+                        CarPlayStatus.Failed("Wired CarPlay control timed out at ${result.stage}; StartSession sent=${result.carPlayStartSessionsSent}")
+                    com.shihab.diplay.transport.Iap2WiredControlTerminal.CHANNEL_CLOSED ->
+                        CarPlayStatus.Failed("CarPlay control channel closed")
+                    com.shihab.diplay.transport.Iap2WiredControlTerminal.PEER_SILENT ->
+                        CarPlayStatus.Failed("Wired CarPlay peer silent; resetting link")
+                    com.shihab.diplay.transport.Iap2WiredControlTerminal.NO_AIRPLAY_TCP ->
+                        CarPlayStatus.Failed("No AirPlay TCP after CarPlay StartSession; resetting link")
+                },
+            )
+        } catch (error: Throwable) {
+            if (!closed && !wiredAborted.get()) fail(error)
+        }
+    }
+
+    /**
+     * Starts the userspace lwIP NCM bridge and an in-process loopback AirPlay listener. iPhone
+     * TCP to port 7000 is injected by the lwIP relay into 127.0.0.1, where the existing Conscrypt
+     * [AirPlaySession] accepts it. Returns the bound port.
+     */
+    private fun startWiredAirPlayServer(
+        ncm: com.shilapi.xcertplay.transport.NcmUsbBridge,
+        hostMac: ByteArray,
+    ): Int {
+        val lwip = com.shilapi.xcertplay.network.LwipNcmBridge(
+            ncm = ncm,
+            hostMac = hostMac,
+            hostLinkLocal = config.linkLocal,
+            onDebugLog = ::debugLog,
+            onError = { fail(it) },
+        )
+        lwip.start()
+        wiredLwip = lwip
+        val server = java.net.ServerSocket()
+        server.reuseAddress = true
+        server.bind(java.net.InetSocketAddress(java.net.InetAddress.getByName("127.0.0.1"), airPlayConfig.port))
+        val port = server.localPort
+        lwip.registerPort(port, true)
+        wiredAirPlayServer = server
+        Thread({ wiredAirPlayAcceptLoop(server) }, "xcertplay-wired-airplay-accept").apply {
+            isDaemon = true
+            start()
+        }
+        debugLog("wired loopback AirPlay listener ready 127.0.0.1:$port")
+        return port
+    }
+
+    private fun wiredAirPlayAcceptLoop(server: java.net.ServerSocket) {
+        try {
+            while (!closed && !wiredAborted.get() && wiredAirPlayServer === server) {
+                val socket = server.accept()
+                socket.tcpNoDelay = true
+                socket.keepAlive = true
+                socket.setSoLinger(true, 0)
+                debugLog("wired AirPlay connection accepted from ${socket.remoteSocketAddress}")
+                val mfi = mfiSession?.client
+                val session = AirPlaySession(
+                    socket = socket,
+                    config = airPlayConfig,
+                    identity = identity,
+                    pairings = pairings,
+                    mfi = mfi,
+                    listener = sessionListener,
+                    media = media,
+                    registerPort = { port, isTcp -> wiredLwip?.registerPort(port, isTcp) },
+                )
+                wiredAirPlaySession = session
+                wiredTcpArrived.set(true)
+                session.start()
+            }
+        } catch (error: Exception) {
+            if (!closed && !wiredAborted.get()) {
+                debugLog("wired AirPlay accept ended: ${error.javaClass.simpleName}: ${error.message}")
+            }
+        }
+    }
+
+    private fun ByteArray.hexString(): String = joinToString("") { "%02x".format(it) }
 
     private fun startWireless(expectedGeneration: Int? = null) {
         val generation = synchronized(wirelessResourceLock) {
@@ -1901,5 +2562,20 @@ class CarPlayController(
         private const val RFCOMM_CONNECT_TIMEOUT_LEGACY_MILLIS = 18_000L
         private const val EXECUTOR_CLOSE_TIMEOUT_MILLIS = 2_000L
         private const val ADAPTER_ADDRESS_PLACEHOLDER = "02:00:00:00:00:00"
+        private const val WIRED_PERMISSION_POLL_TIMEOUT_MILLIS = 10_000L
+        private const val WIRED_PERMISSION_POLL_INTERVAL_MILLIS = 400L
+        private const val WIRED_MEDIA_RECENT_MILLIS = 10_000L
+        // 60s: the iPhone trust dialog appears only when unlocked/awake; a locked or slow-unlock
+        // phone misses the old 15s budget. Per-step wait lives in LockdownPairingClient (10s).
+        private const val WIRED_PAIR_TIMEOUT_MILLIS = 60_000L
+        // Retained for reference; the live iAP2 loop now uses NO_TIMEOUT_MILLIS so a fixed 60s
+        // deadline cannot stop the control channel after a successful connect.
+        private const val WIRED_CONTROL_TIMEOUT_MILLIS = 60_000L
+        private const val MAX_WIRED_REENUMERATION_ATTEMPTS = 3
+        private const val WIRED_REENUMERATION_RETRY_MILLIS = 250L
+        private const val WIRED_REENUMERATION_POLL_MILLIS = 250L
+        /** Poll once considered settled: a fresh device id or a ready config (or after 800ms). */
+        private const val WIRED_REENUMERATION_READY_EARLY_MILLIS = 800L
+        private const val WIRED_REENUMERATION_TIMEOUT_MILLIS = 15_000L
     }
 }

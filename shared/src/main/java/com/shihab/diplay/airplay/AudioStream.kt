@@ -142,13 +142,19 @@ class AudioStream(
                 source.copyInto(nonce, 4, sealedEnd, received)
                 val sample = readU32Be(source, 4)
 
-                val payload = try {
-                    AirPlayCrypto.chachaOpenRange(
+                val plainLength = sealedEnd - RTP_HEADER_LEN - TAG_LEN
+                val rtp = if (plainLength >= 0) AudioPacketBuffers.take(RTP_HEADER_LEN + plainLength) else null
+                try {
+                    if (rtp == null) throw IllegalArgumentException("audio packet has no ciphertext")
+                    source.copyInto(rtp, 0, 0, RTP_HEADER_LEN)
+                    AirPlayCrypto.chachaOpenRangeInto(
                         key, nonce,
                         source, 4, RTP_HEADER_LEN - 4,
                         source, RTP_HEADER_LEN, sealedEnd - RTP_HEADER_LEN,
+                        rtp, RTP_HEADER_LEN,
                     )
                 } catch (error: Exception) {
+                    if (rtp != null) AudioPacketBuffers.give(rtp)
                     val failureNumber = authenticationFailures.incrementAndGet()
                     if (failureNumber == 1) {
                         val logged = if (keepWire) source else source.copyOf(received)
@@ -163,16 +169,13 @@ class AudioStream(
                     stats.processed()
                     continue
                 }
-                val rtp = ByteArray(RTP_HEADER_LEN + payload.size)
-                source.copyInto(rtp, 0, 0, RTP_HEADER_LEN)
-                payload.copyInto(rtp, RTP_HEADER_LEN)
                 val decryptedNumber = decryptedPackets.incrementAndGet()
                 if (decryptedNumber <= FIRST_PACKET_LOG_COUNT) {
                     AppLog.i(
                         TAG,
                         "audio stream type=$streamType packet=$decryptedNumber sample=$sample " +
-                            "wireBytes=$received payloadBytes=${payload.size} " +
-                            "payloadHead=${payload.copyOf(minOf(payload.size, 16)).toHexString()}",
+                            "wireBytes=$received payloadBytes=$plainLength " +
+                            "payloadHead=${rtp.copyOfRange(RTP_HEADER_LEN, RTP_HEADER_LEN + minOf(plainLength, 16)).toHexString()}",
                     )
                 } else if (decryptedNumber % PACKET_LOG_INTERVAL == 0) {
                     AppLog.i(

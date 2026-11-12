@@ -33,8 +33,21 @@ class LauncherIntentTest {
         app.getSharedPreferences("diplay", 0).edit().clear().commit()
         app.getSharedPreferences("xcertplay_airplay", 0).edit().clear().commit()
         CarPlayBackgroundSession.clear()
-        val stop: ((() -> Unit) -> Unit) = { done -> stops++; done() }
-        ReflectionHelpers.setField(CarPlayBackgroundSession, "stopAction", stop)
+        // Build a real live session (controller/sink/display present), not a stop-action-only
+        // phantom: isCarPlayActive now requires a non-null snapshot. Mockito mocks stand in for
+        // the heavy controller/sink; the stop lambda still records teardown for the assertions.
+        val mockController = org.mockito.Mockito.mock(
+            com.shihab.diplay.orchestration.CarPlayController::class.java,
+        )
+        val mockSink = org.mockito.Mockito.mock(
+            com.shihab.diplay.media.AndroidMediaSink::class.java,
+        )
+        val mockDisplay = com.shihab.diplay.session.CarPlaySessionDisplay(
+            1920, 720, android.view.Surface.ROTATION_0, true, true, 1920, 720,
+        )
+        CarPlayBackgroundSession.store(
+            mockController, mockSink, 1920, 720, Any(), mockDisplay,
+        ) { done -> stops++; done() }
     }
 
     @After fun cleanup() {

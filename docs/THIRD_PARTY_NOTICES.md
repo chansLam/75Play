@@ -12,9 +12,9 @@
 
 目标机型为 CS75 Plus **2020** SoftAP，并非上述仓库的直接 fork；合入为改写移植（port）。建议 commit：`merge(changan|legacy): port <hash> …`。
 
-移植前：`git fetch` 上游，与表中 tip 对照；有更新则审完后把「最新提交」改成新 tip。不引入有线 USB、TUN、BYD HUD / cluster。
+移植前：`git fetch` 上游，与表中 tip 对照；有更新则审完后把「最新提交」改成新 tip。不要带回 BYD HUD，也不要把有线改成依赖内核 TUN。本专版 2.0.5 的有线 USB 是仓内 NCM / lwIP，与上表「未移植上游有线提交」不是同一批补丁。导航投仪表保持现有实现，不要改回 BYD 中间层。
 
-本仓库自研能力（悬浮小白点、车机应用列表、全屏沉浸、SoftAP 专版裁剪、Root 全局隐藏导航栏、安卓终端、玻璃 UI 等）不记入上表。
+本仓库自研能力（有线 USB NCM / lwIP、壳层壁纸系统、导航投仪表、顶部温度栏、悬浮小白点、车机应用列表、全屏沉浸、SoftAP 专版裁剪、安卓终端、玻璃 UI 等）不记入上表。
 
 ## 谱系与依赖
 

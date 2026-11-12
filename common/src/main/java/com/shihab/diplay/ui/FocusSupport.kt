@@ -6,6 +6,8 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
 import android.view.View
+import com.shihab.diplay.ui.theme.ShellShape
+import com.shihab.diplay.ui.theme.ShellStroke
 
 /**
  * 方向盘 / 旋钮焦点高亮统一工具（API 19，无 Compose）。
@@ -33,18 +35,18 @@ object FocusSupport {
     fun fillColor(): Int = GlassColors.ACCENT_SOFT_FILL
 
     /** 无背景行的焦点高亮底：青柔光填充 + 2dp 青描边。 */
-    fun rowFocusDrawable(ctx: Context, cornerRadiusDp: Int = 10): GradientDrawable =
+    fun rowFocusDrawable(ctx: Context, cornerRadiusDp: Int = ShellShape.SMALL): GradientDrawable =
         GradientDrawable().apply {
             setColor(fillColor())
-            setStroke(maxOf(1, GlassColors.dp(ctx, 2)), strokeColor())
-            cornerRadius = GlassColors.dp(ctx, cornerRadiusDp).toFloat()
+            setStroke(maxOf(1, GlassColors.dp(ctx, ShellStroke.FOCUS)), strokeColor())
+            setCornerRadius(GlassColors.dp(ctx, cornerRadiusDp).toFloat())
         }
 
     /**
-     * 给原本没有背景的整行 View 加焦点高亮：聚焦时套一层玻璃描边，失焦还原透明。
+     * Adds a tonal focus state to rows that otherwise have no background.
      * 注意：调用前该 View 必须是 clickable + focusable。
      */
-    fun attachRow(view: View, cornerRadiusDp: Int = 10) {
+    fun attachRow(view: View, cornerRadiusDp: Int = ShellShape.SMALL) {
         val focused = rowFocusDrawable(view.context, cornerRadiusDp)
         view.setOnFocusChangeListener { v, hasFocus ->
             v.background = if (hasFocus) focused else null
@@ -55,12 +57,16 @@ object FocusSupport {
      * 已有固定背景的按钮：聚焦时在原背景上叠一圈青描边（透明填充的 GradientDrawable 压在
      * 原背景之上），失焦还原。[cornerRadiusDp] 必须与原背景圆角对齐，否则描边溢出。
      */
-    fun attachStrokeOverlay(view: View, cornerRadiusDp: Int = 10, strokeWidthDp: Int = 2) {
+    fun attachStrokeOverlay(
+        view: View,
+        cornerRadiusDp: Int = ShellShape.SMALL,
+        strokeWidthDp: Int = ShellStroke.FOCUS,
+    ) {
         val normal = view.background
         val overlay = GradientDrawable().apply {
-            setColor(0x00000000)
+            setColor(GlassColors.TRANSPARENT)
             setStroke(maxOf(1, GlassColors.dp(view.context, strokeWidthDp)), strokeColor())
-            cornerRadius = GlassColors.dp(view.context, cornerRadiusDp).toFloat()
+            setCornerRadius(GlassColors.dp(view.context, cornerRadiusDp).toFloat())
         }
         val wrapped = LayerDrawable(arrayOf(normal, overlay))
         view.background = normal

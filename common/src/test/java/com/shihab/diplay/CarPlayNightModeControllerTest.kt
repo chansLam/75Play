@@ -231,7 +231,7 @@ class CarPlayNightModeControllerTest {
         assertFalse(f.controller.night)
         f.clock.advance(1)
         assertTrue(f.controller.night)
-        f.light.emit(30f)
+        f.light.emit(80f)
         f.clock.advance(1_999)
         assertTrue(f.controller.night)
         f.clock.advance(1)
@@ -246,7 +246,7 @@ class CarPlayNightModeControllerTest {
         assertFalse(f.controller.night)
         f.clock.advance(1)
         assertTrue(f.controller.night)
-        f.light.emit(60f)
+        f.light.emit(90f)
         f.clock.advance(1_000)
         assertFalse(f.controller.night)
     }
@@ -261,7 +261,7 @@ class CarPlayNightModeControllerTest {
         f.light.emit(10f)
         assertTrue(f.controller.night)
         assertTrue(f.clock.tasks.isEmpty())
-        f.light.emit(50f)
+        f.light.emit(80f)
         assertFalse(f.controller.night)
     }
 

@@ -11,7 +11,6 @@ import com.shihab.diplay.airplay.AudioCodecKind
 import com.shihab.diplay.airplay.MicrophoneConfig
 import com.shihab.diplay.airplay.MicrophoneCounters
 import com.shihab.diplay.airplay.MicrophonePacketizer
-import com.shihab.diplay.compat.realSdkInt
 import java.io.Closeable
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -161,19 +160,7 @@ internal class MicrophoneUplink(
 
     private fun createRecorder(source: Int, channelMask: Int, bufferSize: Int): AudioRecord? {
         val recorder = try {
-            if (realSdkInt() >= android.os.Build.VERSION_CODES.M) {
-                AudioRecord.Builder()
-                    .setAudioSource(source)
-                    .setAudioFormat(
-                        AndroidAudioFormat.Builder()
-                            .setEncoding(AndroidAudioFormat.ENCODING_PCM_16BIT)
-                            .setSampleRate(config.sampleRate)
-                            .setChannelMask(channelMask)
-                            .build(),
-                    )
-                    .setBufferSizeInBytes(bufferSize)
-                    .build()
-            } else {
+            Api23AudioRecord.create(source, config.sampleRate, channelMask, bufferSize) ?: run {
                 @Suppress("DEPRECATION")
                 AudioRecord(
                     source,
@@ -280,11 +267,7 @@ internal class MicrophoneUplink(
         try {
             while (running.get()) {
                 stats.reading()
-                val count = if (realSdkInt() >= android.os.Build.VERSION_CODES.M) {
-                    recorder.read(readBuffer, 0, readBuffer.size, AudioRecord.READ_BLOCKING)
-                } else {
-                    recorder.read(readBuffer, 0, readBuffer.size)
-                }
+                val count = recorder.read(readBuffer, 0, readBuffer.size)
                 stats.read(count)
                 if (count > 0) clock?.read(recorder, count / 2)
                 if (count < 0) {
@@ -340,12 +323,16 @@ internal class MicrophoneUplink(
         }
     }
 
+    private val uplinkPacket = ByteArray(MicrophonePacketizer.packetLength(config.frameBytes))
+    private val uplinkDatagram = DatagramPacket(uplinkPacket, 0, config.host, config.port)
+
     private fun sendFrame(socket: DatagramSocket, counters: MicrophoneCounters, frame: ByteArray) {
         stats.frameSilent(frame.all { it == 0.toByte() })
         val bodies = if (config.codec == AudioCodecKind.OPUS) {
             opusEncoder?.encode(frame).orEmpty()
         } else {
-            listOf(MicrophonePacketizer.toWirePcm(frame))
+            MicrophonePacketizer.toWirePcmInto(frame, frame.size)
+            listOf(frame)
         }
         stats.encoded(bodies.size, if (bodies.isEmpty()) 1 else bodies.count { it.isEmpty() })
         bodies.forEach { body ->
@@ -364,15 +351,33 @@ internal class MicrophoneUplink(
         body: ByteArray,
         samples: Int,
     ) {
-        val packet = MicrophonePacketizer.sealPacket(
-            key = config.key,
-            payloadType = config.payloadType,
-            counters = counters,
-            body = body,
-            samples = samples,
-        )
+        val packet: ByteArray
+        val length: Int
+        if (uplinkPacket.size >= MicrophonePacketizer.packetLength(body.size)) {
+            packet = uplinkPacket
+            length = MicrophonePacketizer.sealInto(
+                key = config.key,
+                payloadType = config.payloadType,
+                counters = counters,
+                body = body,
+                bodyOffset = 0,
+                bodyLength = body.size,
+                samples = samples,
+                destination = uplinkPacket,
+            )
+        } else {
+            packet = MicrophonePacketizer.sealPacket(
+                key = config.key,
+                payloadType = config.payloadType,
+                counters = counters,
+                body = body,
+                samples = samples,
+            )
+            length = packet.size
+        }
         try {
-            socket.send(DatagramPacket(packet, packet.size, config.host, config.port))
+            uplinkDatagram.setData(packet, 0, length)
+            socket.send(uplinkDatagram)
             stats.sent()
         } catch (error: Exception) {
             stats.sendFailed()
@@ -380,8 +385,11 @@ internal class MicrophoneUplink(
         }
     }
 
-    private fun routeType(recorder: AudioRecord): Int? = if (realSdkInt() >= 23)
-        runCatching { recorder.routedDevice?.type }.getOrNull() else null
+    private fun routeType(recorder: AudioRecord): Int? = runCatching {
+        val device = recorder.javaClass.getMethod("getRoutedDevice").invoke(recorder)
+            ?: return@runCatching null
+        device.javaClass.getMethod("getType").invoke(device) as Int
+    }.getOrNull()
 
     /** Capture can continue with the same recorder if the optional native processor stops working. */
     @Synchronized
@@ -509,8 +517,7 @@ internal class MicrophoneUplink(
  * timestamp when the platform has one, otherwise assumes the newest sample arrived [FALLBACK_LATENCY_NS] ago.
  */
 internal class CaptureClock(private val sampleRate: Int) {
-    private val timestamp = if (realSdkInt() >= android.os.Build.VERSION_CODES.N)
-        android.media.AudioTimestamp() else null
+    private val timestamp = ReflectedAudioTimestamp()
     private var samplesRead = 0L
     private var lastReadSamples = 0
     private var lastReadEndNs = 0L
@@ -519,17 +526,8 @@ internal class CaptureClock(private val sampleRate: Int) {
         samplesRead += samples
         lastReadSamples = samples
         val now = System.nanoTime()
-        val ts = timestamp
-        val stamped = if (realSdkInt() >= android.os.Build.VERSION_CODES.N && ts != null) {
-            runCatching {
-                recorder.getTimestamp(ts, android.media.AudioTimestamp.TIMEBASE_MONOTONIC) == AudioRecord.SUCCESS
-            }.getOrDefault(false)
-        } else false
-        lastReadEndNs = if (stamped && ts != null && ts.nanoTime > 0) {
-            ts.nanoTime + (samplesRead - ts.framePosition) * 1_000_000_000L / sampleRate
-        } else {
-            now - FALLBACK_LATENCY_NS
-        }
+        val stamped = timestamp.endNanos(recorder, samplesRead, sampleRate)
+        lastReadEndNs = stamped ?: (now - FALLBACK_LATENCY_NS)
     }
 
     /** The capture time of the end of the first [samplesIntoRead] samples of the latest read. */
@@ -539,4 +537,27 @@ internal class CaptureClock(private val sampleRate: Int) {
     private companion object {
         const val FALLBACK_LATENCY_NS = 20_000_000L
     }
+}
+
+/** Optional AudioTimestamp support without linking its API 24 type into the dex signature. */
+private class ReflectedAudioTimestamp {
+    private val timestampClass = runCatching { Class.forName("android.media.AudioTimestamp") }.getOrNull()
+    private val timestamp = runCatching { timestampClass?.getConstructor()?.newInstance() }.getOrNull()
+    private val getTimestamp = runCatching {
+        timestampClass?.let {
+            AudioRecord::class.java.getMethod("getTimestamp", it, Int::class.javaPrimitiveType)
+        }
+    }.getOrNull()
+
+    fun endNanos(recorder: AudioRecord, samplesRead: Long, sampleRate: Int): Long? = runCatching {
+        val type = timestampClass ?: return@runCatching null
+        val stamp = timestamp ?: return@runCatching null
+        val method = getTimestamp ?: return@runCatching null
+        val status = method.invoke(recorder, stamp, 0) as Int
+        if (status != AudioRecord.SUCCESS) return@runCatching null
+        val nanoTime = type.getField("nanoTime").getLong(stamp)
+        val framePosition = type.getField("framePosition").getLong(stamp)
+        if (nanoTime <= 0) null
+        else nanoTime + (samplesRead - framePosition) * 1_000_000_000L / sampleRate
+    }.getOrNull()
 }

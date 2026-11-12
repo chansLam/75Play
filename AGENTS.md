@@ -1,11 +1,11 @@
 # AGENTS.md
 
-给在本仓库工作的编码助手的约定。项目：**75Play CS75 Plus 2020**（v2.0.2）。
+给在本仓库工作的编码助手的约定。项目：**75Play CS75 Plus 2020**（v2.0.5）。
 
 ## 产品边界
 
-- 目标车机：Android **4.4.2 / API 19**，`armeabi-v7a`；无线 **Wi‑Fi Direct 优先（默认）**，车机热点（SoftAP）与局域网（Existing Wi‑Fi）为可选方式。
-- **不要**加入：BYD HUD、仪表 cluster、有线 USB CarPlay、多 OEM 车辆数据设置。
+- 目标车机：Android **4.4.2 / API 19**，`armeabi-v7a`。无线默认 **Wi‑Fi Direct**，车机热点（SoftAP）与局域网（Existing Wi‑Fi）可选。有线 USB CarPlay 已在本分支（2.0.5）：插上 iPhone 后点连接会自动改走 USB NCM / lwIP，不依赖车机 TUN。
+- **不要**加入：BYD HUD、多 OEM 车辆数据设置。导航投仪表（`NaviClusterBroadcast`）与有线 USB 已接入，不要删除，也不要改回 BYD 中间层。
 - `minSdk` / `targetSdk` 均为 **19**。
 - **严禁**使用高于 API 19 的新特性代码（Kotlin/Java/`res`/`AndroidManifest` 均适用）。禁止引入 API 20+ 才有的类、方法、常量、注解、权限、资源属性或 Manifest 属性；禁止用 `if (SDK_INT >= …)` / `@RequiresApi` / `Build.VERSION_CODES.L` 及更高 包装后仍调用高 API。`SDK_INT` 分支仅保留 KitKat 侧行为或车机假 SDK 校正（见 `realSdkInt()`）。不要堆 Android 6+ 运行时权限、FGS type、Overlay type、NotificationChannel、JobScheduler 替代路径等手机高版本写法；需要同等能力时只用 API ≤19 的反射/兼容写法，或明确不做。
 - **Activity / 模块**

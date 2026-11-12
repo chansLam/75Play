@@ -70,6 +70,8 @@ object MicrophonePacketizer {
     const val TAG_LEN = 16
     const val NONCE_LEN = 8
 
+    fun packetLength(bodyLength: Int): Int = RTP_HEADER_LEN + bodyLength + TAG_LEN + NONCE_LEN
+
     fun sealPacket(
         key: ByteArray,
         payloadType: Int,
@@ -77,43 +79,56 @@ object MicrophonePacketizer {
         body: ByteArray,
         samples: Int,
     ): ByteArray {
-        val header = ByteArray(RTP_HEADER_LEN)
-        header[0] = 0x80.toByte()
-        header[1] = (payloadType and 0x7f).toByte()
-        putU16Be(header, 2, counters.sequence)
-        putU32Be(header, 4, counters.timestamp)
+        val packet = ByteArray(packetLength(body.size))
+        val written = sealInto(key, payloadType, counters, body, 0, body.size, samples, packet)
+        return if (written == packet.size) packet else packet.copyOf(written)
+    }
 
-        val nonce = ByteArray(12)
-        putU64Le(nonce, 4, counters.nonce)
-        val sealed = AirPlayCrypto.chachaSeal(
-            key = key,
-            nonce = nonce,
-            plaintext = body,
-            aad = header.copyOfRange(4, RTP_HEADER_LEN),
+    /** Writes one sealed RTP packet into [destination] and returns its length. */
+    fun sealInto(
+        key: ByteArray,
+        payloadType: Int,
+        counters: MicrophoneCounters,
+        body: ByteArray,
+        bodyOffset: Int,
+        bodyLength: Int,
+        samples: Int,
+        destination: ByteArray,
+    ): Int {
+        val packetLength = packetLength(bodyLength)
+        require(destination.size >= packetLength) { "microphone packet buffer is short" }
+        destination[0] = 0x80.toByte()
+        destination[1] = (payloadType and 0x7f).toByte()
+        putU16Be(destination, 2, counters.sequence)
+        putU32Be(destination, 4, counters.timestamp)
+        val sealed = AirPlayCrypto.chachaSealInto(
+            key, counters.nonce, destination, 4, RTP_HEADER_LEN - 4,
+            body, bodyOffset, bodyLength, destination, RTP_HEADER_LEN,
         )
-
-        val packet = ByteArray(RTP_HEADER_LEN + sealed.size + NONCE_LEN)
-        header.copyInto(packet, 0)
-        sealed.copyInto(packet, RTP_HEADER_LEN)
-        putU64Le(packet, RTP_HEADER_LEN + sealed.size, counters.nonce)
-
+        putU64Le(destination, RTP_HEADER_LEN + sealed, counters.nonce)
         counters.sequence = (counters.sequence + 1) and 0xffff
         counters.timestamp += samples
         counters.nonce++
-        return packet
+        return RTP_HEADER_LEN + sealed + NONCE_LEN
     }
 
     /** Captured Android PCM is little-endian; CarPlay's wired microphone payload is big-endian. */
     fun toWirePcm(pcmLittleEndian: ByteArray): ByteArray {
         val output = pcmLittleEndian.copyOf()
+        toWirePcmInto(output, output.size)
+        return output
+    }
+
+    /** Swaps [length] bytes of [pcm] in place. */
+    fun toWirePcmInto(pcm: ByteArray, length: Int) {
+        val limit = minOf(length, pcm.size)
         var index = 0
-        while (index + 1 < output.size) {
-            val first = output[index]
-            output[index] = output[index + 1]
-            output[index + 1] = first
+        while (index + 1 < limit) {
+            val first = pcm[index]
+            pcm[index] = pcm[index + 1]
+            pcm[index + 1] = first
             index += 2
         }
-        return output
     }
 
     private fun putU16Be(target: ByteArray, offset: Int, value: Int) {

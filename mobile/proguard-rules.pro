@@ -31,6 +31,12 @@
     @android.webkit.JavascriptInterface <methods>;
 }
 
+# --- LwipNcmNative: onTxFrame(byte[]) is invoked from native (lwip_ncm_relay.c) via GetMethodID
+#      string lookup and has no Java call site, so R8 shrink removes it as dead code, breaking the
+#      wired CarPlay NCM relay at startup ("no method with name='onTxFrame'"). Keep the whole class
+#      (native methods + callback) so JNI can find both the class and the method. ---
+-keep class com.shilapi.xcertplay.network.LwipNcmNative { *; }
+
 # --- BouncyCastle: keep the WHOLE library. CarPlay/AirPlay auth (LocalMfiAuthenticationClient)
 #      instantiates BouncyCastleProvider and resolves algorithms (NONEwithECDSA, EC KeyFactory,
 #      X.509 CertificateFactory) by name; the provider's algorithm registry is reached via

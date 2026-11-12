@@ -19,6 +19,9 @@ import com.shihab.diplay.host.R
 import com.shihab.diplay.network.WifiP2pChannels
 import com.shihab.diplay.orchestration.WirelessHotspotMode
 import com.shihab.diplay.ui.settings.GlassSettingsRows
+import com.shihab.diplay.ui.theme.ShellShape
+import com.shihab.diplay.ui.theme.ShellSpacing
+import com.shihab.diplay.util.AppLog
 
 /**
  * 主页连接中心三 Tab（Wi‑Fi Direct / 车机热点 / 局域网）的内容区。
@@ -119,7 +122,7 @@ internal class HomeConnectionTabs(
         val textSize = LayoutMetrics.homeBodyTextSize(ctx)
         val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         if (!host.isCarHotspotEnabled()) {
-            col.addView(GlassSettingsRows.ghostButton(ctx, ctx.getString(R.string.home_open_car_hotspot), cornerRadiusDp = 14) {
+            col.addView(GlassSettingsRows.ghostButton(ctx, ctx.getString(R.string.home_open_car_hotspot), cornerRadiusDp = ShellShape.SMALL) {
                 Thread({
                     host.openCarHotspot()
                     home.view?.post { if (home.isAdded) refresh() }
@@ -141,14 +144,88 @@ internal class HomeConnectionTabs(
         val ssRow = GlassSettingsRows.rowWrap(ctx)
         ssRow.addView(statusLabel(ctx.getString(R.string.hotspot_ssid)),
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        ssRow.addView(GlassSettingsRows.capVal(ctx, ssid.ifBlank { ctx.getString(R.string.home_not_set) }))
+        ssRow.addView(GlassSettingsRows.capPick(ctx, ssid.ifBlank { ctx.getString(R.string.home_not_set) }) { promptHotspotSsid(ctx) })
         col.addView(ssRow)
         val pwRow = GlassSettingsRows.rowWrap(ctx)
         pwRow.addView(statusLabel(ctx.getString(R.string.hotspot_password)),
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        pwRow.addView(GlassSettingsRows.capVal(ctx, pass.ifBlank { ctx.getString(R.string.home_not_set) }))
+        pwRow.addView(GlassSettingsRows.capPick(ctx, pass.ifBlank { ctx.getString(R.string.home_not_set) }) { promptHotspotPassword(ctx) })
         col.addView(pwRow)
         return col
+    }
+
+    /** Editable default hotspot name (SSID); blank resets to the built-in default 75Play. */
+    private fun promptHotspotSsid(ctx: android.content.Context) {
+        DiPlayDialog.showInput(
+            ctx,
+            title = ctx.getString(R.string.hotspot_ssid),
+            hint = ctx.getString(R.string.hotspot_ssid),
+            initial = host.carHotspotSsid(),
+            assist = ctx.getString(R.string.hotspot_ssid_edit_hint),
+            validator = { input ->
+                when {
+                    input.isBlank() -> null // blank = fall back to the built-in default
+                    input.encodeToByteArray().size > 32 -> ctx.getString(R.string.hotspot_ssid_must_be_at_most_32_utf_8_bytes)
+                    '\u0000' in input -> ctx.getString(R.string.hotspot_ssid_contains_u_0000)
+                    else -> null
+                }
+            },
+            onSave = { value ->
+                AirPlayPersistence.saveManualHotspotSsid(ctx, value.trim())
+                refresh()
+                reapplyHotspot(ctx)
+            },
+        )
+    }
+
+    /** Editable default hotspot password; blank resets to the built-in default. */
+    private fun promptHotspotPassword(ctx: android.content.Context) {
+        DiPlayDialog.showInput(
+            ctx,
+            title = ctx.getString(R.string.hotspot_password),
+            hint = ctx.getString(R.string.hotspot_password),
+            initial = host.carHotspotPassphrase(),
+            assist = ctx.getString(R.string.hotspot_password_edit_hint),
+            validator = { input ->
+                when {
+                    input.isBlank() -> null // blank = fall back to the built-in default
+                    '\u0000' in input -> ctx.getString(R.string.hotspot_password_contains_u_0000)
+                    input.length !in 8..63 -> ctx.getString(R.string.wpa2_wpa3_password_must_be_8_63_characters)
+                    else -> null
+                }
+            },
+            onSave = { value ->
+                AirPlayPersistence.saveManualHotspotPassphrase(ctx, value.trim())
+                refresh()
+                reapplyHotspot(ctx)
+            },
+        )
+    }
+
+    /**
+     * Reapplies the car hotspot with the just-saved name/password: the firmware's SoftAP enable
+     * reports "already on" when the hotspot is running, so we must close it first, then reopen it
+     * with the new credentials (openCarHotspot persists them itself). Both steps are blocking
+     * (shell + readiness poll), so they run on a background daemon thread; the outcome is shown
+     * with a toast so a failed reapply is always visible.
+     */
+    private fun reapplyHotspot(ctx: android.content.Context) {
+        host.showGlassToast(ctx.getString(R.string.hotspot_reapplying), DiPlayToast.Type.INFO)
+        Thread({
+            val closed = host.closeCarHotspot()
+            val opened = host.openCarHotspot()
+            val ok = opened
+            AppLog.d("DiPlay-Hotspot", "reapply close=$closed open=$opened ok=$ok")
+            home.view?.post {
+                if (!home.isAdded) return@post
+                if (ok) {
+                    host.showGlassToast(ctx.getString(R.string.hotspot_reapplied), DiPlayToast.Type.SUCCESS)
+                } else {
+                    host.showGlassToast(ctx.getString(R.string.hotspot_reapply_failed), DiPlayToast.Type.ERROR)
+                }
+                refresh()
+            }
+        }, "diplay-hotspot-reapply").apply { isDaemon = true }.start()
     }
 
     private fun buildLanTab(ctx: android.content.Context): View {
@@ -169,7 +246,7 @@ internal class HomeConnectionTabs(
             wifiRow.addView(GlassSettingsRows.capVal(ctx, cur, if (connecting) GlassColors.CAP_TEXT else GlassColors.SUCCESS))
             col.addView(wifiRow)
             col.addView(
-                GlassSettingsRows.ghostButton(ctx, ctx.getString(R.string.home_choose_other_wifi), cornerRadiusDp = 14) {
+                GlassSettingsRows.ghostButton(ctx, ctx.getString(R.string.home_choose_other_wifi), cornerRadiusDp = ShellShape.SMALL) {
                     showWifiPickerDialog(excludeSsid = systemSsid.ifBlank { cur })
                 },
                 lpFull(ctx, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
@@ -192,7 +269,7 @@ internal class HomeConnectionTabs(
         val list = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         list.addView(
             label(ctx, ctx.getString(R.string.home_scanning), LayoutMetrics.homeMutedTextSize(ctx), GlassColors.TEXT_BODY).apply {
-                setPadding(0, dp(4), 0, dp(4))
+                setPadding(0, dp(ShellSpacing.EXTRA_SMALL), 0, dp(ShellSpacing.EXTRA_SMALL))
             },
         )
         val dialog = DiPlayDialog.showCustom(
@@ -208,7 +285,7 @@ internal class HomeConnectionTabs(
             if (networks.isEmpty()) {
                 list.addView(
                     label(ctx, ctx.getString(R.string.home_no_wifi_networks), LayoutMetrics.homeMutedTextSize(ctx), GlassColors.TEXT_MUTED).apply {
-                        setPadding(0, dp(8), 0, dp(8))
+                        setPadding(0, dp(ShellSpacing.SMALL), 0, dp(ShellSpacing.SMALL))
                     },
                 )
             } else {
@@ -226,7 +303,7 @@ internal class HomeConnectionTabs(
         val list = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         list.addView(
             label(ctx, ctx.getString(R.string.home_scanning), LayoutMetrics.homeMutedTextSize(ctx), GlassColors.TEXT_BODY).apply {
-                setPadding(0, dp(8), 0, 0)
+                setPadding(0, dp(ShellSpacing.SMALL), 0, 0)
             },
         )
         val listScroll = ScrollView(ctx).apply {
@@ -250,7 +327,7 @@ internal class HomeConnectionTabs(
             if (networks.isEmpty()) {
                 list.addView(
                     label(ctx, ctx.getString(R.string.home_no_wifi_networks), LayoutMetrics.homeMutedTextSize(ctx), GlassColors.TEXT_MUTED).apply {
-                        setPadding(0, dp(8), 0, 0)
+                        setPadding(0, dp(ShellSpacing.SMALL), 0, 0)
                     },
                 )
             } else {
@@ -313,20 +390,14 @@ internal class HomeConnectionTabs(
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(10), 0, dp(10))
+            setPadding(0, dp(ShellSpacing.MEDIUM), 0, dp(ShellSpacing.MEDIUM))
             isClickable = true
             isFocusable = true
             setOnClickListener { onClick() }
             FocusSupport.attachRow(this)
         }
-        row.addView(label(ctx, net.ssid, LayoutMetrics.homeBodyTextSize(ctx), GlassColors.INK).apply { setPadding(0, 0, dp(8), 0) },
+        row.addView(label(ctx, net.ssid, LayoutMetrics.homeBodyTextSize(ctx), GlassColors.INK).apply { setPadding(0, 0, dp(ShellSpacing.SMALL), 0) },
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        if (net.secured) {
-            // 锁图标是装饰性提示，不进无障碍遍历（SSID 与「点按连接」文案已自解释）。
-            row.addView(label(ctx, "🔒", 13f, GlassColors.TEXT_MUTED).apply {
-                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            })
-        }
         row.addView(label(ctx, ctx.getString(R.string.home_tap_to_connect), LayoutMetrics.homeMutedTextSize(ctx), GlassColors.CAP_TEXT))
         return row
     }
@@ -403,5 +474,5 @@ internal class HomeConnectionTabs(
     private fun lpFull(ctx: android.content.Context, h: Int): LinearLayout.LayoutParams =
         LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, h)
 
-    // NU-04：cap / ghostButton / rowWrap 已抽到 [GlassSettingsRows]（ghostButton 圆角 14 参数化）。
+    // Shared value, secondary-button, and row containers live in GlassSettingsRows.
 }

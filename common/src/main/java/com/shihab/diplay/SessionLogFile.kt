@@ -21,13 +21,18 @@ internal object ActiveSessionLog {
 }
 
 /** Bounded, private diagnostics. Each write is redacted before touching storage. */
-internal class SessionLogFile(val file: File) : Closeable {
+internal class SessionLogFile(val file: File, private val archiveBase: String = "previous") : Closeable {
     private val lock = Any()
     @Volatile
     private var accept = true
     private val writer = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "diplay-session-log").apply { isDaemon = true }
     }
+    // Per-instance archive names so multiple logs (diplay.log, connect.log) never collide on the
+    // same "previous.log" when they live in the same directory.
+    private val archiveNames: List<String> =
+        if (realSdkInt() < 21) listOf("$archiveBase.log", "$archiveBase-2.log")
+        else listOf("$archiveBase.log") + (2..7).map { "$archiveBase-$it.log" }
 
     fun reset(header: String) {
         val safeHeader = DiagnosticRedactor.redact(header) ?: header
@@ -77,12 +82,12 @@ internal class SessionLogFile(val file: File) : Closeable {
 
     private fun rotate() {
         if (!file.exists() || file.length() == 0L) return
-        for (index in ARCHIVE_NAMES.lastIndex downTo 1) {
-            val source = File(file.parentFile, ARCHIVE_NAMES[index - 1])
-            val destination = File(file.parentFile, ARCHIVE_NAMES[index])
+        for (index in archiveNames.lastIndex downTo 1) {
+            val source = File(file.parentFile, archiveNames[index - 1])
+            val destination = File(file.parentFile, archiveNames[index])
             if (source.exists()) source.copyTo(destination, overwrite = true)
         }
-        file.copyTo(File(file.parentFile, ARCHIVE_NAMES.first()), overwrite = true)
+        file.copyTo(File(file.parentFile, archiveNames.first()), overwrite = true)
     }
 
     override fun close() {
@@ -100,6 +105,12 @@ internal class SessionLogFile(val file: File) : Closeable {
             } else {
                 listOf("previous.log") + (2..7).map { "previous-$it.log" }
             }
-        val REPORT_NAMES = ARCHIVE_NAMES.reversed() + "diplay.log"
+        private val CONNECT_ARCHIVE_NAMES: List<String> =
+            if (realSdkInt() < 21) {
+                listOf("connect-prev.log", "connect-prev-2.log")
+            } else {
+                listOf("connect-prev.log") + (2..7).map { "connect-prev-$it.log" }
+            }
+        val REPORT_NAMES = ARCHIVE_NAMES.reversed() + "diplay.log" + CONNECT_ARCHIVE_NAMES.reversed() + "connect.log"
     }
 }

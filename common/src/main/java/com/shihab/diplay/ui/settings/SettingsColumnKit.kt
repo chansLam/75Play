@@ -30,7 +30,7 @@ internal abstract class SettingsColumnKit(private val page: Fragment) {
         onConfirm: (Boolean) -> Unit,
     ) = GlassSettingsRows.reconnectSwitchRow(ctx, host, title, value, onConfirm)
 
-    /** 玻璃下拉：紧凑宽高 + 打开期间压制系统导航栏。 */
+    /** Compact dropdown that keeps the system navigation bar hidden while open. */
     protected open fun showDropdown(
         anchor: View,
         labels: List<String>,

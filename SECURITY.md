@@ -9,7 +9,7 @@
 
 ## 隐私与诊断
 
-- **无账号、无远程认证、无自动上传。** 车机与 iPhone 经 Wi‑Fi Direct、车机热点（SoftAP）或同一局域网直连。
+- **无账号、无远程认证、无自动上传。** 车机与 iPhone 经 Wi‑Fi Direct、车机热点（SoftAP）、同一局域网，或有线 USB 直连。
 - 偏好与配对材料在应用私有存储；不进 Android 备份；卸载即清除。导出到下载目录的文件需自行删除。
 - 诊断报告仅在你主动导出时生成；公开发布前请审阅，**勿**含热点密码或配对记录。
 - 崩溃日志可能位于 `/sdcard/Download/diplay-crash.log`。
@@ -17,4 +17,4 @@
 
 ## English (short)
 
-Do not commit keystores, passwords, or offline-MFi assets. Public APKs may embed an extractable experimental accessory identity. There is no account or telemetry. Review diagnostics before posting. Build notes: `docs/BUILD.md`.
+Do not commit keystores, passwords, or offline-MFi assets. Public APKs may embed an extractable experimental accessory identity. There is no account or telemetry. The phone links over Wi‑Fi Direct, the car hotspot, the same LAN, or a USB cable. Review diagnostics before posting. Build notes: `docs/BUILD.md`.

@@ -7,7 +7,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** IA coverage for the glass three-page shell (replaces obsolete category-rail policy tests). */
+/** IA coverage for the three-page shell and its fully visible settings groups. */
 class SettingsLayoutPolicyTest {
     @Test fun everySettingsSectionHasExactlyOneShellPage() {
         assertEquals(SettingsShellPage.entries.toSet(), SettingsInformationArchitecture.sectionsByPage.keys)
@@ -19,6 +19,7 @@ class SettingsLayoutPolicyTest {
     @Test fun glassPagesMatchProductShell() {
         assertTrue(SettingsInformationArchitecture.sectionsByPage[SettingsShellPage.HOME]!!.contains(SettingsSection.CONNECTION_TABS))
         assertTrue(SettingsInformationArchitecture.sectionsByPage[SettingsShellPage.SETTINGS]!!.contains(SettingsSection.DISPLAY_AND_PERFORMANCE))
+        assertTrue(SettingsInformationArchitecture.sectionsByPage[SettingsShellPage.SETTINGS]!!.contains(SettingsSection.AUDIO_ROUTING))
         assertTrue(SettingsInformationArchitecture.sectionsByPage[SettingsShellPage.SETTINGS]!!.contains(SettingsSection.VEHICLE_CONTROLS))
         assertTrue(SettingsInformationArchitecture.sectionsByPage[SettingsShellPage.SETTINGS]!!.contains(SettingsSection.LANGUAGE))
         assertTrue(SettingsInformationArchitecture.sectionsByPage[SettingsShellPage.ABOUT]!!.contains(SettingsSection.DIAGNOSTICS))

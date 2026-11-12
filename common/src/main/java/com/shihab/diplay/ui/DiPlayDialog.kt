@@ -4,8 +4,12 @@ import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.app.Activity
 import android.app.Dialog
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.Intent
+import android.content.IntentFilter
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
@@ -14,7 +18,10 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.Gravity
+import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.Window
 import android.view.animation.LinearInterpolator
@@ -23,16 +30,25 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ImageView
+import com.shihab.diplay.AirPlayPersistence
 import com.shihab.diplay.CarAppCatalog
+import com.shihab.diplay.host.GenericSwcAction
+import com.shihab.diplay.host.GenericSwcCode
+import com.shihab.diplay.host.GenericSwcLearn
+import com.shihab.diplay.host.GenericSwcMap
+import com.shihab.diplay.host.HeadUnitKeyEvents
 import com.shihab.diplay.host.ImmersiveBars
 import com.shihab.diplay.host.R
+import com.shihab.diplay.ui.theme.ShellMotion
+import com.shihab.diplay.ui.theme.ShellShape
+import com.shihab.diplay.ui.theme.ShellType
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 
 /**
- * Glass dialog toolkit for the DiPlay UI. API 19 safe (no Material3 / RenderEffect).
- * Window is always fullscreen + overlay; the glass panel is centered inside so the
+ * Tonal dialog toolkit for the DiPlay UI using API 19 View APIs only.
+ * Window is always fullscreen + overlay; the filled panel is centered inside so the
  * head-unit side navigation bar is never uncovered by a partial dialog window.
  * Panel width follows [LayoutMetrics.DialogSize] (Material-aligned 320 / 448 / 560dp caps).
  */
@@ -42,6 +58,7 @@ object DiPlayDialog {
 
     /** Back closes the top dialog instead of navigating the page underneath it. */
     fun consumeBack(): Boolean {
+        if (com.shihab.diplay.host.GenericSwcLearn.disarm()) return true
         val dialog = openDialogs.mapNotNull { it.get() }.lastOrNull { it.isShowing } ?: return false
         dialog.cancel()
         return true
@@ -196,15 +213,15 @@ object DiPlayDialog {
         ).apply { topMargin = GlassColors.dp(context, 4); bottomMargin = GlassColors.dp(context, 4) }
     }
 
-    private fun checkGradient(context: Context, on: Boolean): android.graphics.drawable.GradientDrawable =
+    private fun checkMarkDrawable(context: Context, on: Boolean): android.graphics.drawable.GradientDrawable =
         android.graphics.drawable.GradientDrawable().apply {
-            cornerRadius = GlassColors.dp(context, 6).toFloat()
+            setCornerRadius(GlassColors.dp(context, ShellShape.EXTRA_SMALL).toFloat())
             if (on) {
                 setColor(GlassColors.ACCENT)
-                setStroke(0, android.graphics.Color.TRANSPARENT)
+                setStroke(0, GlassColors.TRANSPARENT)
             } else {
                 setColor(GlassColors.CARD)
-                setStroke(0, android.graphics.Color.TRANSPARENT)
+                setStroke(0, GlassColors.TRANSPARENT)
             }
         }
 
@@ -234,7 +251,7 @@ object DiPlayDialog {
         setOnClickListener { listener() }
         // 方向盘确定键可触发；聚焦叠青描边（主/危险钮圆角 16，次级 12）。
         isFocusable = true
-        FocusSupport.attachStrokeOverlay(this, cornerRadiusDp = 14)
+        FocusSupport.attachStrokeOverlay(this, cornerRadiusDp = ShellShape.SMALL)
     }
 
     /**
@@ -250,7 +267,7 @@ object DiPlayDialog {
                 if (dialog.isShowing) runCatching { dialog.cancel() }
             }
         }
-        // Absorb clicks on the glass panel so they don't dismiss via the scrim.
+        // Absorb clicks on the panel so they do not dismiss through the scrim.
         panel.isClickable = true
         val plp = panel.layoutParams
         val w = when {
@@ -262,25 +279,237 @@ object DiPlayDialog {
             else -> ViewGroup.LayoutParams.WRAP_CONTENT
         }
         root.addView(panel, FrameLayout.LayoutParams(w, h, Gravity.CENTER))
+        mount(dialog, root, allowFocus)
+    }
 
+    /**
+     * 向上滑或点「下一张」为 +1，向下滑或点「上一张」为 -1。
+     * 位移不够、或横向位移更大时不切换。
+     */
+    internal fun verticalStep(dx: Float, dy: Float, slop: Int): Int? {
+        val distance = kotlin.math.abs(dy)
+        if (distance <= slop || distance <= kotlin.math.abs(dx)) return null
+        return if (dy < 0f) 1 else -1
+    }
+
+    /** 全屏看一张图。返回关闭；确定把当前这张交给调用方，由调用方写入后再关闭。 */
+    fun showImagePreview(
+        context: Context,
+        bitmap: Bitmap,
+        onConfirm: (Bitmap) -> Unit,
+        onStep: ((Int) -> Unit)? = null,
+    ): WallpaperPreview {
+        val dialog = themed(context)
+        dialog.setCanceledOnTouchOutside(false)
+        val image = ImageView(context).apply {
+            setImageBitmap(bitmap)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            contentDescription = context.getString(R.string.settings_wallpaper_thumb_cd)
+        }
+        val note = TextView(context).apply {
+            gravity = Gravity.CENTER
+            setTextColor(GlassColors.TEXT_PRIMARY)
+            textSize = LayoutMetrics.ghostTextSize(context)
+            setBackgroundResource(GlassColors.dialogBg())
+            val inset = GlassColors.dp(context, 16)
+            setPadding(inset, inset, inset, inset)
+            visibility = View.GONE
+        }
+        val spinner = ProgressBar(context).apply { visibility = View.GONE }
+        val back = dialogButton(
+            context,
+            context.getString(R.string.back),
+            GlassColors.btnSecondary(),
+            GlassColors.BTN_SECONDARY_TEXT,
+        ) { dialog.cancel() }
+        val confirm = dialogButton(
+            context,
+            context.getString(R.string.dialog_ok),
+            GlassColors.btnPrimary(),
+            GlassColors.NAV_SELECTED_TEXT,
+        ) {}
+        val previous = dialogButton(
+            context,
+            context.getString(R.string.settings_wallpaper_previous),
+            GlassColors.btnSecondary(),
+            GlassColors.BTN_SECONDARY_TEXT,
+        ) {}
+        val next = dialogButton(
+            context,
+            context.getString(R.string.settings_wallpaper_next),
+            GlassColors.btnSecondary(),
+            GlassColors.BTN_SECONDARY_TEXT,
+        ) {}
+        val preview = WallpaperPreview(dialog, image, note, spinner, back, confirm, previous, next, bitmap)
+        confirm.setOnClickListener {
+            if (!preview.acceptsInput()) return@setOnClickListener
+            preview.lockForSave()
+            onConfirm(preview.bitmap())
+        }
+        previous.setOnClickListener {
+            if (previous.isEnabled && preview.acceptsInput()) onStep?.invoke(-1)
+        }
+        next.setOnClickListener {
+            if (next.isEnabled && preview.acceptsInput()) onStep?.invoke(1)
+        }
+        val slop = ViewConfiguration.get(context).scaledTouchSlop * 3
+        var downX = 0f
+        var downY = 0f
+        image.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = event.x
+                    downY = event.y
+                }
+                MotionEvent.ACTION_UP -> {
+                    val step = verticalStep(event.x - downX, event.y - downY, slop) ?: return@setOnTouchListener true
+                    val allowed = if (step < 0) previous.isEnabled else next.isEnabled
+                    if (allowed && preview.acceptsInput()) onStep?.invoke(step)
+                }
+            }
+            true
+        }
+        val pad = GlassColors.dp(context, 16)
+        val actions = buttonRow(context, back, confirm).apply { setPadding(pad, pad, pad, pad) }
+        val gap = GlassColors.dp(context, 12)
+        val side = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(previous, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, LayoutMetrics.disconnectBtnH(context)))
+            addView(View(context), LinearLayout.LayoutParams(1, gap))
+            addView(next, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, LayoutMetrics.disconnectBtnH(context)))
+        }
+        val lift = LayoutMetrics.disconnectBtnH(context) + pad
+        val root = FrameLayout(context).apply {
+            setBackgroundColor(GlassColors.OVERLAY)
+            isClickable = true
+            addView(image, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            addView(spinner, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+            addView(note, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+            addView(
+                side,
+                FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.END or Gravity.CENTER_VERTICAL).apply {
+                    marginEnd = pad
+                    bottomMargin = lift
+                },
+            )
+            addView(
+                actions,
+                FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM),
+            )
+        }
+        dialog.setOnDismissListener { preview.release() }
+        mount(dialog, root, allowFocus = false)
+        return preview
+    }
+
+    class WallpaperPreview internal constructor(
+        val dialog: Dialog,
+        private val image: ImageView,
+        private val note: TextView,
+        private val spinner: ProgressBar,
+        private val back: Button,
+        private val confirm: Button,
+        private val previous: Button,
+        private val next: Button,
+        private var bitmap: Bitmap,
+    ) {
+        private var busy = false
+        private var locked = false
+        private var hasPrevious = false
+        private var hasNext = false
+
+        init { applyEnds() }
+
+        fun bitmap(): Bitmap = bitmap
+
+        fun acceptsInput(): Boolean = !busy && !locked
+
+        fun replace(nextBitmap: Bitmap) {
+            if (nextBitmap === bitmap) return
+            image.setImageDrawable(null)
+            val previousBitmap = bitmap
+            bitmap = nextBitmap
+            image.setImageBitmap(nextBitmap)
+            if (!previousBitmap.isRecycled) previousBitmap.recycle()
+            note.visibility = View.GONE
+        }
+
+        fun showNote(text: String) {
+            note.text = text
+            note.visibility = View.VISIBLE
+        }
+
+        fun setEnds(hasPrevious: Boolean, hasNext: Boolean) {
+            this.hasPrevious = hasPrevious
+            this.hasNext = hasNext
+            if (acceptsInput()) applyEnds()
+        }
+
+        fun setBusy(value: Boolean) {
+            busy = value
+            spinner.visibility = if (value) View.VISIBLE else View.GONE
+            if (locked) return
+            if (value) {
+                previous.isEnabled = false
+                next.isEnabled = false
+                confirm.isEnabled = false
+            } else {
+                confirm.isEnabled = true
+                applyEnds()
+            }
+        }
+
+        fun lockForSave() {
+            locked = true
+            busy = true
+            spinner.visibility = View.VISIBLE
+            back.isEnabled = false
+            confirm.isEnabled = false
+            previous.isEnabled = false
+            next.isEnabled = false
+            dialog.setCancelable(false)
+        }
+
+        fun unlock() {
+            locked = false
+            busy = false
+            spinner.visibility = View.GONE
+            back.isEnabled = true
+            confirm.isEnabled = true
+            dialog.setCancelable(true)
+            applyEnds()
+        }
+
+        fun release() {
+            image.setImageDrawable(null)
+            if (!bitmap.isRecycled) bitmap.recycle()
+        }
+
+        private fun applyEnds() {
+            previous.isEnabled = hasPrevious
+            next.isEnabled = hasNext
+        }
+    }
+
+    private fun mount(dialog: Dialog, content: View, allowFocus: Boolean) {
         val window = dialog.window ?: return
         // 无窗口动画：部分车机 ROM 在 enter 动画期间重新评估导航栏。
         window.setWindowAnimations(0)
-        window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+        window.setBackgroundDrawable(ColorDrawable(GlassColors.TRANSPARENT))
         window.setDimAmount(0f)
         window.addFlags(
             android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN or
                 android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
                 android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
         )
-        window.decorView.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+        window.decorView.setBackgroundDrawable(ColorDrawable(GlassColors.TRANSPARENT))
         track(dialog)
         dialog.setContentView(
-            root,
+            content,
             ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
         )
         window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-        ImmersiveBars.showDialogGuarded(dialog, activityOf(ctx), allowFocus = allowFocus)
+        ImmersiveBars.showDialogGuarded(dialog, activityOf(dialog.context), allowFocus = allowFocus)
     }
 
     /** Confirmation (danger-capable). Buttons: cancel / confirm. */
@@ -303,7 +532,7 @@ object DiPlayDialog {
         val confirmBtn = dialogButton(
             context, confirm,
             if (danger) GlassColors.btnDanger() else GlassColors.btnPrimary(),
-            if (danger) GlassColors.WARNING else GlassColors.NAV_SELECTED_TEXT,
+            if (danger) GlassColors.BTN_DANGER_TEXT else GlassColors.NAV_SELECTED_TEXT,
         ) { applied = true; d.dismiss(); onConfirm() }
         shell.setFooter(buttonRow(context, cancelBtn, confirmBtn))
         shell.ready()
@@ -360,7 +589,7 @@ object DiPlayDialog {
         ).apply { topMargin = GlassColors.dp(context, 8); bottomMargin = GlassColors.dp(context, 4) })
         val error = TextView(context).apply {
             setTextColor(GlassColors.WARNING)
-            textSize = 13f
+            textSize = ShellType.CAPTION
             visibility = View.GONE
             setPadding(0, GlassColors.dp(context, 4), 0, 0)
         }
@@ -414,10 +643,10 @@ object DiPlayDialog {
             row.addView(label, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             if (index == current) {
                 row.addView(View(context).apply {
-                    background = android.graphics.drawable.GradientDrawable(
-                        android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
-                        intArrayOf(GlassColors.ACCENT_LIFT, GlassColors.ACCENT_DEEP),
-                    ).apply { cornerRadius = GlassColors.dp(context, 2).toFloat() }
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        setColor(GlassColors.ACCENT)
+                        setCornerRadius(GlassColors.dp(context, ShellShape.EXTRA_SMALL).toFloat())
+                    }
                     layoutParams = LinearLayout.LayoutParams(GlassColors.dp(context, 4), GlassColors.dp(context, 16))
                 })
             }
@@ -447,8 +676,7 @@ object DiPlayDialog {
                 text = option
                 isChecked = state.contains(index)
                 setTextColor(GlassColors.TEXT_BODY)
-                buttonTintList = android.content.res.ColorStateList.valueOf(GlassColors.ACCENT)
-                setMinimumHeight(GlassColors.dp(context, 44))
+                setMinimumHeight(LayoutMetrics.rowMinH(context))
                 setOnCheckedChangeListener { _, isChecked ->
                     if (isChecked) state.add(index) else state.remove(index)
                 }
@@ -509,7 +737,7 @@ object DiPlayDialog {
         spinner.addView(ProgressRing(context))
         spinner.addView(TextView(context).apply {
             text = "75Play"
-            textSize = 14f
+            textSize = ShellType.LABEL
             setTextColor(GlassColors.ACCENT)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             gravity = Gravity.CENTER
@@ -517,7 +745,7 @@ object DiPlayDialog {
         shell.body.addView(spinner)
         shell.body.addView(TextView(context).apply {
             this.text = description
-            textSize = 15f
+            textSize = ShellType.LABEL
             setTextColor(GlassColors.TEXT_MUTED)
             gravity = Gravity.CENTER
             setPadding(0, GlassColors.dp(context, 6), 0, 0)
@@ -525,14 +753,14 @@ object DiPlayDialog {
         if (footer != null) {
             shell.body.addView(TextView(context).apply {
                 this.text = footer
-                textSize = 13f
+                textSize = ShellType.CAPTION
                 setTextColor(GlassColors.DIM)
                 gravity = Gravity.CENTER
                 setPadding(0, GlassColors.dp(context, 6), 0, 0)
             })
         }
         val stageView = TextView(context).apply {
-            textSize = 20f
+            textSize = ShellType.TITLE
             setTextColor(GlassColors.ACCENT2)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             gravity = Gravity.CENTER
@@ -540,9 +768,9 @@ object DiPlayDialog {
         }
         shell.body.addView(stageView)
         val diagView = TextView(context).apply {
-            textSize = 13f
-            setTypeface(Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
-            setTextColor(0xFFFFB95C.toInt())
+            textSize = ShellType.CAPTION
+            typeface = Typeface.create(ShellType.MONO_FAMILY, Typeface.BOLD)
+            setTextColor(GlassColors.WARNING)
             gravity = Gravity.CENTER
             setPadding(0, GlassColors.dp(context, 6), 0, GlassColors.dp(context, 8))
         }
@@ -574,7 +802,7 @@ object DiPlayDialog {
         shell.addHeaderExtra(TextView(context).apply {
             text = context.getString(R.string.dialog_manage_apps_hint)
             setTextColor(GlassColors.TEXT_MUTED)
-            textSize = 12f
+            textSize = ShellType.CAPTION
             setPadding(0, GlassColors.dp(context, 2), 0, GlassColors.dp(context, 4))
         })
         val state = mutableMapOf<String, Boolean>()
@@ -582,10 +810,10 @@ object DiPlayDialog {
 
         fun checkbox(on: Boolean): TextView = TextView(context).apply {
             gravity = Gravity.CENTER
-            textSize = 13f
+            textSize = ShellType.CAPTION
             text = if (on) "✓" else ""
-            setTextColor(if (on) GlassColors.NAV_SELECTED_TEXT else android.graphics.Color.TRANSPARENT)
-            background = checkGradient(context, on)
+            setTextColor(if (on) GlassColors.NAV_SELECTED_TEXT else GlassColors.TRANSPARENT)
+            background = checkMarkDrawable(context, on)
         }
 
         val iconSize = GlassColors.dp(context, 26)
@@ -617,7 +845,7 @@ object DiPlayDialog {
                 row.addView(TextView(context).apply {
                     text = app.label
                     setTextColor(GlassColors.TEXT_PRIMARY)
-                    textSize = 14f
+                    textSize = ShellType.LABEL
                     maxLines = 1
                     ellipsize = android.text.TextUtils.TruncateAt.END
                 }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -643,8 +871,8 @@ object DiPlayDialog {
         val categoryMarks = mutableListOf<Pair<TextView, () -> Boolean>>()
         fun paintMark(cb: TextView, on: Boolean) {
             cb.text = if (on) "✓" else ""
-            cb.setTextColor(if (on) GlassColors.NAV_SELECTED_TEXT else android.graphics.Color.TRANSPARENT)
-            cb.background = checkGradient(context, on)
+            cb.setTextColor(if (on) GlassColors.NAV_SELECTED_TEXT else GlassColors.TRANSPARENT)
+            cb.background = checkMarkDrawable(context, on)
         }
         refreshCategoryMarks = {
             categoryMarks.forEach { (cb, on) -> paintMark(cb, on()) }
@@ -666,7 +894,7 @@ object DiPlayDialog {
             cell.addView(TextView(context).apply {
                 text = name
                 setTextColor(GlassColors.TEXT_BODY)
-                textSize = 13f
+                textSize = ShellType.CAPTION
                 setPadding(GlassColors.dp(context, 6), 0, 0, 0)
             })
             cell.setOnClickListener {
@@ -699,7 +927,10 @@ object DiPlayDialog {
         show(d, shell.panel)
     }
 
-    /** Custom view dialog (e.g. key-assignment grid). Optional single confirm button. */
+    /**
+     * Custom view dialog (e.g. key-assignment grid). Optional single confirm button.
+     * @param allowFocus 正文含输入框时必须为 true，否则窗口保持 NOT_FOCUSABLE，点击无法获得焦点。
+     */
     fun showCustom(
         context: Context,
         title: String,
@@ -707,6 +938,7 @@ object DiPlayDialog {
         okText: String? = null,
         onOk: (() -> Unit)? = null,
         fillMaxHeight: Boolean = false,
+        allowFocus: Boolean = false,
     ): Dialog {
         val d = themed(context)
         val shell = openShell(context, title)
@@ -716,7 +948,7 @@ object DiPlayDialog {
             shell.setFooter(okBtn)
         }
         shell.ready(fillMaxHeight = fillMaxHeight)
-        show(d, shell.panel)
+        show(d, shell.panel, allowFocus = allowFocus)
         return d
     }
 
@@ -729,12 +961,14 @@ object DiPlayDialog {
         title: String,
         message: String? = null,
         buttons: List<Pair<String, () -> Unit>>,
-    ) {
+        header: View? = null,
+    ): Dialog {
         val d = themed(context)
         val shell = openShell(context, title)
+        if (header != null) shell.body.addView(header)
         if (message != null) {
             shell.body.addView(body(context, message).apply {
-                if (LayoutMetrics.isShort(context)) textSize = 14f
+                if (LayoutMetrics.isShort(context)) textSize = ShellType.LABEL
             })
         }
         val btns = buttons.mapIndexed { index, (text, action) ->
@@ -751,14 +985,15 @@ object DiPlayDialog {
         shell.setFooter(buttonRow(context, *btns.toTypedArray()))
         shell.ready()
         show(d, shell.panel)
+        return d
     }
 
-    /** Glass toast：替代系统 Toast，走同一套玻璃风格。长文请用 [showInfo]，勿塞进 Toast。 */
+    /** In-app toast. Long messages belong in [showInfo]. */
     fun toast(context: Context, message: String, long: Boolean = false) {
         val tv = TextView(context).apply {
             text = message
             setTextColor(GlassColors.TEXT_PRIMARY)
-            textSize = 15f
+            textSize = ShellType.LABEL
             setLineSpacing(0f, 1.15f)
             gravity = Gravity.START or Gravity.CENTER_VERTICAL
             setBackgroundResource(GlassColors.toastBg())
@@ -776,6 +1011,112 @@ object DiPlayDialog {
         toast.setGravity(Gravity.CENTER, 0, 0)
         toast.show()
         ImmersiveBars.pulse(activityOf(context))
+    }
+
+    /** Learn Android key codes or this car's wheel names. The switch that uses them lives in settings. */
+    fun showSwcLearn(context: Context) {
+        val d = themed(context)
+        val shell = openShell(
+            context,
+            context.getString(R.string.settings_generic_swc_title),
+            LayoutMetrics.DialogSize.WIDE,
+        )
+        val hint = context.getString(R.string.settings_generic_swc_hint)
+        val status = body(context, hint, GlassColors.TEXT_MUTED)
+        shell.body.addView(status)
+        var bindings = AirPlayPersistence.loadGenericSwcBindings(context).toMutableMap()
+        val valueViews = mutableMapOf<GenericSwcAction, TextView>()
+        val titleViews = mutableMapOf<GenericSwcAction, TextView>()
+        fun paint() {
+            for (action in GenericSwcAction.values()) {
+                val value = valueViews[action] ?: continue
+                val title = titleViews[action] ?: continue
+                val code = bindings[action]
+                value.text = code?.label() ?: context.getString(R.string.settings_generic_swc_unbound)
+                val armed = GenericSwcLearn.armedAction() == action
+                title.setTextColor(if (armed) GlassColors.ACCENT else GlassColors.TEXT_BODY)
+                value.setTextColor(if (code == null) GlassColors.TEXT_MUTED else GlassColors.TEXT_PRIMARY)
+            }
+        }
+        GenericSwcLearn.setOnDisarm {
+            status.text = hint
+            paint()
+        }
+        for (action in GenericSwcAction.values()) {
+            val row = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                val pv = GlassColors.dp(context, 8)
+                setPadding(0, pv, 0, pv)
+                isClickable = true
+                isLongClickable = true
+            }
+            val title = TextView(context).apply {
+                text = action.label(context)
+                textSize = LayoutMetrics.settingsRowTextSize(context)
+                setTextColor(GlassColors.TEXT_BODY)
+            }
+            val value = TextView(context).apply {
+                textSize = LayoutMetrics.settingsRowTextSize(context)
+                setTextColor(GlassColors.TEXT_MUTED)
+            }
+            titleViews[action] = title
+            valueViews[action] = value
+            row.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            row.addView(value)
+            row.setOnClickListener {
+                status.text = context.getString(R.string.settings_generic_swc_press, action.label(context))
+                GenericSwcLearn.arm(action) { code ->
+                    bindings = GenericSwcMap.assign(bindings, action, code).toMutableMap()
+                    AirPlayPersistence.saveGenericSwcBindings(context, bindings)
+                    GenericSwcLearn.disarm()
+                }
+                paint()
+            }
+            row.setOnLongClickListener {
+                bindings.remove(action)
+                AirPlayPersistence.saveGenericSwcBindings(context, bindings)
+                GenericSwcLearn.disarm()
+                true
+            }
+            shell.body.addView(row)
+        }
+        paint()
+        val close = dialogButton(
+            context,
+            context.getString(R.string.dialog_ok),
+            GlassColors.btnPrimary(),
+            GlassColors.NAV_SELECTED_TEXT,
+        ) { d.dismiss() }
+        shell.setFooter(close)
+        shell.ready()
+        d.setOnKeyListener { _, keyCode, event ->
+            if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE) {
+                if (event.action == KeyEvent.ACTION_UP && GenericSwcLearn.disarm()) return@setOnKeyListener true
+                if (GenericSwcLearn.isArmed()) return@setOnKeyListener true
+                return@setOnKeyListener false
+            }
+            GenericSwcLearn.onKey(event)
+        }
+        val learnReceiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context, intent: Intent) {
+                val press = HeadUnitKeyEvents.parse(intent) ?: return
+                if (!press.pressed) return
+                if (GenericSwcLearn.onName(press.token)) {
+                    // The learn sink saved the name and disarmed. Refresh is via setOnDisarm.
+                }
+            }
+        }
+        val learnFilter = IntentFilter().apply {
+            HeadUnitKeyEvents.learnActions().forEach { addAction(it) }
+        }
+        val learnContext = context.applicationContext
+        runCatching { learnContext.registerReceiver(learnReceiver, learnFilter) }
+        d.setOnDismissListener {
+            runCatching { learnContext.unregisterReceiver(learnReceiver) }
+            GenericSwcLearn.close()
+        }
+        show(d, shell.panel, allowFocus = true)
     }
 }
 
@@ -820,7 +1161,7 @@ class ProgressRing(context: Context) : View(context) {
     private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = stroke
-        color = 0x33FFFFFF.toInt()
+        color = GlassColors.DIVIDER
     }
     private val arc = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -829,12 +1170,22 @@ class ProgressRing(context: Context) : View(context) {
         color = GlassColors.ACCENT
     }
 
-    init {
-        val anim = ObjectAnimator.ofFloat(this, "rotation", 0f, 360f)
-        anim.duration = 1100
-        anim.repeatCount = ValueAnimator.INFINITE
-        anim.interpolator = LinearInterpolator()
-        anim.start()
+    private var animator: ObjectAnimator? = null
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        animator = ObjectAnimator.ofFloat(this, "rotation", 0f, 360f).apply {
+            duration = ShellMotion.MODAL * 2
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = LinearInterpolator()
+            start()
+        }
+    }
+
+    override fun onDetachedFromWindow() {
+        animator?.cancel()
+        animator = null
+        super.onDetachedFromWindow()
     }
 
     override fun onDraw(canvas: Canvas) {

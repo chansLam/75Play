@@ -1,8 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <gradient
-        android:angle="270"
-        android:startColor="#FF64B4FF"
-        android:endColor="#FF0A84FF" />
-    <corners android:radius="16dp" />
-</shape>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true"><shape><solid android:color="#D149425D" /><corners android:radius="16dp" /></shape></item>
+    <item><shape><solid android:color="#C7173EBD" /><stroke android:width="1dp" android:color="#66B7C4FF" /><corners android:radius="16dp" /></shape></item>
+</selector>

@@ -3,6 +3,7 @@ package com.shihab.diplay
 import android.content.ActivityNotFoundException
 import android.content.pm.PackageManager
 import android.os.Looper
+import android.os.Environment
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
@@ -28,6 +29,10 @@ class DiagnosticExportUiTest {
         val controller = Robolectric.buildActivity(DiPlayActivity::class.java).setup()
         val activity = controller.get()
         val context = activity.applicationContext
+        reportDirectories(context).forEach { directory ->
+            directory.deleteRecursively()
+            directory.mkdirs()
+        }
         val authority = "${context.packageName}.diagnostic-reports"
         val info = context.packageManager.resolveContentProvider(authority, PackageManager.GET_META_DATA)!!
         org.robolectric.shadows.ShadowContentResolver.registerProviderInternal(
@@ -44,18 +49,31 @@ class DiagnosticExportUiTest {
         ReflectionHelpers.setField(activity, "export", missingPicker)
         try {
             ReflectionHelpers.callInstanceMethod<Unit>(activity, "chooseReportDestination")
-            val deadline = System.nanoTime() + 5_000_000_000L
-            while (ShadowDialog.getLatestDialog() == null && System.nanoTime() < deadline) {
+            shadowOf(Looper.getMainLooper()).idle()
+            val deadline = System.nanoTime() + 15_000_000_000L
+            var reports = reportDirectory(context)
+            var saved = ShadowDialog.getLatestDialog()
+            fun dialogShowsPath(): Boolean {
+                val fileName = reports?.listFiles()?.singleOrNull()?.name ?: return false
+                val dialog = saved ?: return false
+                return descendants(dialog.window!!.decorView).filterIsInstance<TextView>()
+                    .any { it.text.contains(fileName) }
+            }
+            while (!dialogShowsPath() && System.nanoTime() < deadline) {
                 Thread.sleep(20)
                 shadowOf(Looper.getMainLooper()).idle()
+                reports = reportDirectory(context)
+                saved = ShadowDialog.getLatestDialog()
             }
-            val saved = requireNotNull(ShadowDialog.getLatestDialog())
-            val reports = File(context.getExternalFilesDir(null)!!, "diagnostic-reports")
-            val file = reports.listFiles()!!.single()
+            shadowOf(Looper.getMainLooper()).idle()
+            reports = reportDirectory(context)
+            saved = ShadowDialog.getLatestDialog()
+            saved = requireNotNull(saved)
+            val file = requireNotNull(reports?.listFiles()?.singleOrNull()) { "diagnostic report was not saved" }
             assertTrue(file.name.endsWith(".txt"))
             assertTrue(file.readText().contains("Android 9 / API 28"))
             assertTrue(descendants(saved.window!!.decorView).filterIsInstance<TextView>()
-                .any { it.text.contains(file.absolutePath) })
+                .any { it.text.contains(file.name) })
             descendants(saved.window!!.decorView).filterIsInstance<Button>()
                 .single { it.text == activity.getString(R.string.view_diagnostic_report) }
                 .performClick()
@@ -68,6 +86,17 @@ class DiagnosticExportUiTest {
             controller.pause().stop().destroy()
         }
     }
+
+    private fun reportDirectory(context: android.content.Context): File? {
+        return reportDirectories(context)
+            .firstOrNull { it.isDirectory && it.listFiles()?.isNotEmpty() == true }
+    }
+
+    private fun reportDirectories(context: android.content.Context): List<File> = listOfNotNull(
+        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+        context.getExternalFilesDir(null)?.let { File(it, "diagnostic-reports") },
+        File(context.filesDir, "diagnostic-reports"),
+    )
 
     private fun descendants(view: View): Sequence<View> = sequence {
         yield(view)

@@ -14,6 +14,7 @@ local.properties
 .cxx/
 .externalNativeBuild/
 captures/
+/shared/src/main/obj/
 
 # Local agent working notes
 /agent_docs/
@@ -56,3 +57,6 @@ release-signing.properties
 
 # Pinned libopus dependency retrieved by scripts/prepare-libopus.py
 /shared/src/main/jni/libopus/
+
+# Pinned lwIP dependency retrieved by scripts/prepare-lwip.py
+/shared/src/main/jni/lwip/

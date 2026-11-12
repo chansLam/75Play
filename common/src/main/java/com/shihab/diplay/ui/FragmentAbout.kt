@@ -7,13 +7,11 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import androidx.fragment.app.Fragment
 import com.shihab.diplay.host.R
-import com.shihab.diplay.ui.settings.GlassSettingsColumn
+import com.shihab.diplay.ui.settings.GlassSettingsPage
 import com.shihab.diplay.ui.settings.HardwareColumn
 import com.shihab.diplay.ui.settings.SystemColumn
 
-/**
- * About page: app notes, update and diagnostics, then system and hardware facts.
- */
+/** Vehicle and devices: maintenance, product details, and hardware stay visible. */
 class FragmentAbout : Fragment() {
 
     private val systemColumn = SystemColumn(this)
@@ -24,24 +22,24 @@ class FragmentAbout : Fragment() {
         val pad = LayoutMetrics.pagePad(ctx)
         val root = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(0)
+            setBackgroundColor(GlassColors.TRANSPARENT)
             setPadding(pad, pad, pad, pad)
         }
-        val cols = GlassSettingsColumn.columns(
+        val page = GlassSettingsPage.create(
             ctx,
             listOf(
-                ctx.getString(R.string.about_title_system) to { card: LinearLayout ->
-                    systemColumn.fillAbout(card)
-                },
-                ctx.getString(R.string.about_update_section) to { card: LinearLayout ->
+                GlassSettingsPage.Section(ctx.getString(R.string.shell_category_maintenance)) { card: LinearLayout ->
                     systemColumn.fillMaintenance(card)
                 },
-                ctx.getString(R.string.about_title_hardware) to { card: LinearLayout ->
+                GlassSettingsPage.Section(ctx.getString(R.string.shell_category_product)) { card: LinearLayout ->
+                    systemColumn.fillAbout(card)
+                },
+                GlassSettingsPage.Section(ctx.getString(R.string.shell_category_hardware)) { card: LinearLayout ->
                     hardwareColumn.fill(card)
                 },
             ),
         )
-        root.addView(cols, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        root.addView(page, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         return root
     }
 }

@@ -102,10 +102,32 @@ class CarHotspotFallbackTest {
     }
 
     private fun start(controller: CarPlayController, generation: Int = 0): WirelessHotspotInfo {
-        val method = controller.javaClass.getDeclaredMethod("startWirelessHotspot", Int::class.javaPrimitiveType)
-            .apply { isAccessible = true }
-        return try { method.invoke(controller, generation) as WirelessHotspotInfo }
-        catch (error: InvocationTargetException) { throw error.targetException }
+        val bringUp = Class.forName("com.shihab.diplay.orchestration.WirelessHotspotBringUp")
+        val instance = bringUp.getField("INSTANCE").get(null)
+        val method = bringUp.declaredMethods.first { candidate ->
+            candidate.name.substringBefore('$') == "start" &&
+                candidate.parameterCount == 10 &&
+                candidate.parameterTypes.none { it.name.contains("DefaultConstructorMarker") }
+        }.apply { isAccessible = true }
+        val config = controller.javaClass.getDeclaredField("config").apply { isAccessible = true }.get(controller)
+        var hotspot: com.shihab.diplay.network.WirelessHotspotManager? = null
+        return try {
+            method.invoke(
+                instance,
+                app,
+                config,
+                generation,
+                { requested: Int -> requested != 0 },
+                { _: String -> },
+                Any(),
+                { hotspot },
+                { next: com.shihab.diplay.network.WirelessHotspotManager? -> hotspot = next },
+                {},
+                { _: String, block: () -> Unit -> block() },
+            ) as WirelessHotspotInfo
+        } catch (error: InvocationTargetException) {
+            throw error.targetException
+        }
     }
 
     private fun controller(mode: WirelessHotspotMode = WirelessHotspotMode.MANUAL): CarPlayController = CarPlayController(app,

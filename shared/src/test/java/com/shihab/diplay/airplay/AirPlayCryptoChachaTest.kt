@@ -77,6 +77,23 @@ class AirPlayCryptoChachaTest {
         assertNotEquals("BouncyCastle", AirPlayCrypto.chachaImplementation)
     }
 
+    @Test fun screenFrameOpenUsesTheCounterAsItsNonce() {
+        val key = bytes(32)
+        val counter = 41L
+        val aad = bytes(128)
+        val plain = bytes(300)
+        val sealed = AirPlayCrypto.chachaSeal(key, AirPlayCrypto.nonce64(counter), plain, aad)
+        val destination = ByteArray(plain.size)
+        val written = AirPlayCrypto.chachaOpenFrameInto(key, counter, aad, sealed, sealed.size, destination)
+        assertEquals(plain.size, written)
+        assertArrayEquals(plain, destination)
+        val tampered = sealed.copyOf().also { it[20] = (it[20].toInt() xor 1).toByte() }
+        try {
+            AirPlayCrypto.chachaOpenFrameInto(key, counter, aad, tampered, tampered.size, destination)
+            fail("changed screen frame opened")
+        } catch (_: Exception) { }
+    }
+
     @Test fun absentPlatformFallsBackWithoutAcceptingATamperedTag() {
         val state = platformState()
         val saved = state.get()

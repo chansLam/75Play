@@ -16,7 +16,7 @@ class SwcKeyTestGuardService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (SwcCarPlayKeys.isHolding()) return START_STICKY
+        if (SwcCarPlayKeys.isHolding() || GenericSwcBroadcast.isHolding()) return START_STICKY
         SwcCarPlayKeys.forceOff(this)
         stopSelf()
         return START_NOT_STICKY

@@ -1,20 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Day-mode window fill. A drawable reference, not a color literal, so i.MX6
-     PhoneWindow.generateLayout can resolve the resource name. -->
+<!-- Drawable ID retained for i.MX6 PhoneWindow resource-name lookup. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item>
-        <bitmap
-            android:src="@drawable/bg_home_light_photo"
-            android:gravity="fill" />
-    </item>
-    <item>
-        <shape>
-            <gradient
-                android:angle="270"
-                android:startColor="#14000000"
-                android:centerColor="#00000000"
-                android:endColor="#22000000"
-                android:centerY="0.5" />
-        </shape>
-    </item>
+    <item><bitmap android:src="@drawable/bg_home_light_photo" android:gravity="fill" /></item>
+    <item><shape><solid android:color="#18FFFFFF" /></shape></item>
 </layer-list>

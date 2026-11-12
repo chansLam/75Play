@@ -9,15 +9,20 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import com.shihab.diplay.airplay.AirPlaySession
 import com.shihab.diplay.airplay.AirPlaySessionListener
+import com.shihab.diplay.SessionLogFile
 import com.shihab.diplay.compat.realSdkInt
 import com.shihab.diplay.connect.ConnectBroadcasts
 import com.shihab.diplay.host.CarPlayBackgroundSession
 import com.shihab.diplay.host.R
 import com.shihab.diplay.util.AppLog
+import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Drives the wireless CarPlay handshake in the background (replacing the old connect-only
@@ -34,17 +39,22 @@ import com.shihab.diplay.util.AppLog
  * The controller itself is process-global: we only ever hand it off — never rebuild it.
  */
 class CarPlayConnectService : Service() {
+    private val connectGeneration = AtomicInteger()
 
     @Volatile private var started = false
     @Volatile private var succeeded = false
     private var controller: com.shihab.diplay.orchestration.CarPlayController? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var controlReceiver: BroadcastReceiver? = null
+    private var connectLog: SessionLogFile? = null
+    private var preserveSessionService = false
+    private val waitingForParkedRelease = java.util.concurrent.atomic.AtomicBoolean(false)
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
+        running = true
         connecting = true
         runCatching {
             val pm = getSystemService(POWER_SERVICE) as PowerManager
@@ -68,12 +78,28 @@ class CarPlayConnectService : Service() {
                 },
             )
         }
+        // The handshake (wired or wireless) happens before CarPlayHostActivity is created, so the
+        // host's diplay.log does not exist yet. Keep our own connect.log so the controller's
+        // debug lines (WIRED-CHAIN etc.) are still captured in the exported diagnostic report.
+        connectLog = SessionLogFile(File(filesDir, "logs/connect.log"), "connect-prev").also {
+            it.reset("DiPlay connect service log started ${System.currentTimeMillis()}")
+            // Let the diagnostic exporter flush our pending lines before reading connect.log.
+            if (ActiveSessionLog.current == null) ActiveSessionLog.current = it
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIF_ID, buildNotification())
         when (intent?.action) {
             ACTION_CANCEL -> {
+                preserveSessionService = false
+                cancelConnect()
+                return START_NOT_STICKY
+            }
+            ACTION_LINK_LOST -> {
+                // Recovery owns DiPlaySessionService. Cancel this transport attempt without
+                // stopping the watcher that must notice the next cable insertion.
+                preserveSessionService = true
                 cancelConnect()
                 return START_NOT_STICKY
             }
@@ -85,11 +111,20 @@ class CarPlayConnectService : Service() {
     private fun beginConnect() {
         if (started) return // idempotent: a connection attempt is already in flight
         // An active session already exists (e.g. DiPlay relaunched after a handoff); just tell DiPlay.
-        if (CarPlayBackgroundSession.hasSession()) {
+        // A restart can leave a stop action with no live controller (snapshot null); that is not a
+        // reusable session, so fall through and build a real controller instead of broadcasting a
+        // fake "connected" that leaves the shell with nothing to open.
+        if (CarPlayBackgroundSession.hasSession() && CarPlayBackgroundSession.snapshot() != null) {
             succeeded = true
             connecting = false
             runCatching { sendBroadcast(ConnectBroadcasts.connected(this)) }
             stopSelf()
+            return
+        }
+        // A reused instance must not keep the link-lost exception into this new attempt.
+        preserveSessionService = false
+        if (CarPlayBackgroundSession.isReleasing()) {
+            waitForParkedRelease()
             return
         }
         started = true
@@ -97,7 +132,10 @@ class CarPlayConnectService : Service() {
             val missingPermission = listOf(
                 android.Manifest.permission.RECORD_AUDIO,
                 android.Manifest.permission.ACCESS_FINE_LOCATION,
-            ).firstOrNull { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+            ).firstOrNull {
+                checkPermission(it, android.os.Process.myPid(), android.os.Process.myUid()) !=
+                    PackageManager.PERMISSION_GRANTED
+            }
             if (missingPermission != null) {
                 broadcastFailed(getString(R.string.could_not_start_carplay_return_to_diplay_and_check_app_per))
                 teardown()
@@ -129,7 +167,7 @@ class CarPlayConnectService : Service() {
         }
 
         controller = built.controller
-        CarPlayBackgroundSession.store(
+        val stored = CarPlayBackgroundSession.store(
             built.controller, built.sink,
             built.display.windowWidth, built.display.windowHeight,
             this, built.display,
@@ -142,17 +180,84 @@ class CarPlayConnectService : Service() {
             CarPlayBackgroundSession.clear(built.controller)
             completion()
         }
-
-        try {
-            // DiPlaySessionService (the session-alive foreground notification) starts only once the
-            // handshake succeeds, in onSessionActive — not during connecting.
-            built.controller.start()
-        } catch (error: RuntimeException) {
-            AppLog.w(TAG, "controller start failed", error)
-            broadcastFailed(getString(R.string.could_not_start_carplay_return_to_diplay_and_check_app_per))
-            teardown()
-            stopSelf()
+        if (!stored) {
+            AppLog.i(TAG, "connect deferred; a parked session is still releasing")
+            controller = null
+            runCatching { built.controller.close() }
+            started = false
+            if (CarPlayBackgroundSession.isReleasing()) {
+                waitForParkedRelease()
+            } else {
+                broadcastFailed(getString(R.string.connection_failed))
+                teardown()
+                stopSelf()
+            }
+            return
         }
+
+        // Identity install runs off the main thread and can still be in progress when the user
+        // taps connect. Starting MFi before that rename finishes reports a missing directory.
+        val launch = built.controller
+        val generation = connectGeneration.get()
+        Thread({
+            val authError = runCatching {
+                DiPlayBootstrap.ensure(applicationContext, AirPlayPersistence.loadMfiTarget(applicationContext))
+            }.exceptionOrNull()
+            Handler(Looper.getMainLooper()).post {
+                if (generation != connectGeneration.get() || controller !== launch) return@post
+                if (authError != null) {
+                    AppLog.e(TAG, "CarPlay authentication could not be loaded", authError)
+                    broadcastFailed(getString(R.string.setup_error_auth))
+                    teardown()
+                    stopSelf()
+                    return@post
+                }
+                try {
+                    launch.start()
+                } catch (error: RuntimeException) {
+                    AppLog.w(TAG, "controller start failed", error)
+                    broadcastFailed(getString(R.string.could_not_start_carplay_return_to_diplay_and_check_app_per))
+                    teardown()
+                    stopSelf()
+                }
+            }
+        }, "diplay-mfi-ready").apply { isDaemon = true }.start()
+    }
+
+    /**
+     * The previous parked controller can still own USB after its snapshot is gone. Starting
+     * another stack in that window fails the new attempt and can wedge the bus. Wait, then
+     * retry this connect instead of building a second controller.
+     */
+    private fun waitForParkedRelease() {
+        if (!waitingForParkedRelease.compareAndSet(false, true)) return
+        val generation = connectGeneration.get()
+        Thread({
+            val deadline = System.nanoTime() + PARKED_RELEASE_WAIT_MILLIS * 1_000_000L
+            while (
+                CarPlayBackgroundSession.isReleasing() &&
+                System.nanoTime() < deadline &&
+                generation == connectGeneration.get()
+            ) {
+                try {
+                    Thread.sleep(50)
+                } catch (_: InterruptedException) {
+                    break
+                }
+            }
+            val released = !CarPlayBackgroundSession.isReleasing()
+            Handler(Looper.getMainLooper()).post {
+                waitingForParkedRelease.set(false)
+                if (generation != connectGeneration.get()) return@post
+                if (!released) {
+                    broadcastFailed(getString(R.string.connection_failed))
+                    teardown()
+                    stopSelf()
+                    return@post
+                }
+                beginConnect()
+            }
+        }, "diplay-wait-parked-release").apply { isDaemon = true }.start()
     }
 
     private val forwardingListener = object : AirPlaySessionListener {
@@ -189,6 +294,7 @@ class CarPlayConnectService : Service() {
 
         override fun onDebugLog(message: String) {
             AppLog.i(TAG, message)
+            connectLog?.append(message)
         }
     }
 
@@ -215,6 +321,7 @@ class CarPlayConnectService : Service() {
     }
 
     private fun teardown() {
+        connectGeneration.incrementAndGet()
         val current = controller
         if (current != null) {
             CarPlayBackgroundSession.clear(current)
@@ -224,7 +331,9 @@ class CarPlayConnectService : Service() {
         // Allow a fresh startConnectFlow to begin after a cancel/failure.
         started = false
         succeeded = false
-        runCatching { stopService(Intent(this, DiPlaySessionService::class.java)) }
+        if (!preserveSessionService) {
+            runCatching { stopService(Intent(this, DiPlaySessionService::class.java)) }
+        }
     }
 
     private fun broadcastFailed(message: String) {
@@ -269,7 +378,11 @@ class CarPlayConnectService : Service() {
         controlReceiver = null
         runCatching { wakeLock?.let { if (it.isHeld) it.release() } }
         wakeLock = null
+        connectLog?.close()
+        if (ActiveSessionLog.current === connectLog) ActiveSessionLog.current = null
+        connectLog = null
         connecting = false
+        running = false
         started = false
         super.onDestroy()
     }
@@ -277,10 +390,17 @@ class CarPlayConnectService : Service() {
     companion object {
         const val ACTION_START = "com.shihab.diplay.CONNECT_START"
         const val ACTION_CANCEL = "com.shihab.diplay.CONNECT_CANCEL_SERVICE"
+        const val ACTION_LINK_LOST = "com.shihab.diplay.CONNECT_LINK_LOST"
+        private const val PARKED_RELEASE_WAIT_MILLIS = 5_000L
 
         /** Process-global "a connection attempt is in flight" flag, read by the host's onCreate. */
         @Volatile
         var connecting = false
+            private set
+
+        /** True while an actual service instance exists, including the post-handshake handoff window. */
+        @Volatile
+        var running = false
             private set
 
         /** Clear [connecting] immediately on cancel/failure so home UI does not stay on「连接中」. */

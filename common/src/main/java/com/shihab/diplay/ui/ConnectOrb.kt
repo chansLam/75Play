@@ -5,19 +5,16 @@ import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.RectF
-import android.graphics.Shader
 import android.view.View
 import android.view.animation.LinearInterpolator
 import com.shihab.diplay.host.R
+import com.shihab.diplay.ui.theme.ShellMotion
 
 /**
- * 玻璃连接钮。
- * 空闲：日景是磨砂圆片，夜景用系统蓝圆钮，免得融进炭色面板。边缘有一截慢慢走动的高光。
- * 连接中：圆外扩出波纹，进度环按阶段长出来，环头继续转。
- * 连上：圆片换成成功色玻璃，中间是播放，点一下回到投屏。
+ * Primary connection control. Idle and connected states are static; progress motion is only active
+ * while a connection attempt is running.
  */
 class ConnectOrb(context: Context) : View(context) {
     init {
@@ -29,7 +26,7 @@ class ConnectOrb(context: Context) : View(context) {
         set(value) {
             if (field == value) return
             field = value
-            startSweep(fast = spinning)
+            syncMotion()
         }
 
     /** 0..1，连接中外圈已经走过的比例。 */
@@ -62,7 +59,7 @@ class ConnectOrb(context: Context) : View(context) {
     fun setSpinning(on: Boolean) {
         if (on == spinning) return
         spinning = on
-        startSweep(fast = on)
+        syncMotion()
     }
 
     /** ObjectAnimator 目标。不要从布局代码里调用。 */
@@ -71,7 +68,7 @@ class ConnectOrb(context: Context) : View(context) {
         invalidate()
     }
 
-    /** 方向盘/旋钮焦点：在玻璃外画一圈；连接中不画。 */
+    /** Steering-wheel focus ring; hidden during connection progress. */
     override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: android.graphics.Rect?) {
         focusRing = gainFocus
         invalidate()
@@ -85,7 +82,7 @@ class ConnectOrb(context: Context) : View(context) {
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
-        startSweep(fast = spinning)
+        syncMotion()
     }
 
     override fun onDetachedFromWindow() {
@@ -96,26 +93,25 @@ class ConnectOrb(context: Context) : View(context) {
         super.onDetachedFromWindow()
     }
 
-    private fun startSweep(fast: Boolean) {
+    private fun syncMotion() {
         animator?.cancel()
         animator = null
         pulseAnimator?.cancel()
         pulseAnimator = null
-        if (connected && !fast) {
+        if (!spinning || !isAttachedToWindow) {
             spinDegrees = 0f
             pulse = 0f
             invalidate()
             return
         }
         animator = ObjectAnimator.ofFloat(this, "spinDegrees", 0f, 360f).apply {
-            duration = if (fast) 1200 else 7200
+            duration = ShellMotion.MODAL * 2
             repeatCount = ValueAnimator.INFINITE
             interpolator = LinearInterpolator()
             start()
         }
-        if (!isAttachedToWindow) return
         pulseAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = if (fast) 1500 else 2600
+            duration = ShellMotion.LAYOUT * 4
             repeatCount = ValueAnimator.INFINITE
             interpolator = LinearInterpolator()
             addUpdateListener {
@@ -132,51 +128,38 @@ class ConnectOrb(context: Context) : View(context) {
         val reach = minOf(width, height) / 2f
         if (reach <= 1f) return
         val disc = reach * 0.58f
-        val tone = if (connected && !spinning) GlassColors.SUCCESS else GlassColors.ACCENT
-        val pressed = isPressed
-        if (pressed) {
-            canvas.save()
-            canvas.scale(0.96f, 0.96f, cx, cy)
-        }
+        val settled = connected && !spinning
+        val tone = if (settled) GlassColors.SUCCESS else GlassColors.ACCENT
         if (spinning) drawRipples(canvas, cx, cy, disc, reach * 0.94f, tone)
-        drawDisc(canvas, cx, cy, disc, tone)
+        drawDisc(canvas, cx, cy, disc, settled)
         drawRing(canvas, cx, cy, disc * 1.22f, tone)
         if (focusRing && !spinning) {
             strokePaint.strokeWidth = (reach * 0.018f).coerceAtLeast(2f)
             strokePaint.color = tone
             canvas.drawCircle(cx, cy, reach * 0.9f, strokePaint)
         }
-        if (connected && !spinning) drawPlay(canvas, cx, cy, disc) else drawLink(canvas, cx, cy, disc, tone)
-        if (pressed) canvas.restore()
+        if (settled) drawPlay(canvas, cx, cy, disc) else drawLink(canvas, cx, cy, disc)
     }
 
-    /** 连接中从圆片向外淡出的三道玻璃波。 */
+    /** Three progress waves shown only during a connection attempt. */
     private fun drawRipples(canvas: Canvas, cx: Float, cy: Float, inner: Float, outer: Float, tone: Int) {
         strokePaint.strokeWidth = (inner * 0.035f).coerceAtLeast(2f)
         for (i in 0 until 3) {
             val t = (pulse + i / 3f) % 1f
             val radius = inner + (outer - inner) * t
-            strokePaint.color = withAlpha(tone, ((1f - t) * 150f).toInt())
+            strokePaint.color = GlassColors.withAlpha(tone, ((1f - t) * 150f).toInt())
             canvas.drawCircle(cx, cy, radius, strokePaint)
         }
     }
 
-    /** 磨砂圆片。连上后掺进成功色，圆心仍然透出底图。 */
-    private fun drawDisc(canvas: Canvas, cx: Float, cy: Float, disc: Float, tone: Int) {
-        val settled = connected && !spinning
-        val top = when {
-            settled -> withAlpha(tone, if (GlassColors.isDark) 0xCC else 0x66)
-            GlassColors.isDark -> GlassColors.ACCENT_LIFT
-            else -> GlassColors.plateTop()
-        }
-        val bottom = when {
-            settled -> withAlpha(tone, if (GlassColors.isDark) 0x88 else 0x33)
-            GlassColors.isDark -> GlassColors.ACCENT_DEEP
-            else -> GlassColors.plateBottom()
-        }
-        fillPaint.shader = LinearGradient(cx, cy - disc, cx, cy + disc, top, bottom, Shader.TileMode.CLAMP)
-        canvas.drawCircle(cx, cy, disc, fillPaint)
+    private fun drawDisc(canvas: Canvas, cx: Float, cy: Float, disc: Float, settled: Boolean) {
         fillPaint.shader = null
+        fillPaint.color = when {
+            settled -> GlassColors.BTN_SUCCESS
+            isPressed -> GlassColors.ACCENT_DEEP
+            else -> GlassColors.ACCENT
+        }
+        canvas.drawCircle(cx, cy, disc, fillPaint)
     }
 
     /**
@@ -191,23 +174,16 @@ class ConnectOrb(context: Context) : View(context) {
             val sweep = (360f * progress).coerceIn(28f, 360f)
             strokePaint.color = tone
             canvas.drawArc(oval, spinDegrees - 90f, sweep, false, strokePaint)
-            strokePaint.color = 0xF2FFFFFF.toInt()
+            strokePaint.color = GlassColors.NAV_SELECTED_TEXT
             canvas.drawArc(oval, spinDegrees - 90f + sweep - 14f, 16f, false, strokePaint)
-        } else {
-            strokePaint.color = withAlpha(0xFFFFFFFF.toInt(), 0xCC)
-            canvas.drawArc(oval, spinDegrees - 90f, 36f, false, strokePaint)
         }
     }
 
     /** 两枚交叠的胶囊，表示还没连上。 */
-    private fun drawLink(canvas: Canvas, cx: Float, cy: Float, disc: Float, tone: Int) {
+    private fun drawLink(canvas: Canvas, cx: Float, cy: Float, disc: Float) {
         iconPaint.style = Paint.Style.STROKE
         iconPaint.strokeWidth = (disc * 0.07f).coerceAtLeast(2f)
-        iconPaint.color = when {
-            spinning -> tone
-            GlassColors.isDark -> GlassColors.NAV_SELECTED_TEXT
-            else -> GlassColors.INK
-        }
+        iconPaint.color = if (isPressed) GlassColors.PRIMARY_CONTAINER_TEXT else GlassColors.NAV_SELECTED_TEXT
         val w = disc * 0.62f
         val h = disc * 0.28f
         val r = h / 2f
@@ -226,7 +202,7 @@ class ConnectOrb(context: Context) : View(context) {
     /** 已连接：播放三角。 */
     private fun drawPlay(canvas: Canvas, cx: Float, cy: Float, disc: Float) {
         iconPaint.style = Paint.Style.FILL
-        iconPaint.color = GlassColors.INK
+        iconPaint.color = GlassColors.SUCCESS_TEXT
         val height = disc * 0.36f
         val width = height * 0.86f
         val left = cx - width * 0.28f
@@ -237,7 +213,4 @@ class ConnectOrb(context: Context) : View(context) {
         path.close()
         canvas.drawPath(path, iconPaint)
     }
-
-    private fun withAlpha(argb: Int, alpha: Int): Int =
-        (argb and 0x00FFFFFF) or ((alpha.coerceIn(0, 255)) shl 24)
 }

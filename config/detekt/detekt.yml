@@ -1,0 +1,15 @@
+# Design audit rules adapted from the ui-android skill for the API 19 View shell.
+# The executable checks live in the root detektDesign Gradle task.
+
+active-bans:
+  generic-gradients: true
+  filler-copy: true
+  arbitrary-values: true
+  inline-fonts: true
+  blur-overuse: true
+  nested-cards: true
+  generic-layouts: true
+  decorative-motion: true
+
+token-path: common/src/main/java/com/shihab/diplay/ui/theme
+design-rules: DESIGN_RULES.md
