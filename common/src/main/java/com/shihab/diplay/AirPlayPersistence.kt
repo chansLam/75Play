@@ -249,11 +249,10 @@ object AirPlayPersistence {
 
     fun loadCallAudioChannel(context: Context): Int =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            // CS75: STREAM_VOICE_CALL(0) is not routed to the loudspeaker in MODE_NORMAL, so a
-            // CarPlay call written to it is silent. Default the call to the audible stream 10
-            // (same path as media/navigation); the user can override it in audio settings.
-            .getInt(KEY_CALL_AUDIO_CHANNEL, 10)
-            .takeIf { it in AUDIO_CHANNELS } ?: 10
+            // 0 = STREAM_VOICE_CALL, which works on the wireless path. The wired-call silence is
+            // investigated in the renderer/route rather than by changing this default.
+            .getInt(KEY_CALL_AUDIO_CHANNEL, 0)
+            .takeIf { it in AUDIO_CHANNELS } ?: 0
 
     fun saveCallAudioChannel(context: Context, channel: Int) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()

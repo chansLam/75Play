@@ -455,6 +455,8 @@ class AirPlaySession(
 
     private fun runControl() {
         com.shihab.diplay.network.TcpLiveness.configure(socket) { debugLog(it) }
+        val controlStartedAt = System.currentTimeMillis()
+        var lastReadAt = controlStartedAt
         val input = BufferedInputStream(socket.getInputStream())
         val output = BufferedOutputStream(socket.getOutputStream())
         var accumulated = ByteArray(0)
@@ -467,6 +469,7 @@ class AirPlaySession(
                     closeReason = "peer EOF"
                     break
                 }
+                lastReadAt = System.currentTimeMillis()
                 var plaintext = buffer.copyOf(count)
                 val activeCipher = cipher
                 if (activeCipher != null) {
@@ -542,8 +545,35 @@ class AirPlaySession(
             if (!closed.get()) AppLog.e(TAG, "airplay $closeReason", error)
         } finally {
             debugLog("airplay control closing reason=$closeReason activeStreams=$activeStreams")
+            debugLog(networkLinkDiagnostics(controlStartedAt, lastReadAt))
             close()
         }
+    }
+
+    /**
+     * Snapshot of the local link the media (UDP/RTP) streams would use, captured at close. Helps tell
+     * a link-layer failure (interface down / no usable IPv4 / multicast off) from an iPhone-side
+     * decision when the phone ends the control session before opening any media stream.
+     */
+    private fun networkLinkDiagnostics(startedAt: Long, lastReadAt: Long): String {
+        val now = System.currentTimeMillis()
+        val parts = ArrayList<String>()
+        parts.add("lifetimeMs=${now - startedAt} sinceLastReadMs=${now - lastReadAt}")
+        runCatching {
+            val local = socket.localAddress
+            val nif = java.net.NetworkInterface.getNetworkInterfaces().toList().firstOrNull { nif ->
+                nif.inetAddresses.toList().any { it == local }
+            }
+            if (nif == null) {
+                parts.add("localIface=not-found local=$local")
+            } else {
+                val usableV4 = nif.inetAddresses.toList().filter { !it.isLoopbackAddress }
+                    .joinToString(",") { it.hostAddress }
+                parts.add("iface=${nif.name} up=${nif.isUp} mtu=${nif.mtu} " +
+                    "multicast=${nif.supportsMulticast()} v4=[$usableV4]")
+            }
+        }.onFailure { parts.add("ifaceError=${it.javaClass.simpleName}") }
+        return "airplay link at close: " + parts.joinToString(" ")
     }
 
     private fun handle(request: RtspMessage.Request): RtspMessage.Response {

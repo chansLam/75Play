@@ -286,7 +286,8 @@ class CarPlayController(
                     val audio = appContext.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
                     if (audio == null) "audioManager=unavailable" else {
                         @Suppress("DEPRECATION")
-                        "a2dpOn=${audio.isBluetoothA2dpOn} musicActive=${audio.isMusicActive} " +
+                        "a2dpOn=${audio.isBluetoothA2dpOn} scoOn=${audio.isBluetoothScoOn} " +
+                            "musicActive=${audio.isMusicActive} " +
                             "musicVolume=${audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)}/" +
                             "${audio.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)}"
                     }
