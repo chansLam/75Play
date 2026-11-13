@@ -202,11 +202,13 @@ object HeadUnitVolume {
         val stream = headUnitVolumeStream(
             isStreamActive(HEAD_UNIT_NAVIGATION_STREAM, HEAD_UNIT_VOLUME_ACTIVE_PAST_MS),
             isStreamActive(AudioManager.STREAM_MUSIC, HEAD_UNIT_VOLUME_ACTIVE_PAST_MS),
+            isStreamActive(AudioManager.STREAM_VOICE_CALL, HEAD_UNIT_VOLUME_ACTIVE_PAST_MS),
         )
         val manager = if (stream == null) null else audioManager()
         if (stream != null && manager != null) {
             try {
-                manager.adjustStreamVolume(stream, direction, 0)
+                // FLAG_SHOW_UI makes the system volume panel appear, just like a native volume key.
+                manager.adjustStreamVolume(stream, direction, AudioManager.FLAG_SHOW_UI)
                 AppLog.i(TAG, "$label stream=$stream")
                 diag("$label stream=$stream")
                 return
@@ -238,10 +240,16 @@ internal const val HEAD_UNIT_VOLUME_ACTIVE_PAST_MS = 800
 internal const val HEAD_UNIT_NAVIGATION_STREAM = 10
 
 /**
- * 车机实测：媒体是 [AudioManager.STREAM_MUSIC]（3），导航是 [HEAD_UNIT_NAVIGATION_STREAM]。
- * 两路同时出声时调导航。反射失败（null）或都没出声时返回 null，交给车机总音量。
+ * 车机实测：媒体是 [AudioManager.STREAM_MUSIC]（3），导航是 [HEAD_UNIT_NAVIGATION_STREAM]，通话是
+ * [AudioManager.STREAM_VOICE_CALL]（0）。通话优先，其次导航，最后媒体。反射失败（null）或都没出声时
+ * 返回 null，交给车机总音量。
  */
-internal fun headUnitVolumeStream(navigationActive: Boolean?, mediaActive: Boolean?): Int? = when {
+internal fun headUnitVolumeStream(
+    navigationActive: Boolean?,
+    mediaActive: Boolean?,
+    callActive: Boolean?,
+): Int? = when {
+    callActive == true -> AudioManager.STREAM_VOICE_CALL
     navigationActive == true -> HEAD_UNIT_NAVIGATION_STREAM
     mediaActive == true -> AudioManager.STREAM_MUSIC
     else -> null
