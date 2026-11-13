@@ -28,7 +28,9 @@ internal object CarPlayVolumeTarget {
 
     private fun apply(host: Activity) {
         if (activity !== host) return
-        val media = AirPlayPersistence.loadMediaAudioChannel(host).let { if (it != 0) it else 5 }
+        val media = AirPlayPersistence.loadMediaAudioChannel(host).let {
+            if (it != 0) it else AirPlayPersistence.DEFAULT_MEDIA_AUDIO_CHANNEL
+        }
         host.volumeControlStream = navigationStream ?: media
     }
 }

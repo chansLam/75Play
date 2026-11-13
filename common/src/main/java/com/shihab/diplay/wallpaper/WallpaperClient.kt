@@ -23,6 +23,8 @@ internal class WallpaperClient(private val transport: WallpaperTransport) {
             transport.get(url, bingOriginal)
         } catch (error: Exception) {
             return null
+        } catch (error: OutOfMemoryError) {
+            return null
         }
         if (!result.ok || result.status !in 200..299) return null
         if (!WallpaperHosts.allows(result.finalUrl, bingOriginal)) return null

@@ -13,6 +13,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
 import android.os.Handler
 import android.os.Looper
@@ -413,6 +414,7 @@ object DiPlayDialog {
         private val next: Button,
         private var bitmap: Bitmap,
     ) {
+        private val mainThread = Handler(Looper.getMainLooper())
         private var busy = false
         private var locked = false
         private var hasPrevious = false
@@ -426,12 +428,22 @@ object DiPlayDialog {
 
         fun replace(nextBitmap: Bitmap) {
             if (nextBitmap === bitmap) return
-            image.setImageDrawable(null)
             val previousBitmap = bitmap
             bitmap = nextBitmap
             image.setImageBitmap(nextBitmap)
-            if (!previousBitmap.isRecycled) previousBitmap.recycle()
             note.visibility = View.GONE
+            if (previousBitmap !== nextBitmap && !previousBitmap.isRecycled) recycleAfterDraw(previousBitmap, null)
+        }
+
+        /**
+         * 卸下正在显示的大图，等这一帧画完再回收，然后才回调。
+         * 车机硬件加速仍引用上一张时立刻 recycle 会崩；上一张还占着堆时再解下一张也会崩。
+         */
+        fun releaseDisplayed(onReleased: () -> Unit) {
+            val previousBitmap = bitmap
+            note.visibility = View.GONE
+            image.setImageDrawable(null)
+            recycleAfterDraw(previousBitmap, onReleased)
         }
 
         fun showNote(text: String) {
@@ -481,8 +493,31 @@ object DiPlayDialog {
         }
 
         fun release() {
+            val previousBitmap = bitmap
             image.setImageDrawable(null)
-            if (!bitmap.isRecycled) bitmap.recycle()
+            recycleAfterDraw(previousBitmap, null)
+        }
+
+        private fun recycleAfterDraw(old: Bitmap, onReleased: (() -> Unit)?) {
+            if (old.isRecycled) {
+                onReleased?.invoke()
+                return
+            }
+            val finish = Runnable {
+                if (!old.isRecycled && !imageStillShows(old)) old.recycle()
+                onReleased?.invoke()
+            }
+            if (!image.isAttachedToWindow) {
+                mainThread.post(finish)
+                return
+            }
+            // 动画回调在本帧绘制之前。再丢回主线程队列，回收就会落在这次绘制之后。
+            image.postOnAnimation { mainThread.post(finish) }
+        }
+
+        private fun imageStillShows(candidate: Bitmap): Boolean {
+            val current = image.drawable
+            return current is BitmapDrawable && current.bitmap === candidate
         }
 
         private fun applyEnds() {

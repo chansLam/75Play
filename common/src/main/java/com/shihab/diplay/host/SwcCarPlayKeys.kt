@@ -30,8 +30,8 @@ enum class SwcWheelOutcome {
     END_CALL,
     SIRI,
     /**
-     * Volume up. Key-test mode skips the firmware's volume interrupt, so this drives the head
-     * unit's settings service directly (same path as the firmware, one step per press).
+     * Volume up. Key-test mode skips the firmware's volume interrupt. The press adjusts the
+     * stream that is playing (navigation 10, otherwise media 3), one step.
      */
     VOLUME_UP,
     /**

@@ -56,6 +56,34 @@ internal object NcmTxBatch {
     }
 }
 
+/**
+ * Inbound silence on the NCM data interface.
+ *
+ * A neighbor-discovery or mDNS frame often arrives before the phone sends NETWORK_CONNECTION.
+ * The data path can then sit quiet for well over 8 seconds while iAP2 still starts CarPlay.
+ * That gap is not a dead bulk-IN pipe. The silence clock starts only once the phone has marked
+ * the link up, and it starts from that moment rather than from the earlier discovery frame.
+ */
+internal class NcmReadStall(
+    private val stallNanos: Long,
+) {
+    private var linkUpAtNs = 0L
+
+    /**
+     * Quiet time since the link was up and the last inbound frame, or 0 when this poll
+     * must not fail the session.
+     */
+    fun fatalQuietNanos(nowNs: Long, networkConnected: Boolean, inboundSeen: Boolean, lastFrameNs: Long): Long {
+        if (!networkConnected || !inboundSeen || lastFrameNs == 0L) {
+            linkUpAtNs = 0L
+            return 0L
+        }
+        if (linkUpAtNs == 0L) linkUpAtNs = nowNs
+        val quiet = nowNs - maxOf(lastFrameNs, linkUpAtNs)
+        return if (quiet >= stallNanos) quiet else 0L
+    }
+}
+
 /** Host-side OUT rejection timing. Never requests a bus reset. */
 internal object NcmSessionHealth {
     /**

@@ -6,7 +6,7 @@
 
 > 独立实现，**非** Apple 认证，与 Apple / 长安无隶属关系。请在安全停车后操作。
 >
-> 基于 [DiPlay-Legacy-Android](https://github.com/programmerguohuajing/DiPlay-Legacy-Android) 修改优化。当前 **v2.0.5**，见 [CHANGELOG](CHANGELOG.md)。
+> 基于 [DiPlay-Legacy-Android](https://github.com/programmerguohuajing/DiPlay-Legacy-Android) 修改优化。当前 **v2.0.6-beta**，见 [CHANGELOG](CHANGELOG.md)。应用内更新不推送测试版。
 
 [下载 APK](https://github.com/chansLam/75Play/releases) · [项目主页](https://chansLam.github.io/75Play/) · [English](README.en.md)
 
@@ -19,7 +19,7 @@
 - **壳层壁纸** — 支持默认背景、本地自选、每日必应/Wallhaven 自动下载与多源在线搜索（支持全屏预览与上下滑动切图）
 - **方向盘按键** — 语音唤醒 Siri，上一曲 / 下一曲，接听 / 挂断。音量短按调节车机音量，长按缩放地图；SRC 切换地图视角。设置里可打开通用方控（默认关闭）并学习按键码
 - **全屏画面** — 固定全屏，SurfaceView，H.264。帧率 15 / 30 / 45 / 60，默认 30。中、小尺寸可在 iPhone 上看到智能缩放
-- **仪表与温度** — CarPlay 导航转向发到原厂仪表。顶部温度栏显示室外、车内和设定温度，可在显示设置里关闭
+- **仪表与温度** — CarPlay 导航转向发到原厂仪表。车机有仪表副屏时，导航开始后在中控多指左滑（默认三指，与回主页的手势相同），地图画到仪表上并保持到这次连接结束。只有中控屏时仍只发转向。顶部温度栏显示室外、车内和设定温度，可在显示设置里关闭
 - **设置在壳层** — 显示与音频、关于都是三列，不在投屏画面里改
 - **多语言** — 简 / 繁中文、英文、阿拉伯语、西班牙语、俄语、乌克兰语
 - **安卓终端**（实验性）

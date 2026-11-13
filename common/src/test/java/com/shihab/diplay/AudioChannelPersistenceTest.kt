@@ -20,8 +20,8 @@ class AudioChannelPersistenceTest {
     }
 
     @Test fun freshInstallUsesMediaMusicAndNavigationDefaults() {
-        // Media defaults to STREAM_MUSIC (5); navigation defaults to stream 10 when unset.
-        assertEquals(5, AirPlayPersistence.loadMediaAudioChannel(context))
+        // Media defaults to stream 3; navigation defaults to stream 10 when unset.
+        assertEquals(3, AirPlayPersistence.loadMediaAudioChannel(context))
         assertEquals(10, AirPlayPersistence.loadNavigationAudioChannel(context))
         org.junit.Assert.assertTrue(AirPlayPersistence.loadAudioFocusAutoYield(context))
     }
@@ -36,7 +36,7 @@ class AudioChannelPersistenceTest {
     @Test fun legacyNavigationChannelIsInheritedWithoutChangingMedia() {
         AirPlayPersistence.saveNavigationStreamType(context, 15)
         assertEquals(15, AirPlayPersistence.loadNavigationAudioChannel(context))
-        assertEquals(5, AirPlayPersistence.loadMediaAudioChannel(context))
+        assertEquals(3, AirPlayPersistence.loadMediaAudioChannel(context))
     }
 
     @Test fun explicitNavigationChannelTakesPrecedenceOverLegacySetting() {

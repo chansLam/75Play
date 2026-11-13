@@ -46,26 +46,36 @@ internal class HostTouchGestures(private val activity: CarPlayHostActivity) {
                 return true
             }
             if (event.actionMasked == MotionEvent.ACTION_MOVE) {
-                val deltaX = Math.abs(pointerCentroid(event, horizontal = true) - activity.gestureStartX)
+                val deltaX = pointerCentroid(event, horizontal = true) - activity.gestureStartX
                 val deltaY = pointerCentroid(event, horizontal = false) - activity.gestureStartY
                 val swipeDistance = activity.dp(CarPlayHostActivity.SETTINGS_SWIPE_DISTANCE_DP)
-                if (deltaY >= swipeDistance &&
-                    deltaY >= deltaX * CarPlayHostActivity.SETTINGS_SWIPE_DIRECTION_RATIO
-                ) {
-                    // Swipe down with N fingers: return to the DiPlay shell (not Host settings).
-                    activity.gestureSequenceActive = false
-                    activity.gestureTracking = false
-                    activity.returnToDiPlay()
-                    return true
-                }
-                if (deltaY <= -swipeDistance &&
-                    -deltaY >= deltaX * CarPlayHostActivity.SETTINGS_SWIPE_DIRECTION_RATIO
-                ) {
-                    // Swipe up with N fingers: briefly reveal hidden system bars, else back to DiPlay.
-                    activity.gestureSequenceActive = false
-                    activity.gestureTracking = false
-                    if (!activity.showTemporarySystemBars()) FloatingBall.backToDiPlay(activity)
-                    return true
+                when (hostSwipe(
+                    deltaX,
+                    deltaY,
+                    swipeDistance.toFloat(),
+                    CarPlayHostActivity.SETTINGS_SWIPE_DIRECTION_RATIO,
+                )) {
+                    HostSwipe.FlyCluster -> {
+                        activity.gestureSequenceActive = false
+                        activity.gestureTracking = false
+                        activity.requestClusterFly()
+                        return true
+                    }
+                    HostSwipe.ReturnToShell -> {
+                        // Swipe down with N fingers: return to the DiPlay shell (not Host settings).
+                        activity.gestureSequenceActive = false
+                        activity.gestureTracking = false
+                        activity.returnToDiPlay()
+                        return true
+                    }
+                    HostSwipe.RevealBars -> {
+                        // Swipe up with N fingers: briefly reveal hidden system bars, else back to DiPlay.
+                        activity.gestureSequenceActive = false
+                        activity.gestureTracking = false
+                        if (!activity.showTemporarySystemBars()) FloatingBall.backToDiPlay(activity)
+                        return true
+                    }
+                    HostSwipe.Pending -> Unit
                 }
             }
             return true
@@ -123,4 +133,16 @@ internal class HostTouchGestures(private val activity: CarPlayHostActivity) {
         }
         return total / event.pointerCount
     }
+}
+
+internal enum class HostSwipe { Pending, FlyCluster, ReturnToShell, RevealBars }
+
+/** Left flies the cluster map. Down returns to the shell. Up reveals the system bars. */
+internal fun hostSwipe(deltaX: Float, deltaY: Float, distance: Float, ratio: Float): HostSwipe {
+    val absX = Math.abs(deltaX)
+    val absY = Math.abs(deltaY)
+    if (deltaX <= -distance && absX >= absY * ratio) return HostSwipe.FlyCluster
+    if (deltaY >= distance && absY >= absX * ratio) return HostSwipe.ReturnToShell
+    if (deltaY <= -distance && absY >= absX * ratio) return HostSwipe.RevealBars
+    return HostSwipe.Pending
 }

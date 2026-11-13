@@ -18,6 +18,12 @@ import com.shihab.diplay.host.WirelessStartupRecovery
 import com.shihab.diplay.host.HostChrome
 import com.shihab.diplay.host.HostDisplayLayout
 import com.shihab.diplay.host.HostImmersion
+import com.shihab.diplay.host.ClusterCandidate
+import com.shihab.diplay.host.ClusterDisplays
+import com.shihab.diplay.host.ClusterMapPresentation
+import com.shihab.diplay.glance.CarPlayGlance
+import com.shihab.diplay.host.ClusterScreen
+import android.util.DisplayMetrics
 import com.shihab.diplay.host.HostSessionLifecycle
 import com.shihab.diplay.host.HostTouchGestures
 import com.shihab.diplay.host.backgroundSessionMatchesView
@@ -434,6 +440,17 @@ class CarPlayHostActivity : ComponentActivity() {
     }
     private val textureListener = hostVideoSurfaces.textureListener
     private val fallbackSurfaceCallback = hostVideoSurfaces.fallbackCallback
+    /**
+     * Set when a presentation display exists, before the session is advertised. The window stays
+     * hidden until a left swipe during route guidance, then stays up for this connection.
+     */
+    internal var clusterPanel: ClusterCandidate? = null
+    private var clusterPresentation: ClusterMapPresentation? = null
+    private var clusterSurface: Surface? = null
+    private var clusterSurfaceWidth = 0
+    private var clusterSurfaceHeight = 0
+    private var clusterDisplayWatch: (() -> Unit)? = null
+    private var lastClusterWindowLog: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -479,9 +496,14 @@ class CarPlayHostActivity : ComponentActivity() {
             "Host started; MFI target=${mfiTargetLabel(mfiTarget)}; " +
                 "transport=${if (wirelessEnabled) "wireless" else "wired"}",
         )
+        clusterDisplayWatch = ClusterDisplays.watch(this, mainHandler, ::onClusterDisplayEvent)
         // If the background CarPlayConnectService is mid-handshake, do NOT adopt-or-build our own
         // controller: that would race it (and double-build). Keep the waiting UI and adopt once its
         // success/failure broadcast lands.
+        // A cluster map is advertised when a presentation display exists. The window stays hidden
+        // until a left swipe during route guidance. No such display leaves the session main-screen only.
+        rememberClusterPanel()
+        if (CarPlayBackgroundSession.clusterMapHeld) showClusterPresentation()
         val connectingViaService = CarPlayConnectService.connecting
         val reusedBackgroundSession = if (connectingViaService) {
             installDeferredAdoptWaiter()
@@ -489,6 +511,7 @@ class CarPlayHostActivity : ComponentActivity() {
         } else {
             adoptBackgroundSession()
         }
+        clusterSurface?.let { attachClusterSurface(it) }
         microphoneAvailable =
             ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         microphonePermissionResolved = microphoneAvailable
@@ -697,6 +720,14 @@ class CarPlayHostActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         isActivityStarted = true
+        // The dash stays on the factory UI until the user has flown the map. Coming back to the
+        // host during that same connection shows the window again.
+        if (clusterPresentation?.isShowing == true) {
+            appendLog("Cluster presentation still showing id=${clusterPanel?.displayId}")
+        } else if (CarPlayBackgroundSession.clusterMapHeld) {
+            showClusterPresentation()
+        }
+        clusterSurface?.let { attachClusterSurface(it) }
         // Built-in wheel names use key-test mode. Generic steering uses the same switch so a
         // learned broadcast name is not also handled by the head unit.
         if (AirPlayPersistence.loadGenericSwcEnabled(this)) {
@@ -893,6 +924,9 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        clusterDisplayWatch?.invoke()
+        clusterDisplayWatch = null
+        closeClusterScreen()
         GenericSwcBroadcast.stop(this)
         SwcCarPlayKeys.stop(this)
         NaviClusterBroadcast.detach()
@@ -1291,13 +1325,15 @@ class CarPlayHostActivity : ComponentActivity() {
         appendLog(requestSummary)
         appendLog(support.details)
         appendLog(effectiveSummary)
+        val clusterConfig = clusterPanel?.let { ClusterScreen.streamConfig(it, sessionFps) }
+        appendLog(clusterAdvertiseLine(clusterConfig))
         return AirPlayConfig(
             deviceName = "75Play",
             deviceId = DiPlayBootstrap.deviceId(airPlayIdentity),
             btMac = DiPlayBluetooth.localAddress(this) ?: DiPlayBootstrap.deviceId(airPlayIdentity),
             sourceVersion = "950.7.1",
             main = declared,
-            cluster = null,
+            cluster = clusterConfig,
             rightHandDrive = rightHandDrive,
             hevc = sessionHevc,
             microphone = microphoneAvailable,
@@ -1663,7 +1699,205 @@ class CarPlayHostActivity : ComponentActivity() {
 
     internal fun attachSurface(surface: Surface) {
         sink?.setSurface(SCREEN_TYPE_MAIN, surface)
-        // SoftAP CS75 Plus: main surface only; no cluster/alt stream.
+    }
+
+    /**
+     * Records a presentation display so the session can advertise it. The window stays down until
+     * [requestClusterFly]. A head unit without that display never advertises an alt stream.
+     */
+    private fun rememberClusterPanel() {
+        if (clusterPanel != null) return
+        val probe = ClusterDisplays.probe(this)
+        probe.lines.forEach { appendLog(it) }
+        val found = probe.found ?: return
+        clusterPanel = found.candidate
+        appendLog(
+            "Cluster panel reserved id=${found.candidate.displayId} " +
+                "${found.candidate.widthPixels}x${found.candidate.heightPixels}; " +
+                "window waits for a left swipe during guidance",
+        )
+    }
+
+    /** Left swipe during route guidance. The window then stays up for this connection. */
+    internal fun requestClusterFly() {
+        if (clusterPresentation?.isShowing == true) {
+            appendLog("Cluster fly ignored: already showing")
+            return
+        }
+        if (clusterPanel == null) {
+            appendLog("Cluster fly ignored: no panel")
+            return
+        }
+        val maneuver = CarPlayGlance.snapshot().maneuverType
+        if (maneuver == null) {
+            appendLog("Cluster fly ignored: no route guidance")
+            return
+        }
+        appendLog("Cluster fly maneuver=$maneuver")
+        showClusterPresentation()
+    }
+
+    private fun showClusterPresentation() {
+        if (clusterPresentation?.isShowing == true) return
+        val probe = ClusterDisplays.probe(this)
+        val found = probe.found
+        if (found == null) {
+            appendLog("Cluster window failed: no panel")
+            return
+        }
+        clusterPanel = found.candidate
+        val presentation = ClusterMapPresentation(
+            this,
+            found.display,
+            onSurface = ::attachClusterSurface,
+            onSurfaceChanged = ::onClusterSurfaceChanged,
+            onSurfaceGone = ::detachClusterSurface,
+            onWindow = ::onClusterWindow,
+        )
+        try {
+            presentation.show()
+        } catch (error: Exception) {
+            runCatching { presentation.dismiss() }
+            appendLog("Cluster presentation failed: ${ClusterDisplays.failureText(error)}")
+            return
+        }
+        clusterPresentation = presentation
+        clusterPanel = found.candidate
+        CarPlayBackgroundSession.clusterMapHeld = true
+        appendLog(
+            "Cluster presentation shown id=${found.candidate.displayId} " +
+                "${found.candidate.widthPixels}x${found.candidate.heightPixels} " +
+                clusterWindowFacts(presentation),
+        )
+    }
+
+    private fun clusterAdvertiseLine(config: com.shihab.diplay.airplay.AirPlayDisplayConfig?): String {
+        val panel = clusterPanel
+        if (config == null) {
+            val panelText = panel?.let { "id=${it.displayId} ${it.widthPixels}x${it.heightPixels}" } ?: "none"
+            return "Cluster advertise off panel=$panelText"
+        }
+        return "Cluster advertise ${config.widthPixels}x${config.heightPixels} fps=${config.fps} " +
+            "features=${config.features} url=${config.initialUrl} " +
+            "panel=${panel?.displayId} ${panel?.widthPixels}x${panel?.heightPixels} " +
+            "surface=${clusterSurfaceState()} showing=${clusterPresentation?.isShowing == true}"
+    }
+
+    private fun clusterSurfaceState(): String {
+        val surface = clusterSurface
+        return when {
+            surface == null -> "none"
+            surface.isValid -> "valid ${clusterSurfaceWidth}x${clusterSurfaceHeight}"
+            else -> "invalid ${clusterSurfaceWidth}x${clusterSurfaceHeight}"
+        }
+    }
+
+    private fun clusterWindowFacts(presentation: ClusterMapPresentation): String {
+        val window = presentation.window
+        val attrs = window?.attributes
+        val shown = presentation.display
+        val metrics = DisplayMetrics()
+        runCatching { shown?.getRealMetrics(metrics) }
+        val decor = window?.decorView
+        return "showing=${presentation.isShowing} type=${attrs?.type ?: "?"} " +
+            "flags=0x${attrs?.flags?.toString(16) ?: "?"} format=${attrs?.format ?: "?"} " +
+            "attr=${attrs?.width ?: "?"}x${attrs?.height ?: "?"} " +
+            "decor=${decor?.width ?: 0}x${decor?.height ?: 0} " +
+            "rotation=${shown?.rotation ?: "?"} refresh=${shown?.refreshRate ?: "?"} " +
+            "metrics=${metrics.widthPixels}x${metrics.heightPixels} valid=${shown?.isValid}"
+    }
+
+    private fun onClusterDisplayEvent(line: String) {
+        appendLog(line)
+        if (!line.startsWith("Cluster display added")) return
+        if (controller != null && clusterPanel == null) {
+            appendLog(
+                "Cluster display arrived after this session was advertised; alt stream stays off until the next connection",
+            )
+            return
+        }
+        if (clusterPanel == null) rememberClusterPanel()
+    }
+
+    private fun onClusterWindow(event: String) {
+        val line = "Cluster window $event showing=${clusterPresentation?.isShowing == true} " +
+            "surface=${clusterSurfaceState()}"
+        if (line == lastClusterWindowLog) return
+        lastClusterWindowLog = line
+        appendLog(line)
+    }
+
+    private fun onClusterSurfaceChanged(surface: Surface, format: Int, width: Int, height: Int) {
+        clusterSurfaceWidth = width
+        clusterSurfaceHeight = height
+        val panel = clusterPanel
+        val differs = panel != null && width > 0 && height > 0 &&
+            (width != panel.widthPixels || height != panel.heightPixels)
+        val empty = if (width <= 0 || height <= 0) " empty" else ""
+        val mismatch = if (differs) " differs from panel ${panel.widthPixels}x${panel.heightPixels}" else ""
+        appendLog(
+            "Cluster surface changed format=${pixelFormatName(format)} ${width}x$height " +
+                "valid=${surface.isValid}$empty$mismatch",
+        )
+    }
+
+    private fun pixelFormatName(format: Int): String = when (format) {
+        PixelFormat.RGBA_8888 -> "RGBA_8888"
+        PixelFormat.RGBX_8888 -> "RGBX_8888"
+        PixelFormat.RGB_565 -> "RGB_565"
+        PixelFormat.OPAQUE -> "OPAQUE"
+        PixelFormat.TRANSLUCENT -> "TRANSLUCENT"
+        PixelFormat.TRANSPARENT -> "TRANSPARENT"
+        else -> format.toString()
+    }
+
+    private fun closeClusterScreen() {
+        val presentation = clusterPresentation
+        val hadSurface = clusterSurface != null
+        clusterPresentation = null
+        clusterPanel = null
+        clusterSurface?.let { detachClusterSurface(it) }
+        val dismissed = presentation?.let { runCatching { it.dismiss() }.isSuccess } ?: false
+        if (presentation != null) appendLog("Cluster presentation dismissed ok=$dismissed hadSurface=$hadSurface")
+        clusterSurfaceWidth = 0
+        clusterSurfaceHeight = 0
+    }
+
+    private fun attachClusterSurface(surface: Surface, width: Int = clusterSurfaceWidth, height: Int = clusterSurfaceHeight) {
+        clusterSurface = surface
+        if (width > 0 && height > 0) {
+            clusterSurfaceWidth = width
+            clusterSurfaceHeight = height
+        }
+        val parked = CarPlayBackgroundSession.snapshot()?.sink
+        val target = sink ?: parked
+        val where = when {
+            sink != null -> "host"
+            parked != null -> "parked"
+            else -> "missing"
+        }
+        target?.setSurface(SCREEN_TYPE_ALT, surface)
+        val panel = clusterPanel
+        appendLog(
+            "Cluster surface attached sink=$where valid=${surface.isValid} " +
+                "frame=${clusterSurfaceWidth}x${clusterSurfaceHeight} " +
+                "panel=${panel?.widthPixels ?: 0}x${panel?.heightPixels ?: 0}",
+        )
+    }
+
+    private fun detachClusterSurface(surface: Surface) {
+        if (clusterSurface === surface) clusterSurface = null
+        val clearedHost = sink?.let { it.clearSurface(SCREEN_TYPE_ALT, surface); true } ?: false
+        val parked = CarPlayBackgroundSession.snapshot()?.sink
+        val clearedParked = if (parked != null && parked !== sink) {
+            parked.clearSurface(SCREEN_TYPE_ALT, surface)
+            true
+        } else {
+            false
+        }
+        appendLog(
+            "Cluster surface detached host=$clearedHost parked=$clearedParked valid=${surface.isValid}",
+        )
     }
 
     /** Temporary reveal without persisting bar visibility or changing AirPlay's negotiated size. */
@@ -1684,7 +1918,10 @@ class CarPlayHostActivity : ComponentActivity() {
             }
             appendLog("Screen stream state: type=$type active=$active generation=$generation")
             if (type == SCREEN_TYPE_ALT) {
-                // Cluster/alt stream removed for SoftAP CS75 Plus.
+                appendLog(
+                    "Cluster video stream active=$active surface=${clusterSurfaceState()} " +
+                        "showing=${clusterPresentation?.isShowing == true}",
+                )
             }
             updateDebugOverlays()
         }

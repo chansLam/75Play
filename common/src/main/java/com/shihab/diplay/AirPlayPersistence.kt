@@ -28,6 +28,10 @@ import com.shihab.diplay.host.R
 object AirPlayPersistence {
     /** 0 uses usage-based routing; 1–20 select stream types supported by the head unit. */
     val AUDIO_CHANNELS = 0..20
+
+    /** CS75 Plus：媒体在音频流 3，导航播报在音频流 10。 */
+    const val DEFAULT_MEDIA_AUDIO_CHANNEL = 3
+    const val DEFAULT_NAVIGATION_AUDIO_CHANNEL = 10
     private const val PREFS = "xcertplay_airplay"
 
     /**
@@ -218,7 +222,7 @@ object AirPlayPersistence {
 
     fun loadMediaAudioChannel(context: Context): Int =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getInt(KEY_MEDIA_AUDIO_CHANNEL, 5)
+            .getInt(KEY_MEDIA_AUDIO_CHANNEL, DEFAULT_MEDIA_AUDIO_CHANNEL)
             .takeIf { it in AUDIO_CHANNELS } ?: 0
 
     fun saveMediaAudioChannel(context: Context, channel: Int) {
@@ -229,8 +233,11 @@ object AirPlayPersistence {
 
     fun loadNavigationAudioChannel(context: Context): Int {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        // Inherit the legacy value only when the new key is absent; default to 10 for navigation.
-        return prefs.getInt(KEY_NAVIGATION_AUDIO_CHANNEL, prefs.getInt(KEY_NAVIGATION_STREAM_TYPE, 10))
+        // Inherit the legacy value only when the new key is absent.
+        return prefs.getInt(
+            KEY_NAVIGATION_AUDIO_CHANNEL,
+            prefs.getInt(KEY_NAVIGATION_STREAM_TYPE, DEFAULT_NAVIGATION_AUDIO_CHANNEL),
+        )
             .takeIf { it in AUDIO_CHANNELS } ?: 0
     }
 

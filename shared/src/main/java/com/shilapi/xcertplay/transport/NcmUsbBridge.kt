@@ -66,7 +66,7 @@ class NcmUsbBridge internal constructor(
     @Volatile private var writeInFlightSinceNs = 0L
     private val writeWatchdogStarted = AtomicBoolean(false)
     private val writeWatchdogFired = AtomicBoolean(false)
-    private var inboundFrameSeen = false
+    @Volatile private var inboundFrameSeen = false
     /**
      * Set by the status thread from the NCM NETWORK_CONNECTION notification (wValue at byte 2:
      * 0 = disconnected, 1 = connected). While false the phone keeps bulk OUT NAKed, so those
@@ -370,21 +370,21 @@ class NcmUsbBridge internal constructor(
                 break
             }
         }, "ncm-write-watchdog").apply { isDaemon = true; start() }
-        // Issue #352-Q4 (this i.MX6 unit): once the data path is live, an inbound stall
-        // (video 21.6fps -> ~3fps, then frozen frame with no error) means bulk-IN is gone
-        // while bulk-OUT only fails intermittently, so the write-side counters never reach
-        // their teardown threshold. Watch the last-frame timestamp from a side thread and
-        // fail the session so the stack reconnects instead of leaving the user a frozen screen.
+        // Once the phone has marked the NCM link up, a long inbound gap means bulk-IN is gone
+        // while bulk-OUT still fails only sometimes, so the write counters never tear the
+        // session down. Silence before NETWORK_CONNECTION is the phone still starting CarPlay
+        // (a discovery frame, then more than 8 seconds of quiet) and must not fail the attempt.
+        val readStall = NcmReadStall(READ_STALL_NANOS)
         Thread({
             try {
                 while (!closed) {
                     Thread.sleep(READ_WATCHDOG_POLL_MILLIS)
-                    val last = lastFrameReceivedNs.get()
-                    if (last == 0L || closed || !inboundFrameSeen) continue
-                    if (System.nanoTime() - last < READ_STALL_NANOS) continue
+                    val now = System.nanoTime()
+                    val quietNanos = readStall.fatalQuietNanos(now, networkConnected, inboundFrameSeen, lastFrameReceivedNs.get())
+                    if (quietNanos == 0L) continue
                     if (!readWatchdogFired.compareAndSet(false, true)) break
                     if (closed) break
-                    val stalledForMillis = (System.nanoTime() - last) / NANOS_PER_MILLISECOND
+                    val stalledForMillis = quietNanos / NANOS_PER_MILLISECOND
                     onDiagnostic("ncm bulk-in stalled: no frame for ${stalledForMillis}ms while data path live")
                     failSession("NCM read stalled: no inbound frame for ${stalledForMillis}ms")
                     markAborted()

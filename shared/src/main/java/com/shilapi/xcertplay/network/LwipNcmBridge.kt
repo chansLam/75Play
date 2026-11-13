@@ -126,10 +126,13 @@ class LwipNcmBridge(
     val stalePortTcpPackets = AtomicInteger(0)
     private var stalePortLogBudget = 4
 
-    fun registerPort(port: Int, isTcp: Boolean) {
-        lwipNative.registerPort(port, isTcp)
+    fun registerPort(port: Int, isTcp: Boolean, uplink: Boolean = false) {
+        lwipNative.registerPort(port, isTcp, uplink)
         if (isTcp) registeredTcpPorts += port
     }
+
+    /** Forwards 127.0.0.1 datagrams for [port] to the iPhone. The port is the phone's, not ours. */
+    fun registerUdpUplink(port: Int) = registerPort(port, isTcp = false, uplink = true)
 
     private fun enqueueTxFrame(frame: ByteArray, tag: String = "lwip"): Boolean {
         if (!running.get()) return false

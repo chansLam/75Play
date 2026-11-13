@@ -6,7 +6,7 @@ An open-source CarPlay receiver for the factory head unit (`OS_S311-WT` · Andro
 
 > Independent implementation, **not** Apple-certified, not affiliated with Apple or Changan. Set up while safely parked.
 >
-> Modified and optimized from [DiPlay-Legacy-Android](https://github.com/programmerguohuajing/DiPlay-Legacy-Android). Current release **v2.0.5** — see [CHANGELOG](CHANGELOG.md).
+> Modified and optimized from [DiPlay-Legacy-Android](https://github.com/programmerguohuajing/DiPlay-Legacy-Android). Current release **v2.0.6-beta** — see [CHANGELOG](CHANGELOG.md). In-app updates do not offer this preview.
 
 [Download APK](https://github.com/chansLam/75Play/releases) · [Project site](https://chansLam.github.io/75Play/en/) · [中文](README.md)
 
@@ -19,7 +19,7 @@ An open-source CarPlay receiver for the factory head unit (`OS_S311-WT` · Andro
 - **Shell wallpaper** — default background, local custom image, daily Bing/Wallhaven downloads, and multi-source online search with fullscreen paging preview
 - **Steering-wheel keys** — voice wakes Siri, previous / next track, answer / hang up. A short volume press changes the head-unit volume; holding volume zooms the map. SRC cycles the map view. A generic wheel map can be turned on in Settings (off by default) to learn key codes
 - **Fullscreen picture** — always fullscreen, SurfaceView, H.264. Frame rate 15 / 30 / 45 / 60, default 30. Medium and small sizes can show Smart Display Zoom on the iPhone
-- **Cluster and temperature** — CarPlay turn guidance is sent to the factory cluster. A top bar shows outside, cabin, and setpoint temperatures, and can be turned off under Display
+- **Cluster and temperature** — CarPlay turn guidance is sent to the factory cluster. When the head unit has a cluster display, a left swipe with the same fingers as the return gesture (three by default) draws the navigation map there after guidance has started, and it stays for the rest of that connection. A single-screen head unit still receives only the turn guidance. A top bar shows outside, cabin, and setpoint temperatures, and can be turned off under Display
 - **Settings stay on the shell** — Display & audio and About are three columns, and they are not edited on the CarPlay picture
 - **Languages** — zh-Hans / zh-Hant / en / ar / es / ru / uk
 - **Android terminal** (experimental)

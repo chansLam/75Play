@@ -159,14 +159,27 @@ class CarPlayMediaEngine(
     }
 
     override fun onScreen(session: AirPlaySession, type: Int, stream: Map<String, Any?>): Int? {
-        val key = outputKey(session, stream) ?: return null
-        val peer = session.remoteAddress ?: return null
+        if (type == STREAM_TYPE_ALT_SCREEN) {
+            session.logDebug(
+                "Cluster stream request connection=${unsignedPlistDecimal(stream["streamConnectionID"]) ?: "none"} " +
+                    "keys=${stream.keys.sorted().joinToString(",")}",
+            )
+        }
+        val key = outputKey(session, stream) ?: run {
+            if (type == STREAM_TYPE_ALT_SCREEN) session.logDebug("Cluster stream rejected: no output key")
+            return null
+        }
+        val peer = session.remoteAddress ?: run {
+            if (type == STREAM_TYPE_ALT_SCREEN) session.logDebug("Cluster stream rejected: no peer address")
+            return null
+        }
         val streamKey = StreamKey(session, type)
         AppLog.i(TAG, "airplay screen key connectionID=${unsignedPlistDecimal(stream["streamConnectionID"])}")
         val screen = ScreenStream(key, peer, session::logDebug, session.localAddress)
         sink.setVideoDiagnosticHandler(type) {
             if (it == "first frame rendered") session.videoFrameRendered()
             session.logDebug("Video: $it")
+            if (type == STREAM_TYPE_ALT_SCREEN) session.logDebug("Cluster video: $it")
         }
         sink.setVideoRecoveryHandler(type) {
             if (streams[streamKey] === screen) {
@@ -177,6 +190,9 @@ class CarPlayMediaEngine(
                 val command = mapOf("type" to "forceKeyFrame", "params" to mapOf("uuid" to uuid))
                 val sent = session.sendCommand(command)
                 session.logDebug("Video recovery: requested keyframe sent=$sent")
+                if (type == STREAM_TYPE_ALT_SCREEN) {
+                    session.logDebug("Cluster video recovery: keyframe sent=$sent")
+                }
             }
         }
         val port = screen.listen(
@@ -212,6 +228,7 @@ class CarPlayMediaEngine(
         cancelScreenReap(session)
         streams.put(streamKey, screen)?.close()
         sink.onScreenStreamActive(type, true)
+        if (type == STREAM_TYPE_ALT_SCREEN) session.logDebug("Cluster stream listening port=$port")
         return port
     }
 
@@ -310,7 +327,8 @@ class CarPlayMediaEngine(
         // AirPlay audio (and its RTCP control) is carried over UDP, not TCP.
         session.registerUdpPort(dataPort)
         session.registerUdpPort(controlPort)
-        microphone?.let { session.registerUdpPort(it.port) }
+        // The request's dataPort is the iPhone's microphone port, not a socket we bound.
+        microphone?.let { session.registerUdpUplinkPort(it.port) }
         return linkedMapOf(
             "type" to type,
             "dataPort" to dataPort,

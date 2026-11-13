@@ -36,12 +36,15 @@ class LwipNcmNative(
     }
 
     @Synchronized
-    fun registerPort(port: Int, isTcp: Boolean) {
+    fun registerPort(port: Int, isTcp: Boolean, uplink: Boolean = false) {
         val handle = nativeHandle
         if (handle != 0L) {
-            nativeRegisterPort(handle, port, isTcp)
+            nativeRegisterPort(handle, port, isTcp, uplink)
         }
     }
+
+    /** A UDP port the iPhone listens on. Loopback packets to it are forwarded across NCM. */
+    fun registerUdpUplink(port: Int) = registerPort(port, isTcp = false, uplink = true)
 
     @Synchronized
     fun destroy() {
@@ -68,7 +71,7 @@ class LwipNcmNative(
 
     private external fun nativeCreate(hostMac: ByteArray, linkLocal: String): Long
     private external fun nativeInputFrame(handle: Long, frame: ByteArray, length: Int)
-    private external fun nativeRegisterPort(handle: Long, port: Int, isTcp: Boolean)
+    private external fun nativeRegisterPort(handle: Long, port: Int, isTcp: Boolean, uplink: Boolean)
     private external fun nativeGetSnapshot(handle: Long): String
     private external fun nativeDestroy(handle: Long)
 }

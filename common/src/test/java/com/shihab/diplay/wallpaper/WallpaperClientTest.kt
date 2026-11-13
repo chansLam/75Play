@@ -50,6 +50,11 @@ class WallpaperClientTest {
         assertNull(client.bytes("http://photos.example/a.jpg", bingOriginal = true))
     }
 
+    @Test fun allocationFailureBecomesAMissedImage() {
+        val client = WallpaperClient(WallpaperTransport { throw OutOfMemoryError("bitmap") })
+        assertNull(client.bytes("https://www.bing.com/a.jpg"))
+    }
+
     @Test fun rejectsFailedStatus() {
         val client = WallpaperClient(WallpaperTransport {
             WallpaperHttpResult(404, byteArrayOf(1), "https://www.bing.com/missing", false)

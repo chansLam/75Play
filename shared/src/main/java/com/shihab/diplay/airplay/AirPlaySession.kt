@@ -81,14 +81,28 @@ class AirPlaySession(
      * dropped as stale traffic. Null on transports that need no registration (system network).
      */
     private val registerPort: ((Int, Boolean) -> Unit)? = null,
+    /**
+     * Registers a UDP port the iPhone is listening on. Wired sessions send the microphone and the
+     * timing clock to 127.0.0.1, and this port is what the userspace relay must forward to the
+     * phone. Null falls back to [registerUdpPort].
+     */
+    private val registerUdpUplink: ((Int) -> Unit)? = null,
 ) : Closeable {
     /** Registers one ephemeral TCP listener with the transport bridge, if one is wired up. */
     internal fun registerTcpPort(port: Int) {
         registerPort?.invoke(port, true)
     }
-    /** Registers one ephemeral UDP listener (NTP timing / keep-alive) with the transport bridge. */
+    /**
+     * Registers a UDP port this process already bound. The bridge injects the iPhone's datagrams
+     * into that socket and must not bind the port itself.
+     */
     internal fun registerUdpPort(port: Int) {
         registerPort?.invoke(port, false)
+    }
+    /** Registers a UDP port the iPhone listens on, so loopback sends are forwarded across NCM. */
+    internal fun registerUdpUplinkPort(port: Int) {
+        val uplink = registerUdpUplink
+        if (uplink != null) uplink.invoke(port) else registerUdpPort(port)
     }
     internal val pairSetup = PairSetup(identity, pairings)
     internal val pairVerify = PairVerify(identity, pairings)
@@ -247,6 +261,7 @@ class AirPlaySession(
         val uiSent = sendCommand(mapOf("type" to "showUI", "params" to mapOf("uuid" to uuid, "url" to url)))
         val sent = uiSent && clusterStream == content.stream && !closed.get() &&
             sendCommand(mapOf("type" to "forceKeyFrame", "params" to mapOf("uuid" to uuid)))
+        debugLog("Cluster showUI url=$url uiSent=$uiSent keyframeSent=$sent setup=$clusterStream")
         return synchronized(clusterContentLock) {
             val current = clusterContent ?: return false
             if (closed.get() || current.stream != content.stream || clusterStream != content.stream) {
@@ -265,11 +280,14 @@ class AirPlaySession(
         val initial = config.cluster?.initialUrl
         clusterContent = ClusterContent(stream, requestedClusterUrl, initial)
         clusterStream = stream
+        debugLog("Cluster stream began setup=$stream url=${initial ?: "none"}")
     }
 
     private fun clearClusterContent() = synchronized(clusterContentLock) {
+        val previous = clusterStream
         clusterStream = 0
         clusterContent = null
+        if (previous != 0) debugLog("Cluster stream cleared setup=$previous")
     }
 
     // Re-SETUP starts at initialURL. Reapply the saved live selection only after SETUP was answered,
@@ -795,10 +813,15 @@ class AirPlaySession(
         return RtspMessage.Response(status = 200)
     }
 
-    private fun openTiming(peerPort: Int): Int {
+    internal fun openTiming(peerPort: Int): Int {
         val port = ntp.listen()
         registerUdpPort(port)
-        if (peerPort > 0) peerAddress?.let { ntp.start(it, peerPort) }
+        if (peerPort > 0) {
+            // The phone listens here. Without this registration, timing requests to 127.0.0.1
+            // never cross NCM, and realtime call audio has no shared clock.
+            registerUdpUplinkPort(peerPort)
+            peerAddress?.let { ntp.start(it, peerPort) }
+        }
         return port
     }
 

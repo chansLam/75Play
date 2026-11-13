@@ -17,6 +17,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import android.os.Looper
+import java.time.Duration
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], qualifiers = "zh-rCN")
@@ -41,7 +42,7 @@ class DiPlayImagePreviewTest {
             assertFalse(confirm.isEnabled)
         } finally {
             dialog.dismiss()
-            shadowOf(Looper.getMainLooper()).idle()
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(500))
         }
         assertTrue(bitmap.isRecycled)
     }
@@ -52,7 +53,7 @@ class DiPlayImagePreviewTest {
         var confirmed = false
         val dialog = DiPlayDialog.showImagePreview(activity, bitmap, onConfirm = { _ -> confirmed = true }).dialog
         buttons(dialog.window!!.decorView).first { it.text == activity.getString(R.string.back) }.performClick()
-        shadowOf(Looper.getMainLooper()).idle()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(500))
         assertFalse(confirmed)
         assertFalse(dialog.isShowing)
         assertTrue(bitmap.isRecycled)
@@ -77,14 +78,35 @@ class DiPlayImagePreviewTest {
             shown.first { it.text == activity.getString(R.string.settings_wallpaper_previous) }.performClick()
             assertEquals(-1, step)
             preview.replace(second)
-            assertTrue(first.isRecycled)
+            assertFalse(first.isRecycled)
             assertFalse(second.isRecycled)
             assertEquals(second, preview.bitmap())
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(500))
+            assertTrue(first.isRecycled)
+            assertFalse(second.isRecycled)
         } finally {
             preview.dialog.dismiss()
-            shadowOf(Looper.getMainLooper()).idle()
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(500))
         }
         assertTrue(second.isRecycled)
+    }
+
+    @Test fun releaseDisplayedRecyclesAfterTheFrameThenContinues() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888)
+        val preview = DiPlayDialog.showImagePreview(activity, bitmap, onConfirm = { _ -> })
+        var continued = false
+        preview.releaseDisplayed {
+            assertTrue(bitmap.isRecycled)
+            continued = true
+        }
+        assertFalse(continued)
+        assertFalse(bitmap.isRecycled)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(500))
+        assertTrue(continued)
+        assertTrue(bitmap.isRecycled)
+        preview.dialog.dismiss()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(500))
     }
 
     private fun buttons(root: View): List<Button> = views(root).filterIsInstance<Button>().toList()

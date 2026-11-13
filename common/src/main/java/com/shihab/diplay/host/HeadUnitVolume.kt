@@ -125,11 +125,11 @@ object HeadUnitVolume {
     private fun audioManager(): AudioManager? =
         debugContext?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
 
-    /** Reflects hidden AudioSystem.isStreamActive(stream, 0); null if unavailable. */
-    private fun isStreamActive(stream: Int): Boolean? = try {
+    /** Reflects hidden AudioSystem.isStreamActive(stream, inPastMs); null if unavailable. */
+    private fun isStreamActive(stream: Int, inPastMs: Int = 0): Boolean? = try {
         val method = Class.forName("android.media.AudioSystem")
             .getMethod("isStreamActive", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
-        method.invoke(null, stream, 0) as? Boolean
+        method.invoke(null, stream, inPastMs) as? Boolean
     } catch (e: Exception) {
         null
     }
@@ -188,11 +188,34 @@ object HeadUnitVolume {
         }
     }
 
-    /** Press volume up (single step). */
-    fun volumeUp() = transactVoid(TX_SET_VOLUME_UP, "volUp")
+    /** Press volume up (single step) on the stream that is actually playing. */
+    fun volumeUp() = stepActiveStream(AudioManager.ADJUST_RAISE, TX_SET_VOLUME_UP, "volUp")
 
-    /** Press volume down (single step). */
-    fun volumeDown() = transactVoid(TX_SET_VOLUME_DOWN, "volDown")
+    /** Press volume down (single step) on the stream that is actually playing. */
+    fun volumeDown() = stepActiveStream(AudioManager.ADJUST_LOWER, TX_SET_VOLUME_DOWN, "volDown")
+
+    /**
+     * 导航播报叠在媒体上时要调的是导航。句间停顿不算没声音，所以回看 [HEAD_UNIT_VOLUME_ACTIVE_PAST_MS]。
+     * 两路都没出声时仍走车机原来的总音量。
+     */
+    private fun stepActiveStream(direction: Int, fallbackCode: Int, label: String) {
+        val stream = headUnitVolumeStream(
+            isStreamActive(HEAD_UNIT_NAVIGATION_STREAM, HEAD_UNIT_VOLUME_ACTIVE_PAST_MS),
+            isStreamActive(AudioManager.STREAM_MUSIC, HEAD_UNIT_VOLUME_ACTIVE_PAST_MS),
+        )
+        val manager = if (stream == null) null else audioManager()
+        if (stream != null && manager != null) {
+            try {
+                manager.adjustStreamVolume(stream, direction, 0)
+                AppLog.i(TAG, "$label stream=$stream")
+                diag("$label stream=$stream")
+                return
+            } catch (e: Exception) {
+                AppLog.w(TAG, "$label stream=$stream failed", e)
+            }
+        }
+        transactVoid(fallbackCode, label)
+    }
 
     /** Toggle mute to its opposite. Falls back to unmute when the current state is unknown. */
     fun toggleMute() {
@@ -206,4 +229,20 @@ object HeadUnitVolume {
     fun reset() {
         binder = null
     }
+}
+
+/** 导航播报的停顿窗口。0 会把句间空隙当成没声音。 */
+internal const val HEAD_UNIT_VOLUME_ACTIVE_PAST_MS = 800
+
+/** 车机导航播报所在的音频流。API 19 没有这个公开常量。 */
+internal const val HEAD_UNIT_NAVIGATION_STREAM = 10
+
+/**
+ * 车机实测：媒体是 [AudioManager.STREAM_MUSIC]（3），导航是 [HEAD_UNIT_NAVIGATION_STREAM]。
+ * 两路同时出声时调导航。反射失败（null）或都没出声时返回 null，交给车机总音量。
+ */
+internal fun headUnitVolumeStream(navigationActive: Boolean?, mediaActive: Boolean?): Int? = when {
+    navigationActive == true -> HEAD_UNIT_NAVIGATION_STREAM
+    mediaActive == true -> AudioManager.STREAM_MUSIC
+    else -> null
 }

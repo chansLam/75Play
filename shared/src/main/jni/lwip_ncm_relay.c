@@ -55,6 +55,9 @@ typedef struct {
     int port;
     struct udp_pcb *lwip_pcb;
     int loopback_fd;
+    // 1: this port is the iPhone's. Read loopback and forward to the phone.
+    // 0: this process already listens. Inject the phone's datagrams and do not bind.
+    int uplink;
     ip_addr_t peer_ip;
     u16_t peer_port;
     int has_peer;
@@ -65,7 +68,13 @@ typedef struct {
     int active;
     int port;
     int is_tcp;
+    int uplink;
+    int uplink_bind_logged;
 } PortMapping;
+
+// A 48 kHz mono PCM frame plus the RTP header, tag and nonce already sits near 2 KB.
+// The old 2048-byte read truncated those datagrams, so the phone could not authenticate them.
+#define UDP_UPLINK_MAX 16384
 
 #define MAX_PORT_MAPPINGS 32
 #define NCM_TX_CAP 32
@@ -535,22 +544,25 @@ static struct pbuf *alloc_transport_pbuf(u16_t length);
 static void check_and_forward_udp_loopback(LwipContext *ctx) {
     for (int i = 0; i < MAX_UDP_RELAYS; i++) {
         UdpRelay *relay = &ctx->udp_relays[i];
-        if (!relay->active || relay->loopback_fd < 0 || relay->lwip_pcb == NULL) continue;
+        if (!relay->active || !relay->uplink || relay->loopback_fd < 0 || relay->lwip_pcb == NULL) continue;
 
+        // The registered port is where the iPhone listens (microphone or timing). A packet
+        // that happens to arrive on this PCB must not retarget that destination.
         const ip_addr_t *dst_ip = NULL;
         u16_t dst_port = 0;
-        if (relay->has_peer) {
-            dst_ip = &relay->peer_ip;
-            dst_port = relay->peer_port;
-        } else if (ctx->has_peer_ip) {
+        if (ctx->has_peer_ip) {
             dst_ip = &ctx->peer_ip;
             dst_port = (u16_t)relay->port;
         }
         if (dst_ip == NULL || dst_port == 0) continue;
 
-        uint8_t buf[2048];
+        uint8_t buf[UDP_UPLINK_MAX];
         while (1) {
-            ssize_t n = recvfrom(relay->loopback_fd, buf, sizeof(buf), 0, NULL, NULL);
+            ssize_t n = recvfrom(relay->loopback_fd, buf, sizeof(buf), MSG_TRUNC, NULL, NULL);
+            if (n > (ssize_t)sizeof(buf)) {
+                LOGW("udp uplink truncated port %d bytes=%zd", relay->port, n);
+                continue;
+            }
             if (n > 0) {
                 struct pbuf *p = alloc_transport_pbuf((u16_t)n);
                 if (p != NULL) {
@@ -674,25 +686,37 @@ static void register_listeners_locked(LwipContext *ctx) {
             setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
             setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
 
-            int reuse = 1;
-            setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-
-            struct sockaddr_in sin;
-            memset(&sin, 0, sizeof(sin));
-            sin.sin_family = AF_INET;
-            sin.sin_port = htons((uint16_t)port);
-            sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-            int bind_res = bind(fd, (struct sockaddr *)&sin, sizeof(sin));
-            if (bind_res == 0) {
-                LOGI("lwIP UDP relay loopback bound to 127.0.0.1:%d (uplink ready)", port);
+            int uplink = ctx->port_mappings[m].uplink;
+            if (uplink) {
+                int reuse = 1;
+                setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+                struct sockaddr_in sin;
+                memset(&sin, 0, sizeof(sin));
+                sin.sin_family = AF_INET;
+                sin.sin_port = htons((uint16_t)port);
+                sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+                if (bind(fd, (struct sockaddr *)&sin, sizeof(sin)) != 0) {
+                    if (!ctx->port_mappings[m].uplink_bind_logged) {
+                        ctx->port_mappings[m].uplink_bind_logged = 1;
+                        LOGE("lwIP UDP uplink bind 127.0.0.1:%d failed: %d", port, errno);
+                    }
+                    close(fd);
+                    udp_remove(pcb);
+                    continue;
+                }
+                LOGI("lwIP UDP uplink bound to 127.0.0.1:%d", port);
             } else {
-                LOGI("lwIP UDP relay loopback bind 127.0.0.1:%d skipped (%d) (downlink ready)", port, errno);
+                // Java already owns this port (call audio, timing replies, keep-alive).
+                // Binding 127.0.0.1 here steals those datagrams from the wildcard socket,
+                // so the car never hears the caller. Leave the socket unbound and inject.
+                LOGI("lwIP UDP downlink inject on port %d (loopback left to the listener)", port);
             }
 
             relay->active = 1;
             relay->port = port;
             relay->lwip_pcb = pcb;
             relay->loopback_fd = fd;
+            relay->uplink = uplink;
             relay->has_peer = 0;
             memset(&relay->peer_ip, 0, sizeof(relay->peer_ip));
             relay->peer_port = 0;
@@ -733,7 +757,9 @@ static void *lwip_worker_thread(void *arg) {
         }
 
         for (int i = 0; i < MAX_UDP_RELAYS; i++) {
-            if (ctx->udp_relays[i].active && ctx->udp_relays[i].loopback_fd >= 0) {
+            // Downlink sockets only send. Selecting them would spin if an error became readable.
+            if (ctx->udp_relays[i].active && ctx->udp_relays[i].uplink &&
+                ctx->udp_relays[i].loopback_fd >= 0) {
                 FD_SET(ctx->udp_relays[i].loopback_fd, &rfds);
                 if (ctx->udp_relays[i].loopback_fd > max_fd) {
                     max_fd = ctx->udp_relays[i].loopback_fd;
@@ -926,16 +952,17 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeInputFrame(
 
 JNIEXPORT void JNICALL
 Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeRegisterPort(
-        JNIEnv *env, jobject thiz, jlong handle, jint port, jboolean isTcp) {
+        JNIEnv *env, jobject thiz, jlong handle, jint port, jboolean isTcp, jboolean uplink) {
     (void)env;
     (void)thiz;
     LwipContext *ctx = (LwipContext *)(intptr_t)handle;
-    if (ctx == NULL || !ctx->running || port <= 0) return;
+    if (ctx == NULL || !ctx->running || port <= 0 || (isTcp && uplink)) return;
 
     pthread_mutex_lock(&lwip_core_lock);
     for (int i = 0; i < ctx->num_port_mappings; i++) {
         if (ctx->port_mappings[i].port == port &&
-            ctx->port_mappings[i].is_tcp == (isTcp ? 1 : 0)) {
+            ctx->port_mappings[i].is_tcp == (isTcp ? 1 : 0) &&
+            ctx->port_mappings[i].uplink == (uplink ? 1 : 0)) {
             pthread_mutex_unlock(&lwip_core_lock);
             return;
         }
@@ -943,9 +970,10 @@ Java_com_shilapi_xcertplay_network_LwipNcmNative_nativeRegisterPort(
     if (ctx->num_port_mappings < MAX_PORT_MAPPINGS) {
         ctx->port_mappings[ctx->num_port_mappings].port = port;
         ctx->port_mappings[ctx->num_port_mappings].is_tcp = isTcp ? 1 : 0;
+        ctx->port_mappings[ctx->num_port_mappings].uplink = uplink ? 1 : 0;
         ctx->port_mappings[ctx->num_port_mappings].active = 1;
         ctx->num_port_mappings++;
-        LOGI("Registered port %d (tcp=%d) for relay", port, isTcp ? 1 : 0);
+        LOGI("Registered port %d (tcp=%d uplink=%d) for relay", port, isTcp ? 1 : 0, uplink ? 1 : 0);
     }
     pthread_mutex_unlock(&lwip_core_lock);
 

@@ -23,8 +23,9 @@ import com.shihab.diplay.util.AppLog
  * turnType** value space (see [turnCode]) — there is deliberately no BYD Gaode hop here, the
  * Changan CoagentService consumes `rg_on_direction` as the Tencent turnType it expects.
  *
- * NOTE: only turn/route data is sent — CarPlay cannot draw its live map onto the cluster
- * (no system addSurface path); see docs/75Play-仪表盘导航协议.md.
+ * Turn and route data only. The live cluster map, when the head unit has a presentation
+ * display, is a separate CarPlay alt stream (see ClusterScreen). Cars without that display
+ * stay on this broadcast alone.
  */
 object NaviClusterBroadcast {
     const val TAG = "DiPlay-NaviCluster"

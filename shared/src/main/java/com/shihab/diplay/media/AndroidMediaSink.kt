@@ -133,6 +133,14 @@ class AndroidMediaSink(
 
     fun setSurface(type: Int, surface: Surface) {
         synchronized(videoOwnershipLock) {
+            if (type != MAIN_SCREEN_TYPE) {
+                val note = if (videoClosed) {
+                    "surface ignored: sink closed valid=${surface.isValid}"
+                } else {
+                    "surface accepted valid=${surface.isValid} decoder=${videoDecoders[type] != null}"
+                }
+                videoDiagnosticHandlers[type]?.invoke(note)
+            }
             if (videoClosed) return
             surfaces[type] = surface
             videoDecoders[type]?.setSurface(surface)

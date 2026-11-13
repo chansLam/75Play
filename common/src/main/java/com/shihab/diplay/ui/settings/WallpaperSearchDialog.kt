@@ -144,30 +144,45 @@ internal object WallpaperSearchDialog {
                 val ticketNow = ++loadTicket
                 loading = true
                 shown.setBusy(true)
-                imagePool.execute {
-                    val bytes = client.bytes(target.fullUrl, target.bingOriginal)
-                    val size = bytes?.let { WallpaperBitmaps.bounds(it) }
-                    val largeEnough = size != null && WallpaperCatalog.coversScreen(size.first, size.second, screenW, screenH)
-                    val decoded = if (largeEnough && current()) bytes?.let { WallpaperBitmaps.decode(it) } else null
-                    main.post {
-                        if (!current() || previewControl !== shown || !shown.dialog.isShowing || ticketNow != loadTicket) {
-                            decoded?.recycle()
-                            return@post
-                        }
+                shown.releaseDisplayed {
+                    if (!current() || previewControl !== shown || !shown.dialog.isShowing || ticketNow != loadTicket) {
                         loading = false
-                        shown.setBusy(false)
-                        if (decoded == null) {
-                            val message = if (size != null && !largeEnough) {
-                                context.getString(R.string.settings_wallpaper_too_small)
-                            } else {
-                                context.getString(R.string.settings_wallpaper_thumb_failed)
-                            }
-                            shown.showNote(message)
-                            return@post
+                        if (shown.dialog.isShowing) shown.setBusy(false)
+                        return@releaseDisplayed
+                    }
+                    imagePool.execute {
+                        var size: Pair<Int, Int>? = null
+                        var largeEnough = false
+                        val decoded = try {
+                            val bytes = client.bytes(target.fullUrl, target.bingOriginal)
+                            val measured = bytes?.let { WallpaperBitmaps.bounds(it) }
+                            size = measured
+                            largeEnough = measured != null &&
+                                WallpaperCatalog.coversScreen(measured.first, measured.second, screenW, screenH)
+                            if (largeEnough && current()) bytes?.let { WallpaperBitmaps.decode(it) } else null
+                        } catch (error: OutOfMemoryError) {
+                            null
                         }
-                        currentUrl = target.fullUrl
-                        shown.replace(decoded)
-                        updateEnds()
+                        main.post {
+                            if (!current() || previewControl !== shown || !shown.dialog.isShowing || ticketNow != loadTicket) {
+                                decoded?.recycle()
+                                return@post
+                            }
+                            loading = false
+                            shown.setBusy(false)
+                            if (decoded == null) {
+                                val message = if (size != null && !largeEnough) {
+                                    context.getString(R.string.settings_wallpaper_too_small)
+                                } else {
+                                    context.getString(R.string.settings_wallpaper_thumb_failed)
+                                }
+                                shown.showNote(message)
+                                return@post
+                            }
+                            currentUrl = target.fullUrl
+                            shown.replace(decoded)
+                            updateEnds()
+                        }
                     }
                 }
             }
@@ -412,7 +427,11 @@ internal object WallpaperSearchDialog {
         }
         pool.execute {
             val bytes = client.bytes(image.thumbUrl, image.bingOriginal && !WallpaperHosts.allowed(image.thumbUrl))
-            val bitmap = bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+            val bitmap = try {
+                bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+            } catch (error: OutOfMemoryError) {
+                null
+            }
             main.post {
                 if (!alive()) {
                     bitmap?.recycle()

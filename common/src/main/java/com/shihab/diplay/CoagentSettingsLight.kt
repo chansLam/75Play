@@ -1,8 +1,9 @@
 package com.shihab.diplay
 
-import android.content.Context
 import android.os.Binder
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.Parcel
 import android.util.Log
 
@@ -30,17 +31,16 @@ internal class CoagentSettingsLight : CarPlayNightModeController.LightSource {
         const val SERVICE_NAME = "coagent.settings"
         // ISettingInterface.AIDL descriptor (matches HeadUnitVolume).
         const val IFACE_DESCRIPTOR = "com.coagent.proxy.binder.service.ISettingInterface"
-        // ISettingCallBackInterface.AIDL descriptor.
-        const val CALLBACK_DESCRIPTOR = "com.coagent.proxy.binder.callback.ISettingCallBackInterface"
         // ISettingInterface.Stub transaction codes.
         const val TX_REGISTER_CALLBACK = 25
         const val TX_UNREGISTER_CALLBACK = 26
-        // ISettingCallBackInterface.Stub transaction code for onBignessNotify(int).
-        const val TX_ON_BIGNESS = 1
     }
 
+    private val main by lazy { Handler(Looper.getMainLooper()) }
     private var onLux: ((Float) -> Unit)? = null
     private var binder: IBinder? = null
+    private var callback: IBinder? = null
+    private var ticket = 0
 
     override val available: Boolean
         get() = resolveBinder() != null
@@ -49,26 +49,16 @@ internal class CoagentSettingsLight : CarPlayNightModeController.LightSource {
         stop()
         val target = resolveBinder() ?: return false
         this.onLux = onLux
-
-        val callback = object : Binder() {
-            override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
-                when (code) {
-                    TX_ON_BIGNESS -> {
-                        data.enforceInterface(CALLBACK_DESCRIPTOR)
-                        val brightness = data.readInt()
-                        deliver(brightness)
-                        return true
-                    }
-                }
-                return super.onTransact(code, data, reply, flags)
-            }
-        }
+        val registered = callback ?: CoagentBrightnessCallback { brightness ->
+            val current = ticket
+            main.post { deliverIfCurrent(current, brightness) }
+        }.also { callback = it }
 
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
         return try {
             data.writeInterfaceToken(IFACE_DESCRIPTOR)
-            data.writeStrongBinder(callback)
+            data.writeStrongBinder(registered)
             target.transact(TX_REGISTER_CALLBACK, data, reply, 0)
             reply.readException()
             Log.i(TAG, "registerCallback ok")
@@ -84,14 +74,18 @@ internal class CoagentSettingsLight : CarPlayNightModeController.LightSource {
     }
 
     override fun stop() {
+        ticket++
         onLux = null
         val target = binder
-        if (target != null) {
+        val registered = callback
+        if (target != null && registered != null) {
             val data = Parcel.obtain()
             val reply = Parcel.obtain()
             try {
                 data.writeInterfaceToken(IFACE_DESCRIPTOR)
+                data.writeStrongBinder(registered)
                 target.transact(TX_UNREGISTER_CALLBACK, data, reply, 0)
+                reply.readException()
             } catch (e: Exception) {
                 Log.w(TAG, "unregisterCallback failed", e)
             } finally {
@@ -99,6 +93,11 @@ internal class CoagentSettingsLight : CarPlayNightModeController.LightSource {
                 data.recycle()
             }
         }
+    }
+
+    private fun deliverIfCurrent(current: Int, brightness: Int) {
+        if (current != ticket) return
+        deliver(brightness)
     }
 
     private fun deliver(brightness: Int) {
@@ -124,5 +123,39 @@ internal class CoagentSettingsLight : CarPlayNightModeController.LightSource {
         }
         binder = resolved
         return resolved
+    }
+}
+
+/**
+ * Receives `onBignessNotify` from the head unit. The firmware calls this immediately on register.
+ * A thrown [Parcel.enforceInterface] or a reply with no exception header kills this process on
+ * the KitKat binder stub, which is the crash when ambient mode is selected.
+ */
+internal class CoagentBrightnessCallback(
+    private val onBrightness: (Int) -> Unit,
+) : Binder() {
+    internal fun dispatch(data: Parcel, reply: Parcel?): Boolean =
+        onTransact(TRANSACTION, data, reply, 0)
+
+    override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+        if (code == TRANSACTION) {
+            try {
+                data.enforceInterface(DESCRIPTOR)
+                onBrightness(data.readInt())
+            } catch (error: Exception) {
+                Log.w(TAG, "brightness callback failed", error)
+            }
+        }
+        if (code in IBinder.FIRST_CALL_TRANSACTION..IBinder.LAST_CALL_TRANSACTION) {
+            reply?.writeNoException()
+            return true
+        }
+        return super.onTransact(code, data, reply, flags)
+    }
+
+    internal companion object {
+        private const val TAG = "DiPlay-CoagentLight"
+        const val DESCRIPTOR = "com.coagent.proxy.binder.callback.ISettingCallBackInterface"
+        const val TRANSACTION = 1
     }
 }

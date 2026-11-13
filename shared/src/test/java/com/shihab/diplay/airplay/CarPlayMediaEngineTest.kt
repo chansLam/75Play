@@ -125,7 +125,8 @@ class CarPlayMediaEngineTest {
 
     @Test
     fun onAudioRegistersMicrophoneUplinkPortWithTransportBridge() {
-        val registeredUdpPorts = mutableListOf<Int>()
+        val downlink = mutableListOf<Int>()
+        val uplink = mutableListOf<Int>()
         val server = java.net.ServerSocket()
         server.bind(java.net.InetSocketAddress(java.net.InetAddress.getByName("127.0.0.1"), 0))
         val client = java.net.Socket()
@@ -134,8 +135,9 @@ class CarPlayMediaEngineTest {
         val session = testSession(
             socket = accepted,
             registerPort = { port, isTcp ->
-                if (!isTcp) registeredUdpPorts += port
+                if (!isTcp) downlink += port
             },
+            registerUdpUplink = { uplink += it },
         )
         val pairVerify = session.pairVerify
         val sharedField = pairVerify.javaClass.getDeclaredField("sharedSecret").apply { isAccessible = true }
@@ -151,12 +153,12 @@ class CarPlayMediaEngineTest {
         )
         try {
             val response = engine.onAudio(session, 100, stream)
-            // Downlink dataPort and controlPort plus iPhone's mic dataPort
-            assertTrue("iPhone's mic dataPort must be registered with the transport bridge", 49152 in registeredUdpPorts)
-            assertEquals(3, registeredUdpPorts.size)
-            assertEquals(response?.get("dataPort"), registeredUdpPorts[0])
-            assertEquals(response?.get("controlPort"), registeredUdpPorts[1])
-            assertEquals(49152, registeredUdpPorts[2])
+            // The car's sockets stay downlink. The iPhone's microphone port is uplink.
+            assertEquals(listOf(49152), uplink)
+            assertFalse(49152 in downlink)
+            assertEquals(2, downlink.size)
+            assertEquals(response?.get("dataPort"), downlink[0])
+            assertEquals(response?.get("controlPort"), downlink[1])
         } finally {
             session.close()
             client.close()
@@ -164,10 +166,49 @@ class CarPlayMediaEngineTest {
         }
     }
 
+    @Test
+    fun wiredTimingPeerPortIsRegisteredAsUplink() {
+        val downlink = mutableListOf<Int>()
+        val uplink = mutableListOf<Int>()
+        val server = java.net.ServerSocket()
+        server.bind(java.net.InetSocketAddress(java.net.InetAddress.getByName("127.0.0.1"), 0))
+        val client = java.net.Socket()
+        client.connect(java.net.InetSocketAddress(java.net.InetAddress.getByName("127.0.0.1"), server.localPort))
+        val accepted = server.accept()
+        val session = testSession(
+            socket = accepted,
+            registerPort = { port, isTcp -> if (!isTcp) downlink += port },
+            registerUdpUplink = { uplink += it },
+        )
+        try {
+            val local = session.openTiming(4242)
+            assertTrue(local in downlink)
+            assertEquals(listOf(4242), uplink)
+            assertFalse(4242 in downlink)
+        } finally {
+            session.close()
+            client.close()
+            server.close()
+        }
+    }
+
+    @Test
+    fun missingTimingPeerIsNotRegistered() {
+        val uplink = mutableListOf<Int>()
+        val session = testSession(registerUdpUplink = { uplink += it })
+        try {
+            session.openTiming(0)
+            assertTrue(uplink.isEmpty())
+        } finally {
+            session.close()
+        }
+    }
+
     private fun testSession(
         videoInCar: Boolean = false,
         socket: Socket = Socket(),
         registerPort: ((Int, Boolean) -> Unit)? = null,
+        registerUdpUplink: ((Int) -> Unit)? = null,
     ): AirPlaySession = AirPlaySession(
         socket = socket,
         config = AirPlayConfig(
@@ -184,5 +225,6 @@ class CarPlayMediaEngineTest {
         listener = object : AirPlaySessionListener {},
         media = object : AirPlayMediaHandler {},
         registerPort = registerPort,
+        registerUdpUplink = registerUdpUplink,
     )
 }

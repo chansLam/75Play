@@ -40,6 +40,28 @@ class NcmWiredPolicyTest {
         assertFalse(NcmSessionHealth.immediateRejection(51))
     }
 
+    @Test
+    fun inboundSilenceBeforeThePhoneMarksTheLinkUpIsNotAFailure() {
+        val stall = NcmReadStall(stallNanos = 8_000)
+        assertEquals(0L, stall.fatalQuietNanos(nowNs = 9_000, networkConnected = false, inboundSeen = true, lastFrameNs = 100))
+    }
+
+    @Test
+    fun linkUpStartsTheSilenceClockInsteadOfUsingTheOldDiscoveryFrame() {
+        val stall = NcmReadStall(stallNanos = 8_000)
+        assertEquals(0L, stall.fatalQuietNanos(nowNs = 20_000, networkConnected = true, inboundSeen = true, lastFrameNs = 100))
+        assertEquals(0L, stall.fatalQuietNanos(nowNs = 27_000, networkConnected = true, inboundSeen = true, lastFrameNs = 100))
+        assertEquals(8_000L, stall.fatalQuietNanos(nowNs = 28_000, networkConnected = true, inboundSeen = true, lastFrameNs = 100))
+    }
+
+    @Test
+    fun silenceAfterLiveTrafficFailsOnceTheLinkIsUp() {
+        val stall = NcmReadStall(stallNanos = 8_000)
+        assertEquals(0L, stall.fatalQuietNanos(nowNs = 1_000, networkConnected = true, inboundSeen = true, lastFrameNs = 900))
+        assertEquals(0L, stall.fatalQuietNanos(nowNs = 8_800, networkConnected = true, inboundSeen = true, lastFrameNs = 1_000))
+        assertEquals(8_000L, stall.fatalQuietNanos(nowNs = 9_000, networkConnected = true, inboundSeen = true, lastFrameNs = 1_000))
+    }
+
     private fun putU16(target: ByteArray, offset: Int, value: Int) {
         target[offset] = value.toByte()
         target[offset + 1] = (value ushr 8).toByte()

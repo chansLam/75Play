@@ -49,6 +49,11 @@ internal object CarPlayBackgroundSession {
     private var width = 0
     private var height = 0
     private var display: CarPlaySessionDisplay? = null
+    /**
+     * The user already sent the cluster map to the dash during this connection.
+     * Survives the host leaving for the shell. A full session clear drops it.
+     */
+    @Volatile var clusterMapHeld = false
     /** Owner after the host Activity has left. The controller stays up for the next host. */
     private val parkedOwner = Any()
     /** Shell callback after a parked session ends and its radio has been released. */
@@ -135,6 +140,7 @@ internal object CarPlayBackgroundSession {
         width = 0
         height = 0
         display = null
+        if (!keepOwner) clusterMapHeld = false
     }
 
     /**
@@ -179,6 +185,7 @@ internal object CarPlayBackgroundSession {
             width = 0
             height = 0
             display = null
+            clusterMapHeld = false
             pending
         }
         callbacks.forEach { runCatching { it() } }

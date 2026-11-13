@@ -3,6 +3,7 @@ package com.shihab.diplay.wallpaper
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import com.shihab.diplay.util.AppLog
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -47,25 +48,37 @@ internal object WallpaperBitmaps {
         return options.outWidth to options.outHeight
     }
 
-    fun decode(bytes: ByteArray): Bitmap? {
+    fun decode(bytes: ByteArray): Bitmap? = try {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-        val options = BitmapFactory.Options().apply {
-            inSampleSize = WallpaperCatalog.sampleSize(bounds.outWidth, bounds.outHeight)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) null
+        else {
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = WallpaperCatalog.sampleSize(bounds.outWidth, bounds.outHeight)
+            }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
         }
-        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+    } catch (error: OutOfMemoryError) {
+        AppLog.w("Wallpaper", "decode oom bytes=${bytes.size}")
+        null
     }
 
-    fun decodeFile(file: File): Bitmap? {
-        if (!file.isFile) return null
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(file.absolutePath, bounds)
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-        val options = BitmapFactory.Options().apply {
-            inSampleSize = WallpaperCatalog.sampleSize(bounds.outWidth, bounds.outHeight)
+    fun decodeFile(file: File): Bitmap? = try {
+        if (!file.isFile) null
+        else {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) null
+            else {
+                val options = BitmapFactory.Options().apply {
+                    inSampleSize = WallpaperCatalog.sampleSize(bounds.outWidth, bounds.outHeight)
+                }
+                BitmapFactory.decodeFile(file.absolutePath, options)
+            }
         }
-        return BitmapFactory.decodeFile(file.absolutePath, options)
+    } catch (error: OutOfMemoryError) {
+        AppLog.w("Wallpaper", "decode oom file")
+        null
     }
 
     fun writeJpeg(file: File, bitmap: Bitmap): Boolean {

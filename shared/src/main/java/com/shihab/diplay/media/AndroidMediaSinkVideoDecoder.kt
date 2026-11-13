@@ -78,7 +78,12 @@ internal class VideoDecoder(
     private var consecutiveInputWithoutOutput = 0
     private val stallRebuildTracker = DecoderStallRebuildTracker()
     private var lastOutputRenderedNs = 0L
+    private var loggedNoSurfaceConfigure = false
+    private var loggedNoSurfaceFrames = false
     private var surfaceAttachedAtNs = if (surface != null) System.nanoTime() else 0L
+    /** Frames that arrived before the host had a surface. Worker thread only. */
+    private val openingHold = OpeningPictureHold()
+    private var replayingHold = false
     // The main screen keeps the historical log format; other screens are labelled.
     private val stats = VideoStats(statsLabel ?: if (streamType == MAIN_SCREEN_TYPE) "" else " stream=$streamType")
     private val thread = Thread(::run, "carplay-video").apply { isDaemon = true }
@@ -97,9 +102,13 @@ internal class VideoDecoder(
     }
 
     fun setSurface(surface: Surface?) {
-        // Arm the hold before the worker runs, so a keyframe ask queued in the same
-        // surface-created turn cannot reset the iPhone's opening IDR.
-        if (surface != null) holdInitialKeyFrameUntilNs = System.nanoTime() + INITIAL_PICTURE_GRACE_NS
+        // Replacing a surface that is already showing: arm the grace before the worker runs,
+        // so a keyframe ask queued in the same turn cannot reset an opening IDR. The first
+        // surface is different — the picture may already have been missed — and the worker
+        // decides after it looks at what was held.
+        if (surface != null && outputSurface != null) {
+            holdInitialKeyFrameUntilNs = System.nanoTime() + INITIAL_PICTURE_GRACE_NS
+        }
         queue.offer(VideoJob.SurfaceChanged(surface))
     }
 
@@ -152,16 +161,28 @@ internal class VideoDecoder(
                         is VideoJob.Config -> configureDecoder(job)
                         is VideoJob.Frame -> {
                             try {
-                                val now = System.nanoTime()
-                                val rendering = lastOutputRenderedNs != 0L &&
-                                    now - lastOutputRenderedNs < MIN_OUTPUT_STALL_NS
-                                if (now - job.receivedNs > MAX_FRAME_AGE_NS && !rendering) {
-                                    queue.discardFrames()
-                                    recover("video backlog exceeded 800 ms")
+                                if (outputSurface == null) {
+                                    // Wireless SETUP delivers the opening IDR before the host
+                                    // surface exists. Dropping it leaves a still screen black.
+                                    holdWithoutSurface(job)
                                 } else {
-                                    // A late frame is still fed. Skipping it breaks every following
-                                    // predicted frame and the picture freezes until the next keyframe.
-                                    feed(job.nalus, job.length, localTimeOf(job))
+                                    val now = System.nanoTime()
+                                    val rendering = lastOutputRenderedNs != 0L &&
+                                        now - lastOutputRenderedNs < MIN_OUTPUT_STALL_NS
+                                    if (discardUnrenderedBacklog(
+                                            renderedOnce = lastOutputRenderedNs != 0L,
+                                            renderingNow = rendering,
+                                            ageNs = now - job.receivedNs,
+                                            maxAgeNs = MAX_FRAME_AGE_NS,
+                                        )
+                                    ) {
+                                        queue.discardFrames()
+                                        recover("video backlog exceeded 800 ms")
+                                    } else {
+                                        // A late frame is still fed. Skipping it breaks every following
+                                        // predicted frame and the picture freezes until the next keyframe.
+                                        feed(job.nalus, job.length, localTimeOf(job))
+                                    }
                                 }
                             } finally {
                                 VideoFrameBuffers.give(job.nalus)
@@ -234,7 +255,15 @@ internal class VideoDecoder(
         duplicateConfigLogged = false
         releaseDecoder()
         referenceChain.reset()
-        val surface = outputSurface ?: return
+        val surface = outputSurface
+        if (surface == null) {
+            if (!loggedNoSurfaceConfigure) {
+                loggedNoSurfaceConfigure = true
+                report("configure deferred: no surface")
+            }
+            return
+        }
+        loggedNoSurfaceConfigure = false
         val codec = config.codec
         val codecData = config.codecData
         val mime = if (codec == VideoCodec.H265) VIDEO_HEVC_MIME else VIDEO_AVC_MIME
@@ -280,6 +309,7 @@ internal class VideoDecoder(
                 TAG,
                 "video decoder configured name=$decoderName mime=$mime size=${width}x$height",
             )
+            replayOpeningHold()
         }
     }
 
@@ -431,8 +461,20 @@ internal class VideoDecoder(
         if (outputSurface === surface) return
         outputSurface = surface
         surfaceAttachedAtNs = if (surface != null) System.nanoTime() else 0L
+        if (surface != null) {
+            loggedNoSurfaceConfigure = false
+            loggedNoSurfaceFrames = false
+        }
         stallRebuildTracker.reset()
         consecutiveInputWithoutOutput = 0
+        // A picture that was already missed must ask now. Waiting out the grace assumes the
+        // opening IDR is still on the wire; after it was held or lost, that wait is a black screen.
+        val askNow = surface != null && openingHold.needsKeyframeNow()
+        if (surface != null && !askNow) {
+            holdInitialKeyFrameUntilNs = System.nanoTime() + INITIAL_PICTURE_GRACE_NS
+        } else if (askNow) {
+            holdInitialKeyFrameUntilNs = 0L
+        }
         if (surface == null) {
             releaseDecoder()
             AppLog.i(TAG, "video decoder detached from surface")
@@ -451,6 +493,7 @@ internal class VideoDecoder(
                 // can uncover; setOutputSurface itself does not reset the codec.
                 renderedFrameLogged = false
                 AppLog.i(TAG, "video decoder output surface updated")
+                replayOpeningHold()
                 return
             } catch (error: Exception) {
                 AppLog.w(TAG, "video decoder output surface update failed; reconfiguring", error)
@@ -463,9 +506,53 @@ internal class VideoDecoder(
             // A freshly configured codec has no reference frames. A reused stream is mid-GOP and
             // needs a keyframe, but a stream that just started is already sending one. Asking in
             // this gap resets the iPhone encoder and the picture sticks on that first frame.
-            if (decoder != null) {
+            // A chain that was already missed asks inside replayOpeningHold instead.
+            if (decoder != null && !askNow) {
                 holdInitialKeyFrameUntilNs = System.nanoTime() + INITIAL_PICTURE_GRACE_NS
             }
+        }
+        replayOpeningHold()
+    }
+
+    private fun holdWithoutSurface(job: VideoJob.Frame) {
+        val count = job.length.coerceIn(0, job.nalus.size)
+        val codec = lastConfig?.codec
+        val keyframe = if (codec != null) {
+            MediaCodecSupport.isRandomAccess(job.nalus, codec, count)
+        } else {
+            MediaCodecSupport.isRandomAccess(job.nalus, VideoCodec.H264, count) ||
+                MediaCodecSupport.isRandomAccess(job.nalus, VideoCodec.H265, count)
+        }
+        openingHold.accept(keyframe, job.nalus.copyOf(count), localTimeOf(job))
+        if (!loggedNoSurfaceFrames) {
+            loggedNoSurfaceFrames = true
+            report("frames held: waiting for the video surface")
+        }
+    }
+
+    /** Feed what arrived before the surface, then ask only when that chain cannot be shown. */
+    private fun replayOpeningHold() {
+        if (replayingHold || outputSurface == null || lastConfig == null || !openingHold.hasPending()) return
+        val replay = openingHold.snapshot()
+        if (replay.frames.isNotEmpty()) {
+            report("replaying ${replay.frames.size} frames held before the video surface")
+        }
+        replayingHold = true
+        try {
+            for (frame in replay.frames) feed(frame.bytes, frame.bytes.size, frame.presentNs)
+            if (replay.askKeyframe) {
+                // The held keyframe can paint the screen, but the frames after it were not a
+                // contiguous chain. Reject live predicted frames until the new IDR arrives.
+                referenceChain.reset()
+                holdInitialKeyFrameUntilNs = 0L
+                requestKeyFrameIfDue()
+                // One request is enough. A second one in this turn (the surface refresh) resets
+                // the encoder and the new IDR never becomes the picture.
+                holdInitialKeyFrameUntilNs = System.nanoTime() + INITIAL_PICTURE_GRACE_NS
+                report("opening picture missed; requested a keyframe")
+            }
+        } finally {
+            replayingHold = false
         }
     }
 
@@ -502,7 +589,13 @@ internal class VideoDecoder(
         val annexB = annex.bytes
         val annexLength = annex.length
         val config = lastConfig ?: return
-        if (outputSurface == null) return
+        if (outputSurface == null) {
+            if (!loggedNoSurfaceFrames) {
+                loggedNoSurfaceFrames = true
+                report("frames dropped: no surface")
+            }
+            return
+        }
         if (annex.isEmpty()) { recover("invalid video access unit"); return }
         if (!referenceChain.accepts(annexB, config.codec, annexLength)) {
             requestKeyFrameIfDue()
