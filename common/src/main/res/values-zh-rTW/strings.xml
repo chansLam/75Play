@@ -238,6 +238,9 @@
     <string name="about_device_model">裝置型號</string>
     <string name="about_export">匯出</string>
     <string name="about_export_report">診斷報告</string>
+    <string name="app_exit_row">結束應用程式</string>
+    <string name="app_exit_confirm_body">停止 CarPlay 工作階段並關閉 75Play？將返回車機桌面。</string>
+    <string name="app_exit_confirm">結束</string>
     <string name="about_gesture_fingers">%1$d 指</string>
     <string name="about_hardware_platform">硬體平台</string>
     <string name="about_info_board">主機板</string>

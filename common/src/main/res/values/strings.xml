@@ -243,6 +243,9 @@
     <string name="about_device_model">Device model</string>
     <string name="about_export">Export</string>
     <string name="about_export_report">Diagnostic report</string>
+    <string name="app_exit_row">Exit application</string>
+    <string name="app_exit_confirm_body">Stop the CarPlay session and close 75Play? You will return to the car\'s home screen.</string>
+    <string name="app_exit_confirm">Exit</string>
     <string name="about_gesture_fingers">%1$d fingers</string>
     <string name="about_hardware_platform">Hardware platform</string>
     <string name="about_info_board">Board</string>
