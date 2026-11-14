@@ -353,9 +353,11 @@ internal class AudioRenderer(
         bytesPerSecond = format.sampleRate * frameBytes
         val built: AudioTrack
         var routeLabel: String
+        var actualStream: Int
         diagnosticStage = "track-build"
         if (selection.channel == AudioChannel.NAVIGATION) {
             val streamType = if (streamOverride != 0) streamOverride else 10
+            actualStream = streamType
             routeLabel = "streamType=$streamType"
             @Suppress("DEPRECATION")
             built = AudioTrack(
@@ -369,6 +371,7 @@ internal class AudioRenderer(
             attributes = null
             routeLabel = "usage"
             val preferredStream = streamType()
+            actualStream = preferredStream
             built = LegacyAudioFallback.build(
                 createLegacy = {
                     @Suppress("DEPRECATION")
@@ -379,6 +382,7 @@ internal class AudioRenderer(
                 release = { it.release() },
                 createFallback = {
                     routeLabel = "usage(fallback=STREAM_MUSIC)"
+                    actualStream = AudioManager.STREAM_MUSIC
                     AppLog.w(TAG, "streamType=$preferredStream rejected by this ROM; falling back to STREAM_MUSIC")
                     @Suppress("DEPRECATION")
                     AudioTrack(AudioManager.STREAM_MUSIC, format.sampleRate, channelMask, encoding,
@@ -387,6 +391,7 @@ internal class AudioRenderer(
             )
         } else {
             val streamType = streamOverride
+            actualStream = streamType
             routeLabel = "streamType=$streamType"
             built = LegacyAudioFallback.build(
                 createLegacy = {
@@ -436,6 +441,10 @@ internal class AudioRenderer(
             "route=$routeLabel " +
             "bufferMs=${capacityBytes * 1000L / bytesPerSecond} startMs=${startThresholdBytes * 1000L / bytesPerSecond} " +
             trackMetadata)
+        // Wired-call probe: the actual stream's user volume and the audio mode decide whether a
+        // telephony track that is initialized can really reach the loudspeaker.
+        report("Audio: output stream=$actualStream state=${built.state} " +
+            audioFocusCoordinator.legacyOutputSnapshot(actualStream))
         // Issue #88: a near-zero STREAM_MUSIC volume is the most common "packets flow but
         // no sound" cause on head units; surface it loudly while the audio starts.
         audioFocusCoordinator.musicVolumeWarning()?.let { report(it) }
