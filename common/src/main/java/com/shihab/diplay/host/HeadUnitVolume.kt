@@ -29,6 +29,9 @@ object HeadUnitVolume {
     private const val SERVICE_NAME = "coagent.settings"
     private const val IFACE_DESCRIPTOR = "com.coagent.proxy.binder.service.ISettingInterface"
 
+    // 固件 MiscService 用它触发 WTVolumePanel 的导航音量条。
+    private const val ACTION_NAVI_VOLUME_CHANGE = "com.coagent.intent.action.NAVI_VOLUME_CHANGE"
+
     // Transaction codes from the firmware's ISettingInterface.Stub (AIDL).
     private const val TX_SET_VOLUME_UP = 9
     private const val TX_SET_VOLUME_DOWN = 10
@@ -197,6 +200,13 @@ object HeadUnitVolume {
     /**
      * 导航播报叠在媒体上时要调的是导航。句间停顿不算没声音，所以回看 [HEAD_UNIT_VOLUME_ACTIVE_PAST_MS]。
      * 两路都没出声时仍走车机原来的总音量。
+     *
+     * 全部走车机定制 UI（WTVolumePanel），绝不使用 [AudioManager.adjustStreamVolume] 带
+     * FLAG_SHOW_UI——那会弹出 AOSP 原生 VolumePanel，而不是车机面板。
+     *  - 导航：复刻固件 MiscService.setNaviVol——setStreamVolume(10, …, 0)（无 UI flag）后发
+     *    ACTION_NAVI_VOLUME_CHANGE 广播，WTVolumePanel 收到后自己读 stream10 并显示车机导航条。
+     *  - 媒体/通话/无活跃：走 coagent setVolumeUp/Down（TX9/10），MCU 步进后回报，
+     *    SettingsService 以 needShow=true 回调，WTVolumePanel 显示车机面板。
      */
     private fun stepActiveStream(direction: Int, fallbackCode: Int, label: String) {
         val stream = headUnitVolumeStream(
@@ -204,19 +214,40 @@ object HeadUnitVolume {
             isStreamActive(AudioManager.STREAM_MUSIC, HEAD_UNIT_VOLUME_ACTIVE_PAST_MS),
             isStreamActive(AudioManager.STREAM_VOICE_CALL, HEAD_UNIT_VOLUME_ACTIVE_PAST_MS),
         )
-        val manager = if (stream == null) null else audioManager()
-        if (stream != null && manager != null) {
-            try {
-                // FLAG_SHOW_UI makes the system volume panel appear, just like a native volume key.
-                manager.adjustStreamVolume(stream, direction, AudioManager.FLAG_SHOW_UI)
-                AppLog.i(TAG, "$label stream=$stream")
-                diag("$label stream=$stream")
-                return
-            } catch (e: Exception) {
-                AppLog.w(TAG, "$label stream=$stream failed", e)
-            }
+        if (stream == HEAD_UNIT_NAVIGATION_STREAM) {
+            stepNavigationVolume(direction, label)
+            return
         }
+        // 媒体、通话以及无活跃通道都统一走固件原生 setVolumeUp/Down，由 MCU 选通道并显示车机 UI。
         transactVoid(fallbackCode, label)
+    }
+
+    /** 单步调节导航流（stream 10）并通过车机广播显示 WTVolumePanel，不弹 AOSP 原生面板。 */
+    private fun stepNavigationVolume(direction: Int, label: String) {
+        val ctx = debugContext
+        val am = audioManager()
+        if (ctx == null || am == null) {
+            AppLog.w(TAG, "$label nav skipped: context/audio unavailable")
+            return
+        }
+        try {
+            val current = am.getStreamVolume(HEAD_UNIT_NAVIGATION_STREAM)
+            val max = am.getStreamMaxVolume(HEAD_UNIT_NAVIGATION_STREAM)
+            val next = (current + if (direction == AudioManager.ADJUST_RAISE) 1 else -1)
+                .coerceIn(0, max)
+            if (next != current) {
+                // flag 0：不触发 AOSP 原生音量条。
+                am.setStreamVolume(HEAD_UNIT_NAVIGATION_STREAM, next, 0)
+            }
+            val intent = android.content.Intent(ACTION_NAVI_VOLUME_CHANGE)
+                .addFlags(android.content.Intent.FLAG_RECEIVER_FOREGROUND)
+            ctx.sendBroadcast(intent)
+            AppLog.i(TAG, "$label nav $current->$next, broadcast WTVolumePanel")
+            diag("$label nav $current->$next")
+        } catch (e: Exception) {
+            AppLog.w(TAG, "$label nav failed", e)
+            diag("$label nav fail:${e.javaClass.simpleName}")
+        }
     }
 
     /** Toggle mute to its opposite. Falls back to unmute when the current state is unknown. */
