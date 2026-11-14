@@ -37,6 +37,10 @@ object HeadUnitVolume {
     private const val TX_SET_VOLUME_DOWN = 10
     private const val TX_SET_MUTE = 13
     private const val TX_GET_SETTINGS_INFO = 22
+    // Per-channel absolute volume + the explicit UI flag the firmware's WTVolumePanel uses.
+    private const val TX_SET_MEDIA_VOLUME = 2
+    private const val TX_SET_PHONE_VOLUME = 3
+    private const val TX_SET_VOLUME_SHOW = 44
 
     // Streams whose volume we snapshot around a volume key so we can see which one the firmware edits.
     private val DIAG_STREAMS = intArrayOf(0, 3, 4, 5, 6, 8, 9, 10)
@@ -158,6 +162,27 @@ object HeadUnitVolume {
         }
     }
 
+    /** One-arg int call (e.g. setMediaVolume(value)/setPhoneVolume(value)). */
+    private fun transactInt(code: Int, value: Int, label: String) {
+        val target = binderLocked() ?: return
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        try {
+            data.writeInterfaceToken(IFACE_DESCRIPTOR)
+            data.writeInt(value)
+            target.transact(code, data, reply, 0)
+            reply.readException()
+            AppLog.i(TAG, "tx$code($value) -> ok")
+            diag("$label($value) ok")
+        } catch (e: Exception) {
+            AppLog.w(TAG, "tx$code failed", e)
+            diag("$label fail:${e.javaClass.simpleName}")
+        } finally {
+            reply.recycle()
+            data.recycle()
+        }
+    }
+
     /**
      * Reads the current mute flag from `getSettingsInfo()`. The reply writes a non-null flag,
      * then the SettingsInfo parcel directly (writeInt(1) + writeToParcel). `isMute` is the 12th
@@ -208,18 +233,59 @@ object HeadUnitVolume {
      *  - 媒体/通话/无活跃：走 coagent setVolumeUp/Down（TX9/10），MCU 步进后回报，
      *    SettingsService 以 needShow=true 回调，WTVolumePanel 显示车机面板。
      */
+    /**
+     * 导航播报叠在媒体上时要调的是导航。句间停顿不算没声音，所以回看 [HEAD_UNIT_VOLUME_ACTIVE_PAST_MS]。
+     *
+     * 每个声道单独调各自音量，绝不使用 [AudioManager.adjustStreamVolume] 带 FLAG_SHOW_UI（那会弹
+     * AOSP 原生 VolumePanel），也不用无参 setVolumeUp/Down（MCU 自动选通道，无法保证落在当前声道）。
+     *  - 导航：复刻固件 MiscService.setNaviVol——setStreamVolume(10, …, 0) 后发 ACTION_NAVI_VOLUME_CHANGE
+     *    广播，WTVolumePanel 显示车机导航条。
+     *  - 媒体/通话：先 setVolumeShow(true) 打开车机显示窗口，再用分通道 setMediaVolume/setPhoneVolume
+     *    写入绝对音量，MCU 回报后 WTVolumePanel 显示对应车机条。
+     *  - 无活跃通道：按媒体处理，保证按键仍有反馈。
+     */
     private fun stepActiveStream(direction: Int, fallbackCode: Int, label: String) {
         val stream = headUnitVolumeStream(
             isStreamActive(HEAD_UNIT_NAVIGATION_STREAM, HEAD_UNIT_VOLUME_ACTIVE_PAST_MS),
             isStreamActive(AudioManager.STREAM_MUSIC, HEAD_UNIT_VOLUME_ACTIVE_PAST_MS),
             isStreamActive(AudioManager.STREAM_VOICE_CALL, HEAD_UNIT_VOLUME_ACTIVE_PAST_MS),
         )
-        if (stream == HEAD_UNIT_NAVIGATION_STREAM) {
-            stepNavigationVolume(direction, label)
+        when (stream) {
+            HEAD_UNIT_NAVIGATION_STREAM -> stepNavigationVolume(direction, label)
+            AudioManager.STREAM_VOICE_CALL -> stepChannelVolume(
+                AudioManager.STREAM_VOICE_CALL, TX_SET_PHONE_VOLUME, direction, label,
+            )
+            else -> stepChannelVolume(
+                AudioManager.STREAM_MUSIC, TX_SET_MEDIA_VOLUME, direction, label,
+            )
+        }
+    }
+
+    /**
+     * 分通道精确调节媒体/通话：读取该 Android stream 当前音量 ±1，clamp 后先打开车机显示窗口，
+     * 再写入对应 coagent 通道，让 WTVolumePanel 显示车机面板（而非 AOSP 原生条）。
+     */
+    private fun stepChannelVolume(stream: Int, setTx: Int, direction: Int, label: String) {
+        val am = audioManager()
+        if (am == null) {
+            AppLog.w(TAG, "$label stream=$stream skipped: audio unavailable")
             return
         }
-        // 媒体、通话以及无活跃通道都统一走固件原生 setVolumeUp/Down，由 MCU 选通道并显示车机 UI。
-        transactVoid(fallbackCode, label)
+        try {
+            val current = am.getStreamVolume(stream)
+            val max = am.getStreamMaxVolume(stream)
+            val next = (current + if (direction == AudioManager.ADJUST_RAISE) 1 else -1)
+                .coerceIn(0, max)
+            // Open the head-unit UI window first, then the per-channel MCU write's report makes
+            // WTVolumePanel show the matching channel.
+            transactBool(TX_SET_VOLUME_SHOW, true, "setVolumeShow")
+            transactInt(setTx, next, if (setTx == TX_SET_PHONE_VOLUME) "setPhoneVolume" else "setMediaVolume")
+            AppLog.i(TAG, "$label stream=$stream $current->$next")
+            diag("$label s$stream $current->$next")
+        } catch (e: Exception) {
+            AppLog.w(TAG, "$label stream=$stream failed", e)
+            diag("$label s$stream fail:${e.javaClass.simpleName}")
+        }
     }
 
     /** 单步调节导航流（stream 10）并通过车机广播显示 WTVolumePanel，不弹 AOSP 原生面板。 */
