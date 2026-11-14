@@ -156,6 +156,8 @@ class AudioStream(
                 } catch (error: Exception) {
                     if (rtp != null) AudioPacketBuffers.give(rtp)
                     val failureNumber = authenticationFailures.incrementAndGet()
+                    onDiagnostic("Audio decrypt failure type=$streamType count=$failureNumber " +
+                        "wireBytes=$received error=${error.javaClass.simpleName}: ${error.message}")
                     if (failureNumber == 1) {
                         val logged = if (keepWire) source else source.copyOf(received)
                         AppLog.w(
@@ -187,6 +189,7 @@ class AudioStream(
                 if (keepWire) listener.onPacket(source, rtp, sample, null)
                 if (!started) {
                     started = true
+                    onDiagnostic("Audio first packet decrypted type=$streamType payloadBytes=$plainLength")
                     listener.onStarted(sample)
                 }
                 listener.onRtp(rtp, sample)
