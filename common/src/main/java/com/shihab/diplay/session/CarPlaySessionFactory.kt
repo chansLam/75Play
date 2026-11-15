@@ -28,6 +28,8 @@ import com.shihab.diplay.airplay.AirPlaySessionListener
 import com.shihab.diplay.airplay.CarPlayDisplayScale
 import com.shihab.diplay.airplay.CarPlayMediaEngine
 import com.shihab.diplay.host.R
+import com.shihab.diplay.host.ClusterDisplays
+import com.shihab.diplay.host.ClusterScreen
 import com.shihab.diplay.location.AndroidCarPlayLocationProvider
 import com.shihab.diplay.media.AndroidMediaSink
 import com.shihab.diplay.media.OpusEncoderSupport
@@ -269,12 +271,15 @@ internal object CarPlaySessionFactory {
         )
         val microphoneGranted = ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
+        val clusterProbe = ClusterDisplays.probe(ctx)
+        val clusterConfig = clusterProbe.found?.let { ClusterScreen.streamConfig(it.candidate, fps) }
         val airPlayConfig = AirPlayConfig(
             deviceName = "75Play",
             deviceId = deviceId,
             btMac = DiPlayBluetooth.localAddress(ctx) ?: deviceId,
             sourceVersion = "950.7.1",
             main = scaled.display,
+            cluster = clusterConfig,
             rightHandDrive = AirPlayPersistence.loadRightHandDrive(ctx),
             hevc = sessionHevc,
             microphone = microphoneGranted,

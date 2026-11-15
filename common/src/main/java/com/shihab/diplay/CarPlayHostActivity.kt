@@ -1877,6 +1877,9 @@ class CarPlayHostActivity : ComponentActivity() {
             else -> "missing"
         }
         target?.setSurface(SCREEN_TYPE_ALT, surface)
+        controller?.showClusterMap { delivered ->
+            runOnUiThread { appendLog("Cluster map showUI delivered=$delivered") }
+        }
         val panel = clusterPanel
         appendLog(
             "Cluster surface attached sink=$where valid=${surface.isValid} " +

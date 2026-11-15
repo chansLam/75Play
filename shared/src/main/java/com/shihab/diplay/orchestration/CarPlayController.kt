@@ -665,6 +665,35 @@ class CarPlayController(
      * a paused map stays paused and comes back with the new content. Completion reports delivery
      * or a retained paused selection; the settings UI can reconnect when delivery fails.
      */
+    fun showClusterMap(onComplete: (Boolean) -> Unit) {
+        val session = activeSession
+        val stream = session?.clusterStream ?: 0
+        if (closed || session == null || stream <= 0) {
+            onComplete(false)
+            return
+        }
+        try {
+            touchExecutor.execute {
+                val sent = synchronized(clusterUiLock) {
+                    if (closed || activeSession !== session || session.clusterStream != stream) {
+                        return@synchronized false
+                    }
+                    val delivered = session.setClusterUiShown(true)
+                    if (delivered) {
+                        clusterUiShown = true
+                        clusterUiStream = session to stream
+                        clusterUiVisibility = (session to stream) to true
+                    }
+                    debugLog("Cluster map showUI sent=$delivered")
+                    delivered
+                }
+                onComplete(sent)
+            }
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            onComplete(false)
+        }
+    }
+
     fun showDashboardContent(url: String, onComplete: (Boolean) -> Unit) {
         val session = activeSession
         val stream = session?.clusterStream ?: 0
