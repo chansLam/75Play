@@ -443,4 +443,7 @@
     <string name="usb_privilege_hint">Путь проводного iPhone меняется при каждом перечислении, поэтому обычная установка показывает диалог USB. С root установите это один раз для молчаливого разрешения; без root диалог остаётся.</string>
     <string name="usb_privilege_already">Это уже привилегированное системное приложение; доступ к USB предоставляется молча</string>
     <string name="usb_privilege_no_root">Root недоступен; будет использоваться системный диалог USB</string>
+    <string name="app_exit_row">Выйти из приложения</string>
+    <string name="app_exit_confirm_body">Остановить сеанс CarPlay и закрыть 75Play? Вы вернётесь на главный экран автомобиля.</string>
+    <string name="app_exit_confirm">Выйти</string>
 </resources>

@@ -443,4 +443,7 @@
     <string name="usb_privilege_hint">تتغير مسارة جهاز iPhone السلكي في كل إعادة تعداد، لذا يجب على التثبيت العادي إظهار نافذة USB. مع صلاحيات الروت، ثبّت هذا مرة واحدة لمنح الإذن صامتًا؛ بدون روت تبقى النافذة.</string>
     <string name="usb_privilege_already">التطبيق مميز بالنظام بالفعل؛ يُمنح إذن USB صامتًا</string>
     <string name="usb_privilege_no_root">صلاحيات الروت غير متاحة؛ ستُستخدم نافذة إذن USB</string>
+    <string name="app_exit_row">إنهاء التطبيق</string>
+    <string name="app_exit_confirm_body">إيقاف جلسة CarPlay وإغلاق 75Play؟ ستعود إلى الشاشة الرئيسية للسيارة.</string>
+    <string name="app_exit_confirm">إنهاء</string>
 </resources>

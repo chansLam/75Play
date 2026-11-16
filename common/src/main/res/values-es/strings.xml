@@ -443,4 +443,7 @@
     <string name="usb_privilege_hint">La ruta del iPhone con cable cambia en cada reenumeración, por lo que una instalación normal debe mostrar el diálogo USB. Con root, instala esto una vez para conceder el permiso en silencio; sin root se mantiene el diálogo.</string>
     <string name="usb_privilege_already">Ya es una app del sistema con privilegios; el acceso USB se concede en silencio</string>
     <string name="usb_privilege_no_root">No hay acceso root; se usará el diálogo USB del sistema</string>
+    <string name="app_exit_row">Salir de la aplicación</string>
+    <string name="app_exit_confirm_body">¿Detener la sesión de CarPlay y cerrar 75Play? Volverás a la pantalla de inicio del coche.</string>
+    <string name="app_exit_confirm">Salir</string>
 </resources>
