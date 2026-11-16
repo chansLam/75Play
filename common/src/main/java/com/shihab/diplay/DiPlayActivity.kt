@@ -288,7 +288,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         // reuse the owner. That bookkeeping is not a live connection: require a real controller,
         // otherwise the shell keeps showing "connected" after an unexpected drop and the manual
         // connect path races a session that no longer exists.
-        return CarPlayBackgroundSession.hasSession() && CarPlayBackgroundSession.snapshot() != null
+        return CarPlayBackgroundSession.hasSession() && CarPlayBackgroundSession.hasLiveController()
     }
     override fun isCarPlayConnecting(): Boolean =
         // Only the explicit connect flow flags — do NOT use hasSession()&&!active here:
@@ -691,6 +691,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         if (DiPlayPreferences.temperatureBarEnabled(applicationContext)) {
             com.shihab.diplay.host.CoagentAcBridge.nudge()
         }
+        com.shihab.diplay.host.TemperatureBar.setShellCovering(true)
         CarPlayBackgroundSession.setParkedSessionLost(this) {
             if (isFinishing || isDestroyed) return@setParkedSessionLost
             handler.post {
@@ -760,6 +761,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         }
     }
     override fun onPause() {
+        com.shihab.diplay.host.TemperatureBar.setShellCovering(false)
         headlightThemeWatch.stop()
         CarPlayVolumeTarget.detach(this)
         userNavigatedFromCarPlay = false
@@ -1189,6 +1191,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
     private fun refreshStatus() {
         shellChrome.updateClock()
         shellChrome.updateRadios(radioProbe.snapshot())
+        shellChrome.updateClimate(DiPlayPreferences.temperatureBarEnabled(this))
         val active = isCarPlayActive()
         // Do not use hasSession here: stop() keeps hasSession true while tearing down,
         // which used to flash「连接中」after Disconnect / mode switch.

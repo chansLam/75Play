@@ -383,6 +383,7 @@
     <string name="home_save_and_connect_carplay">Сохранить и подключить CarPlay</string>
     <string name="home_save_and_connect_wifi">Сохранить и подключить Wi-Fi</string>
     <string name="cd_floating_ball">Плавающая кнопка: нажмите для «Назад», удерживайте для возврата на главный экран DiPlay</string>
+    <string name="cd_floating_ball_docked">Плавающая кнопка скрыта у края. Нажмите стрелку, чтобы вернуть её</string>
     <string name="session_notification_text">CarPlay: соединение активно</string>
     <string name="session_notification_disconnect">Отключить</string>
     <string name="cd_temp_bar">Строка температуры: снаружи, в салоне и заданная температура кондиционера</string>

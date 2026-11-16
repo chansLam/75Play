@@ -3,10 +3,16 @@ package com.shihab.diplay.ui.shell
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothA2dp
 import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothHeadset
 import android.bluetooth.BluetoothProfile
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.net.NetworkInfo
 import android.net.wifi.SupplicantState
 import android.net.wifi.WifiManager
 import android.telephony.PhoneStateListener
@@ -102,27 +108,53 @@ object ShellStatusLevels {
 
 /**
  * 读车机无线电。移动信号在没有电话模块或没有 [android.Manifest.permission.READ_PHONE_STATE] 时隐藏。
- * 监听在主线程 start/stop，和壳层 1 秒刷新对齐。
+ * 热点、蓝牙和 Wi-Fi 在 start 时读一次，之后只跟广播更新；1 秒刷新只读缓存。
+ * 监听在主线程 start/stop。
  */
 class ShellStatusProbe(context: Context) {
     private val app = context.applicationContext
     private val telephony = app.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
     private var listener: PhoneStateListener? = null
+    private var radioReceiver: BroadcastReceiver? = null
     private var cellDenied = false
 
+    @Volatile private var cellRadioPresent = false
     @Volatile private var cellInService = true
     @Volatile private var cellBars = 0
+    @Volatile private var wifiOn = false
+    @Volatile private var wifiConnected = false
+    @Volatile private var wifiBars = 0
+    @Volatile private var hotspotOn = false
+    @Volatile private var adapterEnabled = false
+    @Volatile private var headsetConnected = false
+    @Volatile private var a2dpConnected = false
+    @Volatile private var bluetooth = ShellBluetooth.OFF
+
+    fun start() {
+        startRadios()
+        startCell()
+    }
+
+    fun stop() {
+        stopRadios()
+        stopCell()
+    }
 
     @SuppressLint("MissingPermission")
-    fun start() {
+    private fun startCell() {
         if (listener != null || cellDenied) return
         val radio = telephony ?: return
         val type = runCatching { radio.phoneType }.getOrDefault(TelephonyManager.PHONE_TYPE_NONE)
-        if (type == TelephonyManager.PHONE_TYPE_NONE) return
-        if (!granted(Manifest.permission.READ_PHONE_STATE)) {
-            cellDenied = true
+        if (type == TelephonyManager.PHONE_TYPE_NONE) {
+            cellRadioPresent = false
             return
         }
+        if (!granted(Manifest.permission.READ_PHONE_STATE)) {
+            cellDenied = true
+            cellRadioPresent = false
+            return
+        }
+        cellRadioPresent = true
         val created = object : PhoneStateListener() {
             override fun onServiceStateChanged(state: ServiceState) {
                 cellInService = state.state == ServiceState.STATE_IN_SERVICE
@@ -136,10 +168,13 @@ class ShellStatusProbe(context: Context) {
             @Suppress("DEPRECATION")
             radio.listen(created, PhoneStateListener.LISTEN_SERVICE_STATE or PhoneStateListener.LISTEN_SIGNAL_STRENGTHS)
         }.isSuccess
-        if (listened) listener = created else cellDenied = true
+        if (listened) listener = created else {
+            cellDenied = true
+            cellRadioPresent = false
+        }
     }
 
-    fun stop() {
+    private fun stopCell() {
         val radio = telephony
         val current = listener
         listener = null
@@ -151,38 +186,103 @@ class ShellStatusProbe(context: Context) {
         }
     }
 
-    fun snapshot(): ShellStatusSnapshot {
-        val wifi = readWifi()
-        return ShellStatusSnapshot(
-            cellVisible = cellAvailable(),
-            cellInService = cellInService,
-            cellBars = if (cellInService) cellBars else 0,
-            wifiOn = wifi.on,
-            wifiConnected = wifi.connected,
-            wifiBars = wifi.bars,
-            hotspotOn = readHotspot(),
-            bluetooth = readBluetooth(),
-        )
+    @SuppressLint("MissingPermission")
+    private fun startRadios() {
+        if (radioReceiver != null) return
+        seedRadios()
+        val created = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) = onRadioBroadcast(intent)
+        }
+        val filter = IntentFilter().apply {
+            addAction(CarHotspotStatus.WIFI_AP_STATE_CHANGED_ACTION)
+            addAction(WifiManager.WIFI_STATE_CHANGED_ACTION)
+            addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION)
+            addAction(WifiManager.RSSI_CHANGED_ACTION)
+            addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
+            addAction(BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED)
+            addAction(BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED)
+        }
+        if (runCatching { app.registerReceiver(created, filter) }.isSuccess) radioReceiver = created
     }
 
-    private fun cellAvailable(): Boolean {
-        if (cellDenied) return false
-        val radio = telephony ?: return false
-        val type = runCatching { radio.phoneType }.getOrDefault(TelephonyManager.PHONE_TYPE_NONE)
-        return type != TelephonyManager.PHONE_TYPE_NONE
+    private fun stopRadios() {
+        val current = radioReceiver ?: return
+        radioReceiver = null
+        runCatching { app.unregisterReceiver(current) }
     }
 
-    @Suppress("DEPRECATION")
-    private fun barsFrom(signal: SignalStrength): Int {
-        val gsm = hiddenBoolean(signal, "isGsm") ?: true
-        return ShellStatusLevels.cellBars(
-            gsm = gsm,
-            gsmAsu = signal.gsmSignalStrength,
-            cdmaDbm = signal.cdmaDbm,
-            lteRsrp = hiddenInt(signal, "getLteRsrp"),
-            lteAsu = hiddenInt(signal, "getLteSignalStrength"),
-        )
+    internal fun onRadioBroadcast(intent: Intent) {
+        when (intent.action) {
+            CarHotspotStatus.WIFI_AP_STATE_CHANGED_ACTION ->
+                CarHotspotStatus.fromBroadcast(intent)?.let { hotspotOn = it }
+            WifiManager.WIFI_STATE_CHANGED_ACTION -> onWifiState(intent)
+            WifiManager.NETWORK_STATE_CHANGED_ACTION -> onWifiNetwork(intent)
+            WifiManager.RSSI_CHANGED_ACTION -> onWifiRssi(intent)
+            BluetoothAdapter.ACTION_STATE_CHANGED -> onAdapterState(intent)
+            BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED -> onProfile(intent, headset = true)
+            BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED -> onProfile(intent, headset = false)
+        }
     }
+
+    private fun onAdapterState(intent: Intent) {
+        when (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)) {
+            BluetoothAdapter.STATE_ON -> adapterEnabled = true
+            BluetoothAdapter.STATE_OFF, BluetoothAdapter.STATE_TURNING_OFF -> {
+                adapterEnabled = false
+                headsetConnected = false
+                a2dpConnected = false
+            }
+        }
+        publishBluetooth()
+    }
+
+    private fun onProfile(intent: Intent, headset: Boolean) {
+        val connected = intent.getIntExtra(BluetoothProfile.EXTRA_STATE, BluetoothProfile.STATE_DISCONNECTED) ==
+            BluetoothProfile.STATE_CONNECTED
+        if (headset) headsetConnected = connected else a2dpConnected = connected
+        if (connected) adapterEnabled = true
+        publishBluetooth()
+    }
+
+    private fun publishBluetooth() {
+        bluetooth = ShellStatusLevels.bluetooth(adapterEnabled, headsetConnected, a2dpConnected)
+    }
+
+    private fun onWifiState(intent: Intent) {
+        when (intent.getIntExtra(WifiManager.EXTRA_WIFI_STATE, WifiManager.WIFI_STATE_UNKNOWN)) {
+            WifiManager.WIFI_STATE_ENABLED -> wifiOn = true
+            WifiManager.WIFI_STATE_DISABLED, WifiManager.WIFI_STATE_DISABLING -> {
+                wifiOn = false
+                wifiConnected = false
+                wifiBars = 0
+            }
+        }
+    }
+
+    private fun onWifiNetwork(intent: Intent) {
+        @Suppress("DEPRECATION")
+        val connected = (intent.getParcelableExtra(WifiManager.EXTRA_NETWORK_INFO) as? NetworkInfo)?.isConnected == true
+        if (connected) wifiOn = true
+        wifiConnected = connected
+        if (!connected) wifiBars = 0
+    }
+
+    private fun onWifiRssi(intent: Intent) {
+        if (!wifiOn || !wifiConnected) return
+        val rssi = intent.getIntExtra(WifiManager.EXTRA_NEW_RSSI, -127)
+        wifiBars = if (rssi < 0 && rssi > -127) ShellStatusLevels.wifiBars(rssi) else 0
+    }
+
+    fun snapshot(): ShellStatusSnapshot = ShellStatusSnapshot(
+        cellVisible = cellRadioPresent,
+        cellInService = cellInService,
+        cellBars = if (cellInService) cellBars else 0,
+        wifiOn = wifiOn,
+        wifiConnected = wifiConnected,
+        wifiBars = wifiBars,
+        hotspotOn = hotspotOn,
+        bluetooth = bluetooth,
+    )
 
     private data class WifiRead(val on: Boolean, val connected: Boolean, val bars: Int)
 
@@ -200,18 +300,26 @@ class ShellStatusProbe(context: Context) {
         return WifiRead(true, connected, if (connected) ShellStatusLevels.wifiBars(rssi) else 0)
     }
 
-    private fun readHotspot(): Boolean =
-        runCatching { CarHotspotStatus.isEnabled(app) == true }.getOrDefault(false)
-
-    @SuppressLint("MissingPermission")
-    private fun readBluetooth(): ShellBluetooth {
-        if (!granted(Manifest.permission.BLUETOOTH)) return ShellBluetooth.OFF
-        val adapter = runCatching { BluetoothAdapter.getDefaultAdapter() }.getOrNull() ?: return ShellBluetooth.OFF
-        val enabled = runCatching { adapter.isEnabled }.getOrDefault(false)
-        if (!enabled) return ShellBluetooth.OFF
-        val headset = profileConnected(adapter, BluetoothProfile.HEADSET)
-        val a2dp = profileConnected(adapter, BluetoothProfile.A2DP)
-        return ShellStatusLevels.bluetooth(true, headset, a2dp)
+    private fun seedRadios() {
+        val wifi = readWifi()
+        wifiOn = wifi.on
+        wifiConnected = wifi.connected
+        wifiBars = wifi.bars
+        hotspotOn = runCatching { CarHotspotStatus.isEnabled(app) == true }.getOrDefault(false)
+        val adapter = if (granted(Manifest.permission.BLUETOOTH)) {
+            runCatching { BluetoothAdapter.getDefaultAdapter() }.getOrNull()
+        } else {
+            null
+        }
+        adapterEnabled = adapter?.let { runCatching { it.isEnabled }.getOrDefault(false) } == true
+        if (adapter != null && adapterEnabled) {
+            headsetConnected = profileConnected(adapter, BluetoothProfile.HEADSET)
+            a2dpConnected = profileConnected(adapter, BluetoothProfile.A2DP)
+        } else {
+            headsetConnected = false
+            a2dpConnected = false
+        }
+        publishBluetooth()
     }
 
     @SuppressLint("MissingPermission")
@@ -221,9 +329,30 @@ class ShellStatusProbe(context: Context) {
     private fun granted(permission: String): Boolean =
         app.checkCallingOrSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
 
-    private fun hiddenInt(target: Any, name: String): Int =
-        runCatching { target.javaClass.getMethod(name).invoke(target) as? Int }.getOrNull() ?: Int.MIN_VALUE
+    private var signalMethodsReady = false
+    private var lteRsrpMethod: java.lang.reflect.Method? = null
+    private var lteAsuMethod: java.lang.reflect.Method? = null
+    private var gsmMethod: java.lang.reflect.Method? = null
 
-    private fun hiddenBoolean(target: Any, name: String): Boolean? =
-        runCatching { target.javaClass.getMethod(name).invoke(target) as? Boolean }.getOrNull()
+    @Suppress("DEPRECATION")
+    private fun barsFrom(signal: SignalStrength): Int {
+        if (!signalMethodsReady) {
+            signalMethodsReady = true
+            val type = signal.javaClass
+            lteRsrpMethod = runCatching { type.getMethod("getLteRsrp") }.getOrNull()
+            lteAsuMethod = runCatching { type.getMethod("getLteSignalStrength") }.getOrNull()
+            gsmMethod = runCatching { type.getMethod("isGsm") }.getOrNull()
+        }
+        val gsm = runCatching { gsmMethod?.invoke(signal) as? Boolean }.getOrNull() ?: true
+        return ShellStatusLevels.cellBars(
+            gsm = gsm,
+            gsmAsu = signal.gsmSignalStrength,
+            cdmaDbm = signal.cdmaDbm,
+            lteRsrp = invokeInt(lteRsrpMethod, signal),
+            lteAsu = invokeInt(lteAsuMethod, signal),
+        )
+    }
+
+    private fun invokeInt(method: java.lang.reflect.Method?, target: Any): Int =
+        runCatching { method?.invoke(target) as? Int }.getOrNull() ?: Int.MIN_VALUE
 }

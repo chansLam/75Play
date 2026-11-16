@@ -185,12 +185,12 @@ class ShellPhonePicker(
         )
     }
 
-    private fun isDeviceConnected(device: BluetoothDevice): Boolean = try {
-        val method = BluetoothDevice::class.java.getMethod("isConnected")
-        method.invoke(device) as? Boolean == true
-    } catch (_: Throwable) {
-        false
+    private val deviceConnected by lazy {
+        runCatching { BluetoothDevice::class.java.getMethod("isConnected") }.getOrNull()
     }
+
+    private fun isDeviceConnected(device: BluetoothDevice): Boolean =
+        runCatching { deviceConnected?.invoke(device) as? Boolean == true }.getOrDefault(false)
 
     private fun queryConnectedProfileDevices(adapter: BluetoothAdapter): Set<BluetoothDevice> {
         val connected = java.util.Collections.synchronizedSet(mutableSetOf<BluetoothDevice>())

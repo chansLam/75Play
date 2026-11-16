@@ -34,10 +34,12 @@ class CarPlayParkedSessionReleaseTest {
         val controller = mock(CarPlayController::class.java)
         val sink = mock(AndroidMediaSink::class.java)
         val display = mock(CarPlaySessionDisplay::class.java)
+        assertFalse(CarPlayBackgroundSession.hasLiveController())
         CarPlayBackgroundSession.store(controller, sink, 1920, 720, owner, display) { done ->
             CarPlayBackgroundSession.clear(controller)
             done()
         }
+        assertTrue(CarPlayBackgroundSession.hasLiveController())
         CarPlayBackgroundSession.park(owner)
         val done = CountDownLatch(1)
         var hits = 0

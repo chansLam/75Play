@@ -9,13 +9,16 @@ import android.graphics.PixelFormat
 import android.graphics.RectF
 import android.graphics.drawable.Drawable
 import com.shihab.diplay.ui.GlassColors
+import kotlin.math.cos
+import kotlin.math.min
+import kotlin.math.sin
 
 /**
  * 顶栏小图标。颜色在绘制时读 [GlassColors]，昼夜切换后下一帧就跟上。
  * 信号 4 格，Wi-Fi 3 段弧，蓝牙开/关/已连接，热点是中心点加两圈。
  */
 class ShellStatusIconDrawable(private val kind: Kind) : Drawable() {
-    enum class Kind { SIGNAL, WIFI, HOTSPOT, BLUETOOTH }
+    enum class Kind { SIGNAL, WIFI, HOTSPOT, BLUETOOTH, SNOW }
     enum class Phase { OFF, IDLE, ON, LINKED }
 
     var phase = Phase.OFF
@@ -51,6 +54,7 @@ class ShellStatusIconDrawable(private val kind: Kind) : Drawable() {
             Kind.WIFI -> drawWifi(canvas, left, top, w, h)
             Kind.HOTSPOT -> drawHotspot(canvas, left, top, w, h)
             Kind.BLUETOOTH -> drawBluetooth(canvas, left, top, w, h)
+            Kind.SNOW -> drawSnow(canvas, left, top, w, h)
         }
     }
 
@@ -151,6 +155,26 @@ class ShellStatusIconDrawable(private val kind: Kind) : Drawable() {
             Phase.OFF -> idleColor()
         }
         canvas.drawPath(bluetooth, paint)
+    }
+
+    /** Six spokes, the same mark the head-unit launcher puts in front of the temperatures. */
+    private fun drawSnow(canvas: Canvas, left: Float, top: Float, w: Float, h: Float) {
+        val cx = left + w * 0.5f
+        val cy = top + h * 0.5f
+        val radius = min(w, h) * 0.42f
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.strokeWidth = min(w, h) * 0.08f
+        paint.color = onColor()
+        for (spoke in 0 until 6) {
+            val angle = Math.toRadians((spoke * 60 - 90).toDouble())
+            canvas.drawLine(
+                cx, cy,
+                cx + (cos(angle) * radius).toFloat(),
+                cy + (sin(angle) * radius).toFloat(),
+                paint,
+            )
+        }
     }
 
     private fun onColor(): Int = GlassColors.TEXT_PRIMARY

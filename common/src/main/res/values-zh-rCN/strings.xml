@@ -385,6 +385,7 @@
     <string name="reconnect_required_message">部分设置需重新连接 CarPlay 才能生效。是否保存并重新连接？</string>
     <!-- 无障碍内容描述（cd_ 前缀） -->
     <string name="cd_floating_ball">悬浮球：点按模拟返回键，长按回到 75Play 主页</string>
+    <string name="cd_floating_ball_docked">悬浮球已贴边收起，点按箭头展开</string>
     <string name="cd_temp_bar">温度栏：显示室外、车内与空调设定温度</string>
     <string name="session_notification_text">CarPlay 连接已运行</string>
     <string name="session_notification_disconnect">断开连接</string>

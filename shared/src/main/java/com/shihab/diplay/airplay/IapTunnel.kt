@@ -9,7 +9,6 @@ import java.net.Socket
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Receive-only iAP2-over-CarPlay DataStream tunnel (stream type 130).
@@ -30,7 +29,6 @@ class IapTunnel(
     }
 
     private val closed = AtomicBoolean(false)
-    private val readCounter = AtomicLong(0)
     private val bindAddress =
         if (bindAddress is Inet4Address) InetAddress.getByName("0.0.0.0") else bindAddress
     private val servers = mutableListOf<ServerSocket>()
@@ -123,7 +121,6 @@ class IapTunnel(
             }
             accepted.setSoLinger(true, 0)
             socket = accepted
-            readCounter.set(0)
             peerConnected.countDown()
             listener.onOpen(accepted.remoteSocketAddress?.toString())
             run(accepted)
@@ -131,8 +128,9 @@ class IapTunnel(
     }
 
     private fun run(sock: Socket) {
-        var ciphertext = ByteArray(0)
-        var plaintext = ByteArray(0)
+        val cipher = ControlCipher(readKey, readKey)
+        val sealed = StreamBuffer(READ_CHUNK_BYTES)
+        val plain = StreamBuffer(READ_CHUNK_BYTES)
         var failure: Throwable? = null
         var announcedData = false
         try {
@@ -148,11 +146,10 @@ class IapTunnel(
                     announcedData = true
                     listener.onDebug("AirPlay iAP tunnel received data")
                 }
-                ciphertext += buffer.copyOf(read)
-                val decrypted = decryptFrames(ciphertext)
-                plaintext += decrypted.first
-                ciphertext = decrypted.second
-                plaintext = parsePackages(plaintext)
+                sealed.append(buffer, read)
+                val consumed = cipher.decryptInto(sealed.bytes, sealed.size, plain)
+                sealed.consume(consumed)
+                plain.consume(parsePackages(plain.bytes, plain.size))
             }
         } catch (error: Exception) {
             failure = error
@@ -163,31 +160,12 @@ class IapTunnel(
         }
     }
 
-    private fun decryptFrames(buffer: ByteArray): Pair<ByteArray, ByteArray> {
-        val output = ArrayList<ByteArray>()
+    private fun parsePackages(buffer: ByteArray, length: Int): Int {
         var offset = 0
-        while (buffer.size - offset >= FRAME_HEADER_LEN) {
-            val length = readU16Le(buffer, offset)
-            val frameLength = FRAME_HEADER_LEN + length + TAG_SIZE
-            if (buffer.size - offset < frameLength) break
-            val aad = buffer.copyOfRange(offset, offset + FRAME_HEADER_LEN)
-            val sealed = buffer.copyOfRange(offset + FRAME_HEADER_LEN, offset + frameLength)
-            val plain = AirPlayCrypto.chachaOpen(
-                readKey, AirPlayCrypto.nonce64(readCounter.get()), sealed, aad,
-            )
-            readCounter.incrementAndGet()
-            output.add(plain)
-            offset += frameLength
-        }
-        return concatBytes(*output.toTypedArray()) to buffer.copyOfRange(offset, buffer.size)
-    }
-
-    private fun parsePackages(buffer: ByteArray): ByteArray {
-        var offset = 0
-        while (buffer.size - offset >= PACKAGE_HEADER_LEN) {
+        while (length - offset >= PACKAGE_HEADER_LEN) {
             val size = readU32Be(buffer, offset)
             if (size < PACKAGE_HEADER_LEN || size > MAX_PACKAGE) throw IllegalStateException("bad package size $size")
-            if (buffer.size - offset < size) break
+            if (length - offset < size) break
             val messageType = readU32Be(buffer, offset + MESSAGE_TYPE_OFFSET)
             if (messageType == MSG_TYPE_COMM) {
                 listener.onDebug(
@@ -197,11 +175,8 @@ class IapTunnel(
             }
             offset += size
         }
-        return buffer.copyOfRange(offset, buffer.size)
+        return offset
     }
-
-    private fun readU16Le(source: ByteArray, offset: Int): Int =
-        (source[offset].toInt() and 0xff) or ((source[offset + 1].toInt() and 0xff) shl 8)
 
     private fun readU32Be(source: ByteArray, offset: Int): Int =
         ((source[offset].toInt() and 0xff) shl 24) or
@@ -210,8 +185,6 @@ class IapTunnel(
             (source[offset + 3].toInt() and 0xff)
 
     private companion object {
-        const val FRAME_HEADER_LEN = 2
-        const val TAG_SIZE = 16
         const val PACKAGE_HEADER_LEN = 32
         const val MESSAGE_TYPE_OFFSET = 16
         const val MSG_TYPE_COMM = 0x636f6d6d

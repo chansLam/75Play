@@ -384,6 +384,7 @@
     <string name="using_default_hotspot">使用預設熱點 75Play / 12345678</string>
     <string name="diagnostic_report_preview_unavailable">無法在此裝置上顯示報告預覽，但完整報告已儲存到儲存空間。</string>
     <string name="cd_floating_ball">懸浮球：輕觸模擬返回鍵，長按回到 75Play 主頁</string>
+    <string name="cd_floating_ball_docked">懸浮球已貼邊收起，輕觸箭頭展開</string>
     <string name="session_notification_text">CarPlay 連線執行中</string>
     <string name="session_notification_disconnect">中斷連線</string>
     <string name="cd_temp_bar">溫度欄：顯示室外、車內與空調設定溫度</string>

@@ -32,6 +32,13 @@ class CarHotspotStatusTest {
         }
     }
 
+    @Test fun broadcastInterpretationIgnoresLocalOnlyApState() {
+        assertEquals(true, CarHotspotStatus.fromBroadcast(sticky(13, 1)))
+        assertEquals(false, CarHotspotStatus.fromBroadcast(sticky(11, 1)))
+        assertNull(CarHotspotStatus.fromBroadcast(sticky(13, 2)))
+        assertNull(CarHotspotStatus.fromBroadcast(sticky(99, 1)))
+    }
+
     @Test fun authoritativeReflectionStateWinsOverAnOlderStickyBroadcast() {
         assertEquals(false, CarHotspotStatus.read({ 11 }, { null }, { fail("Do not read stale broadcast"); sticky(13) }))
     }

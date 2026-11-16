@@ -385,6 +385,7 @@
     <string name="reconnect_required_message">Some settings need a CarPlay reconnect to take effect. Save and reconnect now?</string>
     <!-- Accessibility content descriptions (cd_ prefix) -->
     <string name="cd_floating_ball">Floating ball: tap for Back, long-press to return to the DiPlay home</string>
+    <string name="cd_floating_ball_docked">Floating ball tucked at the screen edge. Tap the arrow to bring it back</string>
     <string name="cd_temp_bar">Temperature bar showing outside, inside and set AC temperature</string>
     <!-- Foreground session notification (DiPlaySessionService) -->
     <string name="session_notification_text">CarPlay connection running</string>

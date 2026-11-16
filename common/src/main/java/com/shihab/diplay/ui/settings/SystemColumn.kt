@@ -88,7 +88,7 @@ internal class SystemColumn(page: Fragment) : AboutColumnKit(page) {
         val button = ghostButton(ctx, ctx.getString(R.string.usb_privilege_action)) {
             Thread {
                 when {
-                    root.hasManageUsb() || root.isSystemApp() ->
+                    root.hasManageUsb() ->
                         host.showGlassToast(ctx.getString(R.string.usb_privilege_already))
                     !root.isRootAvailable() ->
                         host.showGlassToast(ctx.getString(R.string.usb_privilege_no_root))

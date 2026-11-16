@@ -108,6 +108,10 @@ internal object CarPlayBackgroundSession {
         }
     }
 
+    /** True when a controller, sink and display are all stored. Does not allocate a [Snapshot]. */
+    @Synchronized
+    fun hasLiveController(): Boolean = controller != null && sink != null && display != null
+
     @Synchronized
     fun snapshot(): Snapshot? {
         val currentController = controller ?: return null

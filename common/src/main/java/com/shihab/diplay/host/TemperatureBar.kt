@@ -3,22 +3,29 @@ package com.shihab.diplay.host
 
 import android.content.Context
 import android.graphics.PixelFormat
-import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.shihab.diplay.ActiveSessionLog
 import com.shihab.diplay.AsyncDiagnosticLog
 import com.shihab.diplay.ui.GlassColors
+import com.shihab.diplay.ui.shell.ShellStatusIconDrawable
+import com.shihab.diplay.ui.theme.ShellShape
+import com.shihab.diplay.ui.theme.ShellSpacing
+import com.shihab.diplay.ui.theme.ShellStroke
+import com.shihab.diplay.ui.theme.ShellType
 import com.shihab.diplay.util.AppLog
+import java.util.Locale
 
 /**
  * Global top temperature bar. A lightweight system overlay (`TYPE_PHONE`, non-touchable) that sits
- * at the top-center of the screen and shows three live AC temperatures read from the Coagent
+ * at the top-right of the screen and shows three live AC temperatures read from the Coagent
  * air-condition service via [CoagentAcBridge]:
  *   · 室外 (outside)   · 车内 (inside)   · 设定 (set, left/right average)
  *
@@ -35,11 +42,21 @@ object TemperatureBar {
     private var outsideText: TextView? = null
     private var insideText: TextView? = null
     private var setText: TextView? = null
+    private var shellCovering = false
     private val main = Handler(Looper.getMainLooper())
 
     private fun diag(message: String) {
         AsyncDiagnosticLog.append(ActiveSessionLog.current, message)
         AppLog.w(TAG, message)
+    }
+
+    /**
+     * The shell draws the same temperatures in its own top bar. Hide this overlay while that
+     * bar is on screen so the two do not stack, and bring it back when CarPlay covers the shell.
+     */
+    fun setShellCovering(covering: Boolean) {
+        shellCovering = covering
+        root?.visibility = if (covering) View.GONE else View.VISIBLE
     }
 
     /** Shows the temperature bar (idempotent). Returns true when added. */
@@ -56,46 +73,54 @@ object TemperatureBar {
         }
         val density = context.resources.displayMetrics.density
 
+        GlassColors.syncWithNightMode(context)
         val bar = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            // Glass pill: semi-transparent dark background + subtle accent border, matching theme.
-            val bg = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-                cornerRadius = (10 * density).toFloat()
-                setColor(0xCC000000.toInt()) // dark translucent pill reads on both light/dark screens
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = (ShellShape.EXTRA_SMALL * density)
+                setColor(GlassColors.GLASS_CHIP)
             }
-            background = bg
-            setPadding((14 * density).toInt(), (5 * density).toInt(), (14 * density).toInt(), (5 * density).toInt())
+            val padH = (ShellSpacing.SMALL * density).toInt()
+            val padV = (ShellSpacing.EXTRA_SMALL * density).toInt()
+            setPadding(padH, padV, padH, padV)
             contentDescription = context.getString(com.shihab.diplay.host.R.string.cd_temp_bar)
+            visibility = if (shellCovering) View.GONE else View.VISIBLE
+        }
+        val icon = (ShellSpacing.LARGE * density).toInt().coerceAtLeast(1)
+        bar.addView(ImageView(context).apply {
+            setImageDrawable(ShellStatusIconDrawable(ShellStatusIconDrawable.Kind.SNOW).apply {
+                show(ShellStatusIconDrawable.Phase.ON)
+            })
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }, LinearLayout.LayoutParams(icon, icon).apply {
+            marginEnd = (ShellSpacing.EXTRA_SMALL * density).toInt()
+        })
+
+        fun reading(): TextView = TextView(context).apply {
+            text = "--"
+            setTextColor(GlassColors.TEXT_MUTED)
+            textSize = ShellType.HEADING
+            includeFontPadding = false
+        }
+        fun divider(): View = View(context).apply { setBackgroundColor(GlassColors.DIM) }
+        val dividerLp = LinearLayout.LayoutParams(
+            maxOf(1, (ShellStroke.HAIRLINE * density).toInt()),
+            (ShellSpacing.MEDIUM * density).toInt(),
+        ).apply {
+            marginStart = (ShellSpacing.SMALL * density).toInt()
+            marginEnd = marginStart
+            gravity = Gravity.CENTER_VERTICAL
         }
 
-        fun label(text: String, value: Float, unitSuffix: String, accent: Boolean): TextView {
-            return TextView(context).apply {
-                val v = if (value.isNaN()) "--" else String.format("%.1f°C", value)
-                setText("$text $v")
-                setTextColor(if (accent) 0xFFFFFFFF.toInt() else 0xFFD8D8DC.toInt())
-                textSize = 12f
-                typeface = Typeface.DEFAULT_BOLD
-                includeFontPadding = false
-            }
-        }
-
-        outsideText = label("室外", Float.NaN, "°C", true)
-        insideText = label("车内", Float.NaN, "°C", false)
-        setText = label("设定", Float.NaN, "°C", false)
-
-        // Two independent spacer instances: a View can only ever have one parent, so reusing a
-        // single `sep` across two addView() calls throws IllegalStateException on the second add.
-        fun spacer(): TextView = TextView(context).apply {
-            text = "  "
-            textSize = 12f
-        }
-
+        outsideText = reading()
+        insideText = reading()
+        setText = reading()
         bar.addView(outsideText)
-        bar.addView(spacer())
+        bar.addView(divider(), dividerLp)
         bar.addView(insideText)
-        bar.addView(spacer())
+        bar.addView(divider(), LinearLayout.LayoutParams(dividerLp))
         bar.addView(setText)
 
         @Suppress("DEPRECATION")
@@ -109,8 +134,9 @@ object TemperatureBar {
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
             PixelFormat.TRANSLUCENT,
         ).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = (8 * density).toInt()
+            gravity = Gravity.TOP or Gravity.END
+            x = (ShellSpacing.LARGE * density).toInt()
+            y = (ShellSpacing.SMALL * density).toInt()
             title = "DiPlay temperature bar"
         }
 
@@ -153,23 +179,21 @@ object TemperatureBar {
         val out = outsideText ?: return
         val inn = insideText ?: return
         val set = setText ?: return
-        out.text = fmt("室外", CoagentAcBridge.outsideTemperature)
-        inn.text = fmt("车内", CoagentAcBridge.insideTemperature)
-        // Set temperature: prefer left; fall back to right when left invalid.
+        out.text = statusTemperatureText(CoagentAcBridge.outsideTemperature)
+        inn.text = statusTemperatureText(CoagentAcBridge.insideTemperature)
         val setValue = when {
             !CoagentAcBridge.leftTemperature.isNaN() -> CoagentAcBridge.leftTemperature
             !CoagentAcBridge.rightTemperature.isNaN() -> CoagentAcBridge.rightTemperature
             else -> Float.NaN
         }
-        set.text = fmt("设定", setValue)
+        set.text = statusTemperatureText(setValue)
     }
+}
 
-    private fun fmt(label: String, value: Float): String {
-        return when {
-            value.isNaN() -> "$label --"
-            value == -1f -> "$label LO"
-            value == -2f -> "$label HI"
-            else -> "$label ${String.format("%.1f°C", value)}"
-        }
-    }
+/** Compact temperature for the top-right status row. LO/HI match the head-unit AC service. */
+internal fun statusTemperatureText(value: Float): String = when {
+    value.isNaN() -> "--"
+    value == -1f -> "LO"
+    value == -2f -> "HI"
+    else -> String.format(Locale.US, "%.1f°", value)
 }

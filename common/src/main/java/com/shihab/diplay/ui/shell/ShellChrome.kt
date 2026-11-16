@@ -14,7 +14,9 @@ import android.widget.TextView
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentTransaction
+import com.shihab.diplay.host.CoagentAcBridge
 import com.shihab.diplay.host.R
+import com.shihab.diplay.host.statusTemperatureText
 import com.shihab.diplay.ui.FragmentAbout
 import com.shihab.diplay.ui.FragmentHome
 import com.shihab.diplay.ui.FragmentSetting
@@ -23,6 +25,7 @@ import com.shihab.diplay.ui.HudPanelDrawable
 import com.shihab.diplay.ui.HudNavDrawable
 import com.shihab.diplay.ui.LayoutMetrics
 import com.shihab.diplay.ui.SpindleDivider
+import com.shihab.diplay.ui.theme.ShellComponentSize
 import com.shihab.diplay.ui.theme.ShellShape
 import com.shihab.diplay.ui.theme.ShellSpacing
 import com.shihab.diplay.ui.theme.ShellStroke
@@ -34,7 +37,7 @@ import java.util.Locale
 /**
  * 壳层左侧窄导航、顶栏和 Fragment 容器。
  * 宽屏左轨和页面之间、顶栏和内容之间使用同一层级分隔线。
- * 顶栏右侧分成连接状态、无线电、日期时钟三组。竖屏目的地在底栏，选中同样是胶囊。
+ * 顶栏右侧按原车机右上角排：连接状态、空调温度、信号图标、时钟。竖屏目的地在底栏，选中同样是胶囊。
  * 页 id 仍由 [ShellNavigator] 持有。三页各留一个 Fragment，切换时 show/hide，避免拆掉滚动和扫描列表。
  */
 class ShellChrome(
@@ -56,10 +59,21 @@ class ShellChrome(
     private var statusClock: TextView? = null
     private var statusDate: TextView? = null
     private var statusDot: GradientDrawable? = null
+    private var clockMinute = Long.MIN_VALUE
+    private var dateFormat: SimpleDateFormat? = null
+    private var radios: ShellStatusSnapshot? = null
+    private var statusLabel: String? = null
+    private var statusColor = 0
+    private var statusFill = 0
     private var signalIcon: ImageView? = null
     private var wifiIcon: ImageView? = null
     private var hotspotIcon: ImageView? = null
     private var bluetoothIcon: ImageView? = null
+    private var climateGroup: LinearLayout? = null
+    private var outsideTemp: TextView? = null
+    private var insideTemp: TextView? = null
+    private var setTemp: TextView? = null
+    private var climateShown: Triple<String, String, String>? = null
     private val signalGlyph = ShellStatusIconDrawable(ShellStatusIconDrawable.Kind.SIGNAL)
     private val wifiGlyph = ShellStatusIconDrawable(ShellStatusIconDrawable.Kind.WIFI)
     private val hotspotGlyph = ShellStatusIconDrawable(ShellStatusIconDrawable.Kind.HOTSPOT)
@@ -140,14 +154,27 @@ class ShellChrome(
     }
 
     fun updateClock() {
-        val now = Date()
-        statusClock?.text = android.text.format.DateFormat.getTimeFormat(activity).format(now)
-        statusDate?.text = SimpleDateFormat("M/d EEE", Locale.getDefault()).format(now)
+        val clock = statusClock
+        val dateView = statusDate
+        if (clock == null && dateView == null) return
+        val nowMillis = System.currentTimeMillis()
+        val minute = nowMillis / 60_000L
+        if (minute == clockMinute) return
+        clockMinute = minute
+        val now = Date(nowMillis)
+        val time = android.text.format.DateFormat.getTimeFormat(activity)
+        val day = dateFormat ?: SimpleDateFormat("M/d EEE", Locale.getDefault()).also { dateFormat = it }
+        clock?.text = time.format(now)
+        dateView?.text = day.format(now)
     }
 
     /** 顶栏连接胶囊：字、底、描边和前面的圆点一起换。壳还没装上时忽略。 */
     fun applyStatus(label: String, color: Int, fill: Int, @Suppress("UNUSED_PARAMETER") stroke: Int) {
         val chip = status ?: return
+        if (label == statusLabel && color == statusColor && fill == statusFill) return
+        statusLabel = label
+        statusColor = color
+        statusFill = fill
         chip.text = label
         chip.setTextColor(color)
         statusBackground?.setColor(fill)
@@ -158,6 +185,8 @@ class ShellChrome(
     /** 顶栏右侧的信号 / Wi-Fi / 蓝牙。没有电话模块时信号位收起；热点没开时不占位。 */
     fun updateRadios(snapshot: ShellStatusSnapshot) {
         val signal = signalIcon ?: return
+        if (snapshot == radios) return
+        radios = snapshot
         val wifi = wifiIcon ?: return
         val hotspot = hotspotIcon ?: return
         val bluetooth = bluetoothIcon ?: return
@@ -225,6 +254,11 @@ class ShellChrome(
      * 注意：本方法只清缓存，不改当前页（shown）导航状态，调用方随后要再 showPage(page)。
      */
     fun discardPages() {
+        clockMinute = Long.MIN_VALUE
+        dateFormat = null
+        radios = null
+        climateShown = null
+        statusLabel = null
         val fm = activity.supportFragmentManager
         fm.executePendingTransactions()
         val tx = fm.beginTransaction()
@@ -303,7 +337,7 @@ class ShellChrome(
     }
 
     /**
-     * 顶栏：页名在左，右侧是连接胶囊、无线电胶囊、日期和时钟。
+     * 顶栏：页名在左。右侧贴边排列连接状态、空调温度、信号图标和时钟。
      * 宽屏时嵌进整条顶栏，和左侧标志共用同一块底，不再另铺一层。
      */
     private fun buildStatusBar(embedded: Boolean): View {
@@ -366,17 +400,114 @@ class ShellChrome(
         row.addView(status, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply { marginEnd = dp(ShellSpacing.SMALL) })
+        row.addView(climateCluster(), LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { marginEnd = dp(ShellSpacing.MEDIUM) })
         row.addView(radioCluster(), LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply { marginEnd = dp(ShellSpacing.MEDIUM) })
-        row.addView(clockCluster(showDate = wide))
+        row.addView(clockCluster(showDate = false))
         bar.addView(row, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
         ))
         return bar
     }
 
-    /** 日期和时钟靠在一起，中间一根短线，时钟是这一组里最醒目的字。 */
+    /**
+     * 空调温度跟在连接状态后面：雪花、室外、车内、设定，浅色小胶囊。
+     * 壳在前台时用这一组；离开壳层后由悬浮的 [com.shihab.diplay.host.TemperatureBar] 接到右上角。
+     */
+    private fun climateCluster(): View {
+        val group = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val padH = dp(ShellSpacing.SMALL)
+            val padV = dp(ShellSpacing.EXTRA_SMALL)
+            setPadding(padH, padV, padH, padV)
+            minimumHeight = dp(ShellSpacing.TRIPLE_EXTRA_LARGE)
+            background = rounded(
+                GlassColors.GLASS_CHIP,
+                GlassColors.TRANSPARENT,
+                dp(ShellShape.EXTRA_SMALL),
+                0,
+            )
+            visibility = View.GONE
+            contentDescription = activity.getString(R.string.cd_temp_bar)
+        }
+        val iconSize = dp(ShellComponentSize.ICON_SMALL)
+        val snow = ShellStatusIconDrawable(ShellStatusIconDrawable.Kind.SNOW).apply {
+            show(ShellStatusIconDrawable.Phase.ON)
+        }
+        group.addView(ImageView(activity).apply {
+            setImageDrawable(snow)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            contentDescription = null
+            isFocusable = false
+            isClickable = false
+        }, LinearLayout.LayoutParams(iconSize, iconSize).apply {
+            marginEnd = dp(ShellSpacing.EXTRA_SMALL)
+        })
+        fun reading(): TextView = TextView(activity).apply {
+            text = "--"
+            setTextColor(GlassColors.TEXT_MUTED)
+            textSize = LayoutMetrics.statusClockSize(activity)
+            maxLines = 1
+            includeFontPadding = false
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        fun divider(): View = View(activity).apply {
+            setBackgroundColor(GlassColors.DIM)
+        }
+        outsideTemp = reading()
+        insideTemp = reading()
+        setTemp = reading()
+        val gap = LinearLayout.LayoutParams(
+            maxOf(1, dp(ShellStroke.HAIRLINE)),
+            dp(ShellSpacing.MEDIUM),
+        ).apply {
+            marginStart = dp(ShellSpacing.SMALL)
+            marginEnd = dp(ShellSpacing.SMALL)
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        group.addView(outsideTemp)
+        group.addView(divider(), gap)
+        group.addView(insideTemp)
+        group.addView(divider(), LinearLayout.LayoutParams(gap))
+        group.addView(setTemp)
+        climateGroup = group
+        return group
+    }
+
+    /** 壳层右上角的室外 / 车内 / 设定。关闭温度栏时整组收起。 */
+    fun updateClimate(enabled: Boolean) {
+        val group = climateGroup ?: return
+        val outside = outsideTemp ?: return
+        val inside = insideTemp ?: return
+        val set = setTemp ?: return
+        if (!enabled) {
+            if (group.visibility != View.GONE) group.visibility = View.GONE
+            climateShown = null
+            return
+        }
+        val setValue = when {
+            !CoagentAcBridge.leftTemperature.isNaN() -> CoagentAcBridge.leftTemperature
+            !CoagentAcBridge.rightTemperature.isNaN() -> CoagentAcBridge.rightTemperature
+            else -> Float.NaN
+        }
+        val next = Triple(
+            statusTemperatureText(CoagentAcBridge.outsideTemperature),
+            statusTemperatureText(CoagentAcBridge.insideTemperature),
+            statusTemperatureText(setValue),
+        )
+        if (group.visibility == View.VISIBLE && next == climateShown) return
+        climateShown = next
+        group.visibility = View.VISIBLE
+        outside.text = next.first
+        inside.text = next.second
+        set.text = next.third
+    }
+
+    /** 时钟贴在最右边，字号跟原车机右上角一致。日期不放在这一组。 */
     private fun clockCluster(showDate: Boolean): View {
         val cluster = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -401,7 +532,6 @@ class ShellChrome(
         statusClock = TextView(activity).apply {
             setTextColor(GlassColors.TEXT_PRIMARY)
             textSize = LayoutMetrics.statusClockSize(activity)
-            setTypeface(typeface, Typeface.BOLD)
             maxLines = 1
             includeFontPadding = false
             gravity = Gravity.CENTER_VERTICAL
@@ -410,22 +540,14 @@ class ShellChrome(
         return cluster
     }
 
-    /** 信号、Wi-Fi、热点、蓝牙收进一枚胶囊，高度跟顶栏走，不另起一行。 */
+    /** 信号、Wi-Fi、热点、蓝牙直接排在时钟左边，不另套胶囊。 */
     private fun radioCluster(): View {
         val cluster = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            val py = dp(ShellSpacing.EXTRA_SMALL)
-            minimumHeight = dp(ShellSpacing.DOUBLE_EXTRA_LARGE)
-            setPadding(dp(ShellSpacing.SMALL), py, dp(ShellSpacing.SMALL), py)
-            background = rounded(
-                GlassColors.GLASS_CHIP,
-                GlassColors.GLASS_RIM,
-                dp(ShellShape.SMALL),
-                ShellStroke.HAIRLINE,
-            )
+            minimumHeight = dp(ShellSpacing.TRIPLE_EXTRA_LARGE)
         }
-        val size = dp(ShellSpacing.LARGE)
+        val size = dp(ShellComponentSize.ICON_MEDIUM)
         fun slot(glyph: ShellStatusIconDrawable, description: String, visible: Boolean): ImageView =
             ImageView(activity).apply {
                 setImageDrawable(glyph)

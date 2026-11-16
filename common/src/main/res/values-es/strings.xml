@@ -383,6 +383,7 @@
     <string name="home_save_and_connect_carplay">Guardar y conectar CarPlay</string>
     <string name="home_save_and_connect_wifi">Guardar y conectar Wi-Fi</string>
     <string name="cd_floating_ball">Bola flotante: toque para Atrás, manténgala pulsada para volver al inicio de DiPlay</string>
+    <string name="cd_floating_ball_docked">Bola flotante oculta en el borde. Toque la flecha para mostrarla</string>
     <string name="session_notification_text">CarPlay conexión activa</string>
     <string name="session_notification_disconnect">Desconectar</string>
     <string name="cd_temp_bar">Barra de temperatura: exterior, interior y temperatura ajustada del aire</string>

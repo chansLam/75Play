@@ -383,6 +383,7 @@
     <string name="home_save_and_connect_carplay">حفظ والاتصال بـ CarPlay</string>
     <string name="home_save_and_connect_wifi">حفظ والاتصال بشبكة Wi-Fi</string>
     <string name="cd_floating_ball">الكرة العائمة: انقر للرجوع، واضغط مطولًا للعودة إلى الصفحة الرئيسية لـ DiPlay</string>
+    <string name="cd_floating_ball_docked">الكرة العائمة مطوية عند الحافة. انقر السهم لإظهارها</string>
     <string name="session_notification_text">اتصال CarPlay قيد التشغيل</string>
     <string name="session_notification_disconnect">قطع الاتصال</string>
     <string name="cd_temp_bar">شريط الحرارة: يعرض درجة الحرارة الخارجية والداخلية ودرجة تكييف الهواء المضبوطة</string>
