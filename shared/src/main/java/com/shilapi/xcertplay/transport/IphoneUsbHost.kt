@@ -151,27 +151,33 @@ class IphoneUsbHost(
 
     /**
      * Issue #34 fallback for a persistent usbfs EBUSY: a prior session's residual interface claim
-     * makes SETCONFIGURATION fail on every retry. Reset the device to force a clean re-enumeration,
-     * reopen on the fresh fd, then select the CarPlay configuration once. The caller owns [prior] and
-     * releases it only after this returns a usable replacement. Returns null when recovery is not
-     * possible (the caller then fails the attempt as before).
+     * makes SETCONFIGURATION fail on every retry. The caller's fd is already in an inconsistent
+     * state, so this first releases it, opens a clean fd and issues USBDEVFS_RESET there, then waits
+     * for re-enumeration, reopens, and selects the CarPlay configuration. This function always
+     * takes ownership of [prior] and releases it (the caller must not release it again). Returns
+     * null when recovery is not possible (the caller then fails the attempt as before).
      */
     private fun resetAndReopenForConfiguration(
         prior: SharedUsbConnection,
         staleDevice: UsbDevice,
         knownConfiguration: CarPlayUsbConfiguration?,
     ): Triple<SharedUsbDeviceConnection, CarPlayUsbConfiguration, LegacyUsbHostCompat.ConfigurationResult>? {
+        // Drop the inconsistent fd first; a reset issued on it returns ENODEV because the kernel
+        // no longer has a usable device state after the failed SETCONFIGURATION attempts.
+        runCatching { prior.release() }
         return try {
-            diagnosticLog("usb configuration busy after retries; resetting device to clear residual usbfs claim")
-            val resetErrno = LegacyUsbHostCompat.resetDevice(prior, onDiagnostic)
+            diagnosticLog("usb configuration busy after retries; reopening on a clean fd and resetting device")
+            val resetHost = openCleanConnection(staleDevice) ?: return null
+            val resetErrno = LegacyUsbHostCompat.resetDevice(resetHost, onDiagnostic)
             if (resetErrno != null && resetErrno != 0) {
                 diagnosticLog("usb device reset returned errno=$resetErrno")
             }
+            // The reset fd is torn down by re-enumeration; release it before rediscovering.
+            runCatching { resetHost.release() }
             val fresh = refreshDevice(staleDevice) ?: return null
-            val raw = usbManager.openDevice(fresh) ?: return null
-            val newConnection = SharedUsbDeviceConnection.own(raw)
+            val newConnection = openCleanConnection(fresh) ?: return null
             val configuration = knownConfiguration
-                ?: IphoneCarPlayConfiguration.find(fresh, raw)
+                ?: IphoneCarPlayConfiguration.find(fresh, newConnection.connection)
                 ?: run {
                     newConnection.release()
                     return null
@@ -186,6 +192,14 @@ class IphoneUsbHost(
             diagnosticLog("usb reset/reopen recovery failed: ${error.message}")
             null
         }
+    }
+
+    /** Opens a usbfs connection to [target], refreshing a stale device handle once if needed. */
+    private fun openCleanConnection(target: UsbDevice): SharedUsbDeviceConnection? {
+        val raw = usbManager.openDevice(target)
+            ?: refreshDevice(target)?.let { usbManager.openDevice(it) }
+            ?: return null
+        return SharedUsbDeviceConnection.own(raw)
     }
 
     @Throws(IphoneUsbException::class)
@@ -463,9 +477,9 @@ class IphoneUsbHost(
                 // A residual usbfs claim (a prior session whose fd had not fully released)
                 // makes SETCONFIGURATION return EBUSY. Reset the device to force a clean
                 // re-enumeration, reopen, then select once more. This is the #34 fallback.
+                // resetAndReopenForConfiguration releases the prior sharedConnection itself.
                 val recovered = resetAndReopenForConfiguration(sharedConnection, device, knownConfiguration)
                 if (recovered != null) {
-                    sharedConnection.release()
                     sharedConnection = recovered.first
                     configuration = recovered.second
                     selected = recovered.third
