@@ -3,26 +3,31 @@ package com.shihab.diplay.host
 
 import android.media.AudioManager
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Test
 
 class HeadUnitVolumeStreamTest {
+    @Test fun callWinsOverEverything() {
+        assertEquals(0, AudioManager.STREAM_VOICE_CALL)
+        assertEquals(HeadUnitVolumeChannel.CALL, headUnitVolumeChannel(callActive = true, navigationActive = true, mediaActive = true))
+        assertEquals(HeadUnitVolumeChannel.CALL, headUnitVolumeChannel(callActive = true, navigationActive = false, mediaActive = true))
+    }
+
     @Test fun navigationWinsWhileAPromptIsPlayingOverMedia() {
         assertEquals(10, HEAD_UNIT_NAVIGATION_STREAM)
-        assertEquals(HEAD_UNIT_NAVIGATION_STREAM, headUnitVolumeStream(navigationActive = true, mediaActive = true))
-        assertEquals(HEAD_UNIT_NAVIGATION_STREAM, headUnitVolumeStream(navigationActive = true, mediaActive = false))
-        assertEquals(HEAD_UNIT_NAVIGATION_STREAM, headUnitVolumeStream(navigationActive = true, mediaActive = null))
+        assertEquals(HeadUnitVolumeChannel.NAVIGATION, headUnitVolumeChannel(callActive = false, navigationActive = true, mediaActive = true))
+        assertEquals(HeadUnitVolumeChannel.NAVIGATION, headUnitVolumeChannel(callActive = false, navigationActive = true, mediaActive = false))
+        assertEquals(HeadUnitVolumeChannel.NAVIGATION, headUnitVolumeChannel(callActive = null, navigationActive = true, mediaActive = null))
     }
 
-    @Test fun mediaIsUsedWhenNavigationIsQuiet() {
+    @Test fun mediaIsUsedWhenNavigationAndCallAreQuiet() {
         assertEquals(3, AudioManager.STREAM_MUSIC)
-        assertEquals(AudioManager.STREAM_MUSIC, headUnitVolumeStream(navigationActive = false, mediaActive = true))
-        assertEquals(AudioManager.STREAM_MUSIC, headUnitVolumeStream(navigationActive = null, mediaActive = true))
+        assertEquals(HeadUnitVolumeChannel.MEDIA, headUnitVolumeChannel(callActive = false, navigationActive = false, mediaActive = true))
+        assertEquals(HeadUnitVolumeChannel.MEDIA, headUnitVolumeChannel(callActive = null, navigationActive = null, mediaActive = true))
     }
 
-    @Test fun silenceFallsBackToTheHeadUnitMasterVolume() {
-        assertNull(headUnitVolumeStream(navigationActive = false, mediaActive = false))
-        assertNull(headUnitVolumeStream(navigationActive = null, mediaActive = null))
-        assertNull(headUnitVolumeStream(navigationActive = false, mediaActive = null))
+    @Test fun silenceFallsBackToMediaSoTheKeyAlwaysResponds() {
+        assertEquals(HeadUnitVolumeChannel.MEDIA, headUnitVolumeChannel(callActive = false, navigationActive = false, mediaActive = false))
+        assertEquals(HeadUnitVolumeChannel.MEDIA, headUnitVolumeChannel(callActive = null, navigationActive = null, mediaActive = null))
+        assertEquals(HeadUnitVolumeChannel.MEDIA, headUnitVolumeChannel(callActive = false, navigationActive = false, mediaActive = null))
     }
 }

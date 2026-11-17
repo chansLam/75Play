@@ -117,8 +117,6 @@ class ShellStatusProbe(context: Context) {
     fun start() {
         if (listener != null || cellDenied) return
         val radio = telephony ?: return
-        val type = runCatching { radio.phoneType }.getOrDefault(TelephonyManager.PHONE_TYPE_NONE)
-        if (type == TelephonyManager.PHONE_TYPE_NONE) return
         if (!granted(Manifest.permission.READ_PHONE_STATE)) {
             cellDenied = true
             return
@@ -168,8 +166,9 @@ class ShellStatusProbe(context: Context) {
     private fun cellAvailable(): Boolean {
         if (cellDenied) return false
         val radio = telephony ?: return false
-        val type = runCatching { radio.phoneType }.getOrDefault(TelephonyManager.PHONE_TYPE_NONE)
-        return type != TelephonyManager.PHONE_TYPE_NONE
+        // 长安 TBox 的 4G 可能上报 PHONE_TYPE_NONE，但信号监听仍有效。
+        // 不能用 phoneType 提前隐藏，否则状态栏只剩 Wi-Fi/热点图标。
+        return runCatching { radio.phoneType }.getOrDefault(TelephonyManager.PHONE_TYPE_NONE) != TelephonyManager.PHONE_TYPE_NONE || listener != null
     }
 
     @Suppress("DEPRECATION")
