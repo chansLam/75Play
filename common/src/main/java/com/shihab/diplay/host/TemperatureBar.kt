@@ -62,11 +62,11 @@ object TemperatureBar {
             // Glass pill: semi-transparent dark background + subtle accent border, matching theme.
             val bg = android.graphics.drawable.GradientDrawable().apply {
                 shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-                cornerRadius = (10 * density).toFloat()
+                cornerRadius = (8 * density).toFloat()
                 setColor(0xCC000000.toInt()) // dark translucent pill reads on both light/dark screens
             }
             background = bg
-            setPadding((14 * density).toInt(), (5 * density).toInt(), (14 * density).toInt(), (5 * density).toInt())
+            setPadding((10 * density).toInt(), (3 * density).toInt(), (10 * density).toInt(), (3 * density).toInt())
             contentDescription = context.getString(com.shihab.diplay.host.R.string.cd_temp_bar)
         }
 
@@ -75,7 +75,7 @@ object TemperatureBar {
                 val v = if (value.isNaN()) "--" else String.format("%.1f°C", value)
                 setText("$text $v")
                 setTextColor(if (accent) 0xFFFFFFFF.toInt() else 0xFFD8D8DC.toInt())
-                textSize = 12f
+                textSize = 10f
                 typeface = Typeface.DEFAULT_BOLD
                 includeFontPadding = false
             }
@@ -89,7 +89,7 @@ object TemperatureBar {
         // single `sep` across two addView() calls throws IllegalStateException on the second add.
         fun spacer(): TextView = TextView(context).apply {
             text = "  "
-            textSize = 12f
+            textSize = 10f
         }
 
         bar.addView(outsideText)
@@ -110,7 +110,7 @@ object TemperatureBar {
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = (8 * density).toInt()
+            y = (4 * density).toInt()
             title = "DiPlay temperature bar"
         }
 
