@@ -298,15 +298,23 @@ class CarPlayMediaEngine(
         val audio = AudioStream(key, type, session::logDebug, session.localAddress)
         val (dataPort, controlPort) = audio.listen(
             object : AudioStream.Listener {
+                private var firstRtpDispatched = false
+
                 override fun onStarted(firstSample: Int) {
                     meta.firstSample = firstSample
                     meta.originNs = System.nanoTime()
+                    session.logDebug("Audio: dispatch start type=$type audioType=$audioType codec=${format.codec} sample=$firstSample")
                     sink.onAudioStarted(streamId, format, firstSample)
+                    session.logDebug("Audio: renderer start returned type=$type audioType=$audioType")
                     microphone?.let { sink.onMicrophoneStarted(streamId, it) }
                 }
 
                 override fun onRtp(rtp: ByteArray, sample: Int) {
                     noteDataReceived()
+                    if (!firstRtpDispatched) {
+                        firstRtpDispatched = true
+                        session.logDebug("Audio: dispatch first RTP type=$type audioType=$audioType bytes=${rtp.size} sample=$sample")
+                    }
                     sink.onAudioRtp(streamId, format, rtp, sample)
                 }
 
