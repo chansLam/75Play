@@ -74,6 +74,7 @@ class NcmUsbBridge internal constructor(
      */
     @Volatile private var networkConnected = false
     @Volatile private var networkConnectedAtNanos = 0L
+    private var loggedNetworkSettle = false
     private val readWatchdogStarted = AtomicBoolean(false)
     private val readWatchdogFired = AtomicBoolean(false)
     /** Monotonic time of the last inbound NCM frame; the read-stall watchdog keys off it. */
@@ -139,13 +140,20 @@ class NcmUsbBridge internal constructor(
         ) {
             return@synchronized 0
         }
-        if (networkConnected && WiredNcmTuning.networkConnectionSettleMillis > 0L) {
-            val connectedAt = networkConnectedAtNanos
-            if (connectedAt != 0L &&
-                System.nanoTime() - connectedAt < WiredNcmTuning.networkConnectionSettleMillis * NANOS_PER_MILLISECOND
-            ) {
-                return@synchronized 0
+        val settleRemainingMs = networkConnectionSettleRemainingMillis(
+            networkConnected = networkConnected,
+            connectedAtNanos = networkConnectedAtNanos,
+            nowNanos = System.nanoTime(),
+            settleMillis = WiredNcmTuning.networkConnectionSettleMillis,
+        )
+        if (settleRemainingMs > 0L) {
+            if (!loggedNetworkSettle) {
+                loggedNetworkSettle = true
+                val line = "ncm bulk-out waiting for NETWORK_CONNECTION settle; remainingMs=$settleRemainingMs"
+                Log.i(IphoneCarPlayConfiguration.TAG, line)
+                onDiagnostic(line)
             }
+            return@synchronized 0
         }
         val batch = NcmTxBatch.take(frames, ntbLimits)
         if (batch.isEmpty()) return@synchronized 0

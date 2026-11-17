@@ -198,17 +198,6 @@ object HeadUnitVolume {
 
     /**
      * 导航播报叠在媒体上时要调的是导航。句间停顿不算没声音，所以回看 [HEAD_UNIT_VOLUME_ACTIVE_PAST_MS]。
-     * 两路都没出声时仍走车机原来的总音量。
-     *
-     * 全部走车机定制 UI（WTVolumePanel），绝不使用 [AudioManager.adjustStreamVolume] 带
-     * FLAG_SHOW_UI——那会弹出 AOSP 原生 VolumePanel，而不是车机面板。
-     *  - 导航：复刻固件 MiscService.setNaviVol——setStreamVolume(10, …, 0)（无 UI flag）后发
-     *    ACTION_NAVI_VOLUME_CHANGE 广播，WTVolumePanel 收到后自己读 stream10 并显示车机导航条。
-     *  - 媒体/通话/无活跃：走 coagent setVolumeUp/Down（TX9/10），MCU 步进后回报，
-     *    SettingsService 以 needShow=true 回调，WTVolumePanel 显示车机面板。
-     */
-    /**
-     * 导航播报叠在媒体上时要调的是导航。句间停顿不算没声音，所以回看 [HEAD_UNIT_VOLUME_ACTIVE_PAST_MS]。
      *
      * 导航独立调节 stream 10 并广播 WTVolumePanel；媒体/通话恢复车机原生 setVolumeUp/Down。
      * 绝对值 setMediaVolume/setPhoneVolume 在这台车机上只写设置、不实际改变媒体输出音量。
