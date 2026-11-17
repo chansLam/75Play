@@ -38,4 +38,21 @@ class HeadUnitVolumeStreamTest {
         assertNull(headUnitVolumeStream(navigationActive = null, mediaActive = null, callActive = null))
         assertNull(headUnitVolumeStream(navigationActive = false, mediaActive = null, callActive = false))
     }
+
+    @Test fun configuredMediaStreamIsReturnedForVolumeRouting() {
+        assertEquals(10, headUnitVolumeStream(
+            navigationActive = false,
+            mediaActive = true,
+            callActive = false,
+            navigationStream = 10,
+            mediaStream = 10,
+            callStream = 0,
+        ))
+        assertEquals(7, headUnitVolumeStream(
+            navigationActive = false,
+            mediaActive = true,
+            callActive = false,
+            mediaStream = 7,
+        ))
+    }
 }

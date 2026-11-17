@@ -37,11 +37,6 @@ object HeadUnitVolume {
     private const val TX_SET_VOLUME_DOWN = 10
     private const val TX_SET_MUTE = 13
     private const val TX_GET_SETTINGS_INFO = 22
-    // Per-channel absolute volume + the explicit UI flag the firmware's WTVolumePanel uses.
-    private const val TX_SET_MEDIA_VOLUME = 2
-    private const val TX_SET_PHONE_VOLUME = 3
-    private const val TX_SET_VOLUME_SHOW = 44
-
     // Streams whose volume we snapshot around a volume key so we can see which one the firmware edits.
     private val DIAG_STREAMS = intArrayOf(0, 3, 4, 5, 6, 8, 9, 10)
 
@@ -162,27 +157,6 @@ object HeadUnitVolume {
         }
     }
 
-    /** One-arg int call (e.g. setMediaVolume(value)/setPhoneVolume(value)). */
-    private fun transactInt(code: Int, value: Int, label: String) {
-        val target = binderLocked() ?: return
-        val data = Parcel.obtain()
-        val reply = Parcel.obtain()
-        try {
-            data.writeInterfaceToken(IFACE_DESCRIPTOR)
-            data.writeInt(value)
-            target.transact(code, data, reply, 0)
-            reply.readException()
-            AppLog.i(TAG, "tx$code($value) -> ok")
-            diag("$label($value) ok")
-        } catch (e: Exception) {
-            AppLog.w(TAG, "tx$code failed", e)
-            diag("$label fail:${e.javaClass.simpleName}")
-        } finally {
-            reply.recycle()
-            data.recycle()
-        }
-    }
-
     /**
      * Reads the current mute flag from `getSettingsInfo()`. The reply writes a non-null flag,
      * then the SettingsInfo parcel directly (writeInt(1) + writeToParcel). `isMute` is the 12th
@@ -236,60 +210,39 @@ object HeadUnitVolume {
     /**
      * 导航播报叠在媒体上时要调的是导航。句间停顿不算没声音，所以回看 [HEAD_UNIT_VOLUME_ACTIVE_PAST_MS]。
      *
-     * 每个声道单独调各自音量，绝不使用 [AudioManager.adjustStreamVolume] 带 FLAG_SHOW_UI（那会弹
-     * AOSP 原生 VolumePanel），也不用无参 setVolumeUp/Down（MCU 自动选通道，无法保证落在当前声道）。
-     *  - 导航：复刻固件 MiscService.setNaviVol——setStreamVolume(10, …, 0) 后发 ACTION_NAVI_VOLUME_CHANGE
-     *    广播，WTVolumePanel 显示车机导航条。
-     *  - 媒体/通话：先 setVolumeShow(true) 打开车机显示窗口，再用分通道 setMediaVolume/setPhoneVolume
-     *    写入绝对音量，MCU 回报后 WTVolumePanel 显示对应车机条。
-     *  - 无活跃通道：按媒体处理，保证按键仍有反馈。
+     * 导航独立调节 stream 10 并广播 WTVolumePanel；媒体/通话恢复车机原生 setVolumeUp/Down。
+     * 绝对值 setMediaVolume/setPhoneVolume 在这台车机上只写设置、不实际改变媒体输出音量。
      */
     private fun stepActiveStream(direction: Int, fallbackCode: Int, label: String) {
+        // The renderer can use any legacy stream in 1..20.  Looking only at the
+        // framework defaults (3/10/0) makes a configured media stream invisible to
+        // AudioSystem.isStreamActive(), so volume keys fall back to the wrong channel.
+        val ctx = debugContext
+        val configuredMedia = ctx?.let(AirPlayPersistence::loadMediaAudioChannel) ?: AudioManager.STREAM_MUSIC
+        val configuredNavigation = ctx?.let(AirPlayPersistence::loadNavigationAudioChannel) ?: HEAD_UNIT_NAVIGATION_STREAM
+        val configuredCall = ctx?.let(AirPlayPersistence::loadCallAudioChannel) ?: AudioManager.STREAM_VOICE_CALL
+        val mediaStream = configuredMedia.takeIf { it != 0 } ?: AudioManager.STREAM_MUSIC
+        val navigationStream = configuredNavigation.takeIf { it != 0 } ?: HEAD_UNIT_NAVIGATION_STREAM
+        val callStream = configuredCall.takeIf { it != 0 } ?: AudioManager.STREAM_VOICE_CALL
         val stream = headUnitVolumeStream(
-            isStreamActive(HEAD_UNIT_NAVIGATION_STREAM, HEAD_UNIT_VOLUME_ACTIVE_PAST_MS),
-            isStreamActive(AudioManager.STREAM_MUSIC, HEAD_UNIT_VOLUME_ACTIVE_PAST_MS),
-            isStreamActive(AudioManager.STREAM_VOICE_CALL, HEAD_UNIT_VOLUME_ACTIVE_PAST_MS),
+            isStreamActive(navigationStream, HEAD_UNIT_VOLUME_ACTIVE_PAST_MS),
+            isStreamActive(mediaStream, HEAD_UNIT_VOLUME_ACTIVE_PAST_MS),
+            isStreamActive(callStream, HEAD_UNIT_VOLUME_ACTIVE_PAST_MS),
+            navigationStream = navigationStream,
+            mediaStream = mediaStream,
+            callStream = callStream,
         )
-        when (stream) {
-            HEAD_UNIT_NAVIGATION_STREAM -> stepNavigationVolume(direction, label)
-            AudioManager.STREAM_VOICE_CALL -> stepChannelVolume(
-                AudioManager.STREAM_VOICE_CALL, TX_SET_PHONE_VOLUME, direction, label,
-            )
-            else -> stepChannelVolume(
-                AudioManager.STREAM_MUSIC, TX_SET_MEDIA_VOLUME, direction, label,
-            )
+        if (stream == navigationStream) {
+            stepNavigationVolume(navigationStream, direction, label)
+        } else {
+            // Relative MCU steps change the real output volume. The absolute per-channel writes
+            // tried in 2074fb3 changed the displayed value but left CarPlay media volume unchanged.
+            transactVoid(fallbackCode, label)
         }
     }
 
-    /**
-     * 分通道精确调节媒体/通话：读取该 Android stream 当前音量 ±1，clamp 后先打开车机显示窗口，
-     * 再写入对应 coagent 通道，让 WTVolumePanel 显示车机面板（而非 AOSP 原生条）。
-     */
-    private fun stepChannelVolume(stream: Int, setTx: Int, direction: Int, label: String) {
-        val am = audioManager()
-        if (am == null) {
-            AppLog.w(TAG, "$label stream=$stream skipped: audio unavailable")
-            return
-        }
-        try {
-            val current = am.getStreamVolume(stream)
-            val max = am.getStreamMaxVolume(stream)
-            val next = (current + if (direction == AudioManager.ADJUST_RAISE) 1 else -1)
-                .coerceIn(0, max)
-            // Open the head-unit UI window first, then the per-channel MCU write's report makes
-            // WTVolumePanel show the matching channel.
-            transactBool(TX_SET_VOLUME_SHOW, true, "setVolumeShow")
-            transactInt(setTx, next, if (setTx == TX_SET_PHONE_VOLUME) "setPhoneVolume" else "setMediaVolume")
-            AppLog.i(TAG, "$label stream=$stream $current->$next")
-            diag("$label s$stream $current->$next")
-        } catch (e: Exception) {
-            AppLog.w(TAG, "$label stream=$stream failed", e)
-            diag("$label s$stream fail:${e.javaClass.simpleName}")
-        }
-    }
-
-    /** 单步调节导航流（stream 10）并通过车机广播显示 WTVolumePanel，不弹 AOSP 原生面板。 */
-    private fun stepNavigationVolume(direction: Int, label: String) {
+    /** 单步调节已配置的导航流并通过车机广播显示 WTVolumePanel，不弹 AOSP 原生面板。 */
+    private fun stepNavigationVolume(stream: Int, direction: Int, label: String) {
         val ctx = debugContext
         val am = audioManager()
         if (ctx == null || am == null) {
@@ -297,13 +250,13 @@ object HeadUnitVolume {
             return
         }
         try {
-            val current = am.getStreamVolume(HEAD_UNIT_NAVIGATION_STREAM)
-            val max = am.getStreamMaxVolume(HEAD_UNIT_NAVIGATION_STREAM)
+            val current = am.getStreamVolume(stream)
+            val max = am.getStreamMaxVolume(stream)
             val next = (current + if (direction == AudioManager.ADJUST_RAISE) 1 else -1)
                 .coerceIn(0, max)
             if (next != current) {
                 // flag 0：不触发 AOSP 原生音量条。
-                am.setStreamVolume(HEAD_UNIT_NAVIGATION_STREAM, next, 0)
+                am.setStreamVolume(stream, next, 0)
             }
             val intent = android.content.Intent(ACTION_NAVI_VOLUME_CHANGE)
                 .addFlags(android.content.Intent.FLAG_RECEIVER_FOREGROUND)
@@ -337,17 +290,19 @@ internal const val HEAD_UNIT_VOLUME_ACTIVE_PAST_MS = 800
 internal const val HEAD_UNIT_NAVIGATION_STREAM = 10
 
 /**
- * 车机实测：媒体是 [AudioManager.STREAM_MUSIC]（3），导航是 [HEAD_UNIT_NAVIGATION_STREAM]，通话是
- * [AudioManager.STREAM_VOICE_CALL]（0）。通话优先，其次导航，最后媒体。反射失败（null）或都没出声时
- * 返回 null，交给车机总音量。
+ * 默认车机声道是媒体 3、导航 10、通话 0；调用方可以传入设置页保存的实际声道。通话优先，
+ * 其次导航，最后媒体。反射失败（null）或都没出声时返回 null，交给车机总音量。
  */
 internal fun headUnitVolumeStream(
     navigationActive: Boolean?,
     mediaActive: Boolean?,
     callActive: Boolean?,
+    navigationStream: Int = HEAD_UNIT_NAVIGATION_STREAM,
+    mediaStream: Int = AudioManager.STREAM_MUSIC,
+    callStream: Int = AudioManager.STREAM_VOICE_CALL,
 ): Int? = when {
-    callActive == true -> AudioManager.STREAM_VOICE_CALL
-    navigationActive == true -> HEAD_UNIT_NAVIGATION_STREAM
-    mediaActive == true -> AudioManager.STREAM_MUSIC
+    callActive == true -> callStream
+    navigationActive == true -> navigationStream
+    mediaActive == true -> mediaStream
     else -> null
 }

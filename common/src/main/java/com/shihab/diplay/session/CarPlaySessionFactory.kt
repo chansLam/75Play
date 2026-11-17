@@ -484,6 +484,9 @@ internal object CarPlaySessionFactory {
         videoWidth = videoWidth,
         videoHeight = videoHeight,
         preferSoftwareHevcDecoder = false,
+        mediaChannel = AirPlayPersistence.loadMediaAudioChannel(ctx),
+        navigationChannel = AirPlayPersistence.loadNavigationAudioChannel(ctx),
+        callChannel = AirPlayPersistence.loadCallAudioChannel(ctx),
         context = ctx,
         onScreenStreamActiveChanged = { _, _ -> },
         // Only a SurfaceView honours release timestamps; smooth video always selects one.

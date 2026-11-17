@@ -50,4 +50,7 @@ object WiredNcmTuning {
      * status notification cannot stall writes forever. Observed connect delay is about 15 s.
      */
     var hardWaitFallbackMillis: Long = 30_000L
+
+    /** CherryUSB reports NETWORK_CONNECTION before the bulk-OUT pipe is armed. */
+    var networkConnectionSettleMillis: Long = 1_000L
 }

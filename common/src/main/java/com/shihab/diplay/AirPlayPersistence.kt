@@ -29,9 +29,10 @@ object AirPlayPersistence {
     /** 0 uses usage-based routing; 1–20 select stream types supported by the head unit. */
     val AUDIO_CHANNELS = 0..20
 
-    /** CS75 Plus：媒体在音频流 3，导航播报在音频流 10。 */
+    /** CS75 Plus：媒体在音频流 3，导航播报在音频流 10。通话也走 10：流 0 只有蓝牙通话才出声。 */
     const val DEFAULT_MEDIA_AUDIO_CHANNEL = 3
     const val DEFAULT_NAVIGATION_AUDIO_CHANNEL = 10
+    const val DEFAULT_CALL_AUDIO_CHANNEL = 10
     private const val PREFS = "xcertplay_airplay"
 
     /**
@@ -249,14 +250,15 @@ object AirPlayPersistence {
 
     fun loadCallAudioChannel(context: Context): Int =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            // 0 = STREAM_VOICE_CALL, which works on the wireless path. The wired-call silence is
-            // investigated in the renderer/route rather than by changing this default.
-            .getInt(KEY_CALL_AUDIO_CHANNEL, 0)
-            .takeIf { it in AUDIO_CHANNELS } ?: 0
+            // Stream 0 is STREAM_VOICE_CALL. On this head unit it reaches the cabin speakers only
+            // while Bluetooth hands-free is up. USB and wireless-without-Bluetooth deliver the
+            // call as RTP, so the default follows the loudspeaker stream (same as navigation).
+            .getInt(KEY_CALL_AUDIO_CHANNEL, DEFAULT_CALL_AUDIO_CHANNEL)
+            .takeIf { it in AUDIO_CHANNELS } ?: DEFAULT_CALL_AUDIO_CHANNEL
 
     fun saveCallAudioChannel(context: Context, channel: Int) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putInt(KEY_CALL_AUDIO_CHANNEL, channel.takeIf { it in AUDIO_CHANNELS } ?: 0)
+            .putInt(KEY_CALL_AUDIO_CHANNEL, channel.takeIf { it in AUDIO_CHANNELS } ?: DEFAULT_CALL_AUDIO_CHANNEL)
             .apply()
     }
 
