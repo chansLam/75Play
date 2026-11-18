@@ -35,8 +35,8 @@ object AirPlayPersistence {
     /** CS75 Plus 可选择帧率上限：设置页只提供 15/30。 */
     const val MAX_SELECTABLE_FPS = 30
 
-    /** 通话默认走车机能出声的导航/喇叭声道；流 0 只有蓝牙 HFP 通话才出声。 */
-    const val DEFAULT_CALL_AUDIO_CHANNEL = 10
+    /** 通话默认走车机实际能出声的通知声道 5；流 0 只有蓝牙 HFP 通话才出声，流 10 是导航。 */
+    const val DEFAULT_CALL_AUDIO_CHANNEL = 5
     private const val PREFS = "xcertplay_airplay"
 
     /**
@@ -256,7 +256,7 @@ object AirPlayPersistence {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             // Stream 0 is STREAM_VOICE_CALL. On this head unit it reaches the cabin speakers only
             // while Bluetooth hands-free is up. USB and wireless-without-Bluetooth deliver the
-            // call as RTP, so the default follows the loudspeaker stream (same as navigation).
+            // call as RTP, so the default uses notification stream 5, which is audible here.
             .getInt(KEY_CALL_AUDIO_CHANNEL, DEFAULT_CALL_AUDIO_CHANNEL)
             .takeIf { it in AUDIO_CHANNELS } ?: DEFAULT_CALL_AUDIO_CHANNEL
 

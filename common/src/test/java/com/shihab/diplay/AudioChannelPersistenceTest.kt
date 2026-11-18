@@ -20,11 +20,11 @@ class AudioChannelPersistenceTest {
     }
 
     @Test fun freshInstallUsesMediaMusicAndNavigationDefaults() {
-        // Media defaults to stream 3; navigation and calls default to stream 10 when unset.
+        // Media defaults to stream 3; navigation defaults to stream 10; calls default to 5.
         // Call stream 0 stays silent on this head unit unless Bluetooth hands-free is up.
         assertEquals(3, AirPlayPersistence.loadMediaAudioChannel(context))
         assertEquals(10, AirPlayPersistence.loadNavigationAudioChannel(context))
-        assertEquals(10, AirPlayPersistence.loadCallAudioChannel(context))
+        assertEquals(5, AirPlayPersistence.loadCallAudioChannel(context))
         org.junit.Assert.assertTrue(AirPlayPersistence.loadAudioFocusAutoYield(context))
     }
 
@@ -33,9 +33,9 @@ class AudioChannelPersistenceTest {
         assertEquals(0, AirPlayPersistence.loadCallAudioChannel(context))
     }
 
-    @Test fun invalidCallChannelFallsBackToTheLoudspeakerStream() {
+    @Test fun invalidCallChannelFallsBackToTheAudibleNotificationStream() {
         prefs.edit().putInt("call_audio_channel", 21).apply()
-        assertEquals(10, AirPlayPersistence.loadCallAudioChannel(context))
+        assertEquals(5, AirPlayPersistence.loadCallAudioChannel(context))
     }
 
     @Test fun audioFocusAutoYieldCanBeSavedAndRestored() {
