@@ -42,8 +42,19 @@ object HeadUnitVolume {
     // The broadcast that flips the head-unit WTVolumePanel into its navigation branch.
     private const val ACTION_NAVI_VOLUME_CHANGE = "com.coagent.intent.action.NAVI_VOLUME_CHANGE"
 
+    // WTVolumePanel drives media/phone at 0..40 through SettingsService. Android's legacy
+    // STREAM_MUSIC here only exposes 0..10, so using getStreamMaxVolume() capped the amp at 10.
+    internal const val HEAD_UNIT_OUTPUT_MAX_VOLUME = 40
+
     // Streams whose volume we snapshot around a volume key so we can see which one the firmware edits.
     private val DIAG_STREAMS = intArrayOf(0, 3, 4, 5, 6, 8, 9, 10)
+
+    private data class HeadUnitSettings(
+        val mediaVolume: Int,
+        val phoneVolume: Int,
+        val navigationVolume: Int,
+        val muted: Boolean,
+    )
 
     private var binder: IBinder? = null
     private var debugContext: Context? = null
@@ -184,11 +195,12 @@ object HeadUnitVolume {
     }
 
     /**
-     * Reads the current mute flag from `getSettingsInfo()`. The reply writes a non-null flag,
-     * then the SettingsInfo parcel directly (writeInt(1) + writeToParcel). `isMute` is the 12th
-     * value (8 ints, then the McuVersion string, then isBrignessAuto, currentRTC, isMute).
+     * Reads the firmware's current per-channel volumes and mute flag from `getSettingsInfo()`.
+     * The reply writes a non-null flag, then the SettingsInfo parcel directly
+     * (writeInt(1) + writeToParcel). Field order: brightness, current index, current volume,
+     * media, phone, navi, beep, radar, MCU version string, brightness-auto, RTC, mute.
      */
-    private fun currentMute(): Boolean? {
+    private fun currentSettings(): HeadUnitSettings? {
         val target = binderLocked() ?: return null
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
@@ -196,25 +208,33 @@ object HeadUnitVolume {
             data.writeInterfaceToken(IFACE_DESCRIPTOR)
             target.transact(TX_GET_SETTINGS_INFO, data, reply, 0)
             reply.readException()
-            var mute: Boolean? = null
-            if (reply.readInt() == 1) {
-                repeat(8) { reply.readInt() }
-                reply.readString() // mMcuVersion
-                reply.readInt() // isBrignessAuto
-                reply.readInt() // currentRTC
-                mute = reply.readInt() != 0 // isMute
+            if (reply.readInt() != 1) {
+                diag("settingsInfo=null")
+                return null
             }
-            diag("mute=$mute")
-            mute
+            repeat(3) { reply.readInt() } // brightness, current index, current volume
+            val media = reply.readInt()
+            val phone = reply.readInt()
+            val navi = reply.readInt()
+            reply.readInt() // beep
+            reply.readInt() // radar
+            reply.readString() // mMcuVersion
+            reply.readInt() // isBrignessAuto
+            reply.readInt() // currentRTC
+            val muted = reply.readInt() != 0
+            diag("volumes media=$media phone=$phone navi=$navi mute=$muted")
+            HeadUnitSettings(media, phone, navi, muted)
         } catch (e: Exception) {
             AppLog.w(TAG, "getSettingsInfo failed", e)
-            diag("muteRead fail:${e.javaClass.simpleName}")
+            diag("settingsRead fail:${e.javaClass.simpleName}")
             null
         } finally {
             reply.recycle()
             data.recycle()
         }
     }
+
+    private fun currentMute(): Boolean? = currentSettings()?.muted
 
     /** Press volume up (single step) on the stream that is actually playing. */
     fun volumeUp() = stepActiveStream(AudioManager.ADJUST_RAISE, TX_SET_VOLUME_UP, "volUp")
@@ -277,9 +297,10 @@ object HeadUnitVolume {
     }
 
     /**
-     * 媒体/通话：实际播放的 AudioTrack 在 Android stream 上，所以必须把音量写进该 stream，
-     * 否则 MCU 的 setMediaVolume/setPhoneVolume 只调功放、不动 Android 音量，按了没效果。
-     * 写完 stream 后打开车机显示窗口，让 WTVolumePanel 显示对应声道面板。
+     * 媒体/通话：实际播放的 AudioTrack 在 Android stream 上，所以先把该 stream 保持在满幅，
+     * 避免 Android 自己的 0..10 音量再衰减一次；真正的可听音量交给固件 0..40 的
+     * setMediaVolume/setPhoneVolume。写完 stream 后打开车机显示窗口，让 WTVolumePanel 显示
+     * 对应的 0..40 面板。
      */
     private fun stepChannelVolume(stream: Int, setTx: Int, direction: Int, label: String) {
         val am = audioManager()
@@ -288,14 +309,18 @@ object HeadUnitVolume {
             return
         }
         try {
-            val current = am.getStreamVolume(stream)
-            val max = am.getStreamMaxVolume(stream)
-            val next = (current + if (direction == AudioManager.ADJUST_RAISE) 1 else -1).coerceIn(0, max)
-            if (next != current) am.setStreamVolume(stream, next, 0)
+            val settings = currentSettings()
+            val current = when (setTx) {
+                TX_SET_PHONE_VOLUME -> settings?.phoneVolume
+                else -> settings?.mediaVolume
+            } ?: am.getStreamVolume(stream).coerceIn(0, HEAD_UNIT_OUTPUT_MAX_VOLUME)
+            val next = nextHeadUnitVolume(current, direction)
+            val streamMax = am.getStreamMaxVolume(stream)
+            if (am.getStreamVolume(stream) != streamMax) am.setStreamVolume(stream, streamMax, 0)
             transactBool(TX_SET_VOLUME_SHOW, true, "setVolumeShow")
             transactInt(setTx, next, if (setTx == TX_SET_PHONE_VOLUME) "setPhoneVolume" else "setMediaVolume")
-            AppLog.i(TAG, "$label stream=$stream $current->$next")
-            diag("$label s$stream $current->$next")
+            AppLog.i(TAG, "$label stream=$stream headUnit $current->$next (stream max $streamMax)")
+            diag("$label s$stream $current->$next/$HEAD_UNIT_OUTPUT_MAX_VOLUME")
         } catch (e: Exception) {
             AppLog.w(TAG, "$label stream=$stream failed", e)
             diag("$label s$stream fail:${e.javaClass.simpleName}")
@@ -321,6 +346,13 @@ internal const val HEAD_UNIT_VOLUME_ACTIVE_PAST_MS = 800
 
 /** 车机导航播报所在的音频流。API 19 没有这个公开常量。 */
 internal const val HEAD_UNIT_NAVIGATION_STREAM = 10
+
+/** One key press on the head unit's 0..40 media/phone scale. */
+internal fun nextHeadUnitVolume(
+    current: Int,
+    direction: Int,
+    max: Int = HeadUnitVolume.HEAD_UNIT_OUTPUT_MAX_VOLUME,
+): Int = (current + if (direction == AudioManager.ADJUST_RAISE) 1 else -1).coerceIn(0, max)
 
 /**
  * 音量通道路由：通话 > 导航 > 媒体。任一为 null（反射失败）都按未活跃处理，

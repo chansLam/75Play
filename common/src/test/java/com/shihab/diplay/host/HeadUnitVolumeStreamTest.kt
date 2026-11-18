@@ -30,4 +30,12 @@ class HeadUnitVolumeStreamTest {
         assertEquals(HeadUnitVolumeChannel.MEDIA, headUnitVolumeChannel(callActive = null, navigationActive = null, mediaActive = null))
         assertEquals(HeadUnitVolumeChannel.MEDIA, headUnitVolumeChannel(callActive = false, navigationActive = false, mediaActive = null))
     }
+
+    @Test fun mediaAndPhoneMoveOnTheHeadUnitFortyStepScale() {
+        assertEquals(40, HeadUnitVolume.HEAD_UNIT_OUTPUT_MAX_VOLUME)
+        assertEquals(11, nextHeadUnitVolume(current = 10, direction = AudioManager.ADJUST_RAISE))
+        assertEquals(39, nextHeadUnitVolume(current = 40, direction = AudioManager.ADJUST_LOWER))
+        assertEquals(40, nextHeadUnitVolume(current = 40, direction = AudioManager.ADJUST_RAISE))
+        assertEquals(0, nextHeadUnitVolume(current = 0, direction = AudioManager.ADJUST_LOWER))
+    }
 }
