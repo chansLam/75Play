@@ -127,6 +127,12 @@ class WallpaperCatalogTest {
         assertTrue(WallpaperHosts.allowed("https://wallhaven.cc/api/v1/search"))
         assertTrue(WallpaperHosts.allowed("https://w.wallhaven.cc/full/ab/a.jpg"))
         assertTrue(WallpaperHosts.allowed("https://th.wallhaven.cc/small/ab/a.jpg"))
+        assertTrue(WallpaperHosts.allowed("https://wp.upx8.com/api.php"))
+        assertTrue(WallpaperHosts.allowed("https://cdn-hsyq-static.shanhutech.cn/bizhi/a.jpg"))
+        assertTrue(WallpaperHosts.allowed("https://api.vsaa.cn/api/toolbox/wallpaper/wallpaper.php"))
+        assertTrue(WallpaperHosts.allowed("https://img.peapix.com/a_1920.jpg"))
+        assertTrue(WallpaperHosts.allowed("https://www.yumus.cn/api/?brand=bing&ua=pc"))
+        assertFalse(WallpaperHosts.allowed("http://cdn-hsyq-static.shanhutech.cn/bizhi/a.jpg"))
         assertFalse(WallpaperHosts.allowed("http://www.bing.com/a"))
         assertFalse(WallpaperHosts.allowed("https://evil.example/a"))
         assertFalse(WallpaperHosts.allowed("https://www.bing.com.evil.com/a"))
@@ -179,6 +185,52 @@ class WallpaperCatalogTest {
         assertEquals(WallpaperSearchParse.Invalid, WallpaperCatalog.parseWallhavenSearchSized("""{"nope":1}""", 1920, 720))
         val daily = WallpaperCatalog.parseWallhavenDaily("""{"data":[{"path":"https://w.wallhaven.cc/full/ab/exact.jpg","dimension_x":1920,"dimension_y":1080}]}""") as WallpaperFetch.Ready
         assertEquals("https://w.wallhaven.cc/full/ab/exact.jpg", daily.image.fullUrl)
+    }
+
+    @Test fun peapixAndVsaaDailyParsersKeepHttpsMetadata() {
+        val peapix = WallpaperCatalog.parsePeapixDaily(
+            """[{"fullUrl":"https://img.peapix.com/a_1920.jpg","thumbUrl":"https://img.peapix.com/a_640.jpg"}]""",
+        ) as WallpaperFetch.Ready
+        assertEquals("https://img.peapix.com/a_1920.jpg", peapix.image.fullUrl)
+        assertEquals("https://img.peapix.com/a_640.jpg", peapix.image.thumbUrl)
+        assertEquals(WallpaperFetch.Empty, WallpaperCatalog.parsePeapixDaily("[]"))
+        assertEquals(WallpaperFetch.Invalid, WallpaperCatalog.parsePeapixDaily("{}"))
+
+        val vsaa = WallpaperCatalog.parseVsaaDaily(
+            """{"code":1,"data":{"url":"https://www.bing.com/th?id=OHR.A_1920x1080.jpg"}}""",
+        ) as WallpaperFetch.Ready
+        assertEquals("https://www.bing.com/th?id=OHR.A_1920x1080.jpg", vsaa.image.fullUrl)
+        assertEquals(WallpaperFetch.Invalid, WallpaperCatalog.parseVsaaDaily("""{"code":0,"data":{}}"""))
+    }
+
+    @Test fun upx8ParserUpgradesOnlyKnownCdnsToHttps() {
+        val json = """{"code":200,"data":[
+            {"url":"http://cdn-hsyq-static.shanhutech.cn/bizhi/a.jpg","width":0,"height":0},
+            {"url":"http://img.birdpaper.com.cn/a.jpg"},
+            {"url":"http://evil.example/a.jpg"},
+            {"url":"https://cdn-hsyq-static.shanhutech.cn/bizhi/b.jpg"}
+        ]}"""
+        val hits = WallpaperCatalog.parseUpx8Search(json) as WallpaperSearchParse.Hits
+        assertEquals(3, hits.images.size)
+        assertEquals("https://cdn-hsyq-static.shanhutech.cn/bizhi/a.jpg", hits.images[0].fullUrl)
+        assertEquals("https://img.birdpaper.com.cn/a.jpg", hits.images[1].fullUrl)
+        assertEquals("https://cdn-hsyq-static.shanhutech.cn/bizhi/b.jpg", hits.images[2].fullUrl)
+        val single = WallpaperCatalog.parseUpx8Search(
+            """{"code":200,"data":{"url":"https://img.birdpaper.com.cn/single.jpg"}}""",
+        ) as WallpaperSearchParse.Hits
+        assertEquals(1, single.images.size)
+        assertEquals(WallpaperSearchParse.Invalid, WallpaperCatalog.parseUpx8Search("""{"code":429,"data":[]}"""))
+    }
+
+    @Test fun newDailyAndSearchUrlsStayOnDocumentedEndpoints() {
+        assertEquals("https://peapix.com/bing/feed?country=cn&n=1", WallpaperCatalog.peapixDailyUrl())
+        assertTrue(WallpaperCatalog.vsaaDailyUrl().contains("uhd=0"))
+        assertTrue(WallpaperCatalog.yumusDailyUrl().contains("ua=pc"))
+        val search = WallpaperCatalog.upx8SearchUrl(" 风景 ")!!
+        assertTrue(search.contains("format=json"))
+        assertTrue(search.contains("count=10"))
+        assertTrue(search.contains("resolution=1920x1080"))
+        assertNull(WallpaperCatalog.upx8SearchUrl(" "))
     }
 
     @Test fun zzzSearchPairsDetailPagesAndSelectedTier() {

@@ -44,16 +44,27 @@ internal object WallpaperDailyRefresh {
     }
 
     private fun download(source: WallpaperDailySource, client: WallpaperClient): ByteArray? {
-        val page = when (source) {
-            WallpaperDailySource.BING -> WallpaperCatalog.bingArchiveUrl()
-            WallpaperDailySource.WALLHAVEN -> WallpaperCatalog.wallhavenDailyUrl()
+        if (source == WallpaperDailySource.WALLHAVEN) {
+            return downloadJson(
+                client,
+                WallpaperCatalog.wallhavenDailyUrl(),
+                WallpaperCatalog::parseWallhavenDaily,
+            )
         }
-        val json = client.text(page) ?: return null
-        val fetch = when (source) {
-            WallpaperDailySource.BING -> WallpaperCatalog.parseBing(json)
-            WallpaperDailySource.WALLHAVEN -> WallpaperCatalog.parseWallhavenDaily(json)
-        }
-        val image = (fetch as? WallpaperFetch.Ready)?.image ?: return null
+        // 优先保留标题/版权等元数据的来源，再退回原 Bing 与直接图片接口。
+        downloadJson(client, WallpaperCatalog.peapixDailyUrl(), WallpaperCatalog::parsePeapixDaily)?.let { return it }
+        downloadJson(client, WallpaperCatalog.vsaaDailyUrl(), WallpaperCatalog::parseVsaaDaily)?.let { return it }
+        downloadJson(client, WallpaperCatalog.bingArchiveUrl(), WallpaperCatalog::parseBing)?.let { return it }
+        return client.bytes(WallpaperCatalog.yumusDailyUrl())
+    }
+
+    private fun downloadJson(
+        client: WallpaperClient,
+        url: String,
+        parser: (String) -> WallpaperFetch,
+    ): ByteArray? {
+        val json = client.text(url) ?: return null
+        val image = (parser(json) as? WallpaperFetch.Ready)?.image ?: return null
         return client.bytes(image.fullUrl)
     }
 }

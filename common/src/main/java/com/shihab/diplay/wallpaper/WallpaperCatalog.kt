@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.shihab.diplay.wallpaper
 
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
 
@@ -70,6 +71,20 @@ internal object WallpaperCatalog {
     fun bingArchiveUrl(): String =
         "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&mkt=zh-CN"
 
+    fun peapixDailyUrl(): String = "https://peapix.com/bing/feed?country=cn&n=1"
+
+    fun vsaaDailyUrl(): String =
+        "https://api.vsaa.cn/api/toolbox/wallpaper/wallpaper.php?n=1&idx=0&uhd=0&mkt=zh-CN"
+
+    fun yumusDailyUrl(): String = "https://www.yumus.cn/api/?brand=bing&ua=pc"
+
+    fun upx8SearchUrl(query: String): String? {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return null
+        val encoded = URLEncoder.encode(trimmed, "UTF-8")
+        return "https://wp.upx8.com/api.php?format=json&content=$encoded&count=10&resolution=1920x1080"
+    }
+
     fun wallhavenDailyUrl(): String =
         "https://wallhaven.cc/api/v1/search?categories=100&purity=100&sorting=toplist&topRange=1d&atleast=1920x720&page=1"
 
@@ -114,6 +129,54 @@ internal object WallpaperCatalog {
         val full = "https://www.bing.com$urlbase" + "_1920x1080.jpg"
         if (!WallpaperHosts.allowed(full)) return WallpaperFetch.Invalid
         return WallpaperFetch.Ready(WallpaperImage(full, full))
+    }
+
+    fun parsePeapixDaily(json: String): WallpaperFetch {
+        val items = jsonArray(json) ?: return WallpaperFetch.Invalid
+        if (items.length() == 0) return WallpaperFetch.Empty
+        val item = items.optJSONObject(0) ?: return WallpaperFetch.Invalid
+        val full = item.optString("fullUrl")
+        val thumb = item.optString("thumbUrl").ifBlank { full }
+        if (!WallpaperHosts.allowed(full)) return WallpaperFetch.Invalid
+        return WallpaperFetch.Ready(WallpaperImage(full, if (WallpaperHosts.allowed(thumb)) thumb else full))
+    }
+
+    fun parseVsaaDaily(json: String): WallpaperFetch {
+        val root = jsonObject(json) ?: return WallpaperFetch.Invalid
+        if (root.optInt("code", 0) != 1) return WallpaperFetch.Invalid
+        val item = root.optJSONObject("data") ?: return WallpaperFetch.Invalid
+        val full = item.optString("url")
+        if (!WallpaperHosts.allowed(full)) return WallpaperFetch.Invalid
+        return WallpaperFetch.Ready(WallpaperImage(full, full))
+    }
+
+    fun parseUpx8Search(json: String): WallpaperSearchParse {
+        val root = jsonObject(json) ?: return WallpaperSearchParse.Invalid
+        if (root.optInt("code", 0) != 200) return WallpaperSearchParse.Invalid
+        val single = root.optJSONObject("data")
+        val data = root.optJSONArray("data") ?: single?.let { JSONArray().put(it) }
+            ?: return WallpaperSearchParse.Invalid
+        if (data.length() == 0) return WallpaperSearchParse.Empty
+        val images = ArrayList<WallpaperImage>(SEARCH_LIMIT)
+        for (index in 0 until data.length()) {
+            if (images.size >= SEARCH_LIMIT) break
+            val item = data.optJSONObject(index) ?: continue
+            val full = upx8HttpsUrl(item.optString("url"))
+            if (!WallpaperHosts.allowed(full)) continue
+            images.add(WallpaperImage(full, full))
+        }
+        return if (images.isEmpty()) WallpaperSearchParse.Empty else WallpaperSearchParse.Hits(images)
+    }
+
+    /** 该接口当前部分图片仍返回 HTTP；只允许已知壁纸 CDN 升级到 HTTPS，不放开任意 HTTP。 */
+    private fun upx8HttpsUrl(raw: String): String {
+        val httpBirdpaper = "http://img.birdpaper.com.cn/"
+        val httpShanhutech = "http://cdn-hsyq-static.shanhutech.cn/"
+        return when {
+            raw.startsWith(httpBirdpaper) -> "https://img.birdpaper.com.cn/" + raw.removePrefix(httpBirdpaper)
+            raw.startsWith(httpShanhutech) -> "https://cdn-hsyq-static.shanhutech.cn/" + raw.removePrefix(httpShanhutech)
+            else -> raw
+        }
     }
 
     fun parseWallhavenDaily(json: String): WallpaperFetch = when (val parsed = parseWallhavenSearch(json)) {
@@ -255,6 +318,12 @@ internal object WallpaperCatalog {
         .replace("&gt;", ">")
         .replace("&#39;", "'")
         .replace("&amp;", "&")
+
+    private fun jsonArray(json: String): JSONArray? = try {
+        JSONArray(json)
+    } catch (error: Exception) {
+        null
+    }
 
     private fun jsonObject(json: String): JSONObject? = try {
         JSONObject(json)

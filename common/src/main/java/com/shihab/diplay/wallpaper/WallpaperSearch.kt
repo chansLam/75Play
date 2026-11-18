@@ -8,7 +8,7 @@ internal sealed class WallpaperSearchResult {
     data class Hits(val images: List<WallpaperImage>) : WallpaperSearchResult()
 }
 
-internal enum class WallpaperSearchSource { BING, WALLHAVEN, ZZZMH }
+internal enum class WallpaperSearchSource { BING, UPX8, WALLHAVEN, ZZZMH }
 
 internal enum class WallpaperSearchFinish { FAILED, EMPTY, DONE }
 

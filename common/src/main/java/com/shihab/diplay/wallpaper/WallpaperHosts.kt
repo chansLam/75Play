@@ -15,6 +15,13 @@ internal object WallpaperHosts {
             host == "wallhaven.cc" ||
             host == "w.wallhaven.cc" ||
             host == "th.wallhaven.cc" ||
+            host == "wp.upx8.com" ||
+            host == "img.birdpaper.com.cn" ||
+            host == "cdn-hsyq-static.shanhutech.cn" ||
+            host == "api.vsaa.cn" ||
+            host == "peapix.com" ||
+            host == "img.peapix.com" ||
+            host == "www.yumus.cn" ||
             host.endsWith(".bing.net")
     }
 

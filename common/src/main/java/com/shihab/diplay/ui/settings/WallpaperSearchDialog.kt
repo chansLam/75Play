@@ -303,6 +303,31 @@ internal object WallpaperSearchDialog {
             pool.execute {
                 if (!current()) return@execute
                 if (stopOthers.get()) {
+                    main.post { if (current()) { board.finish(WallpaperSearchSource.UPX8, WallpaperSearchFinish.EMPTY); render() } }
+                    return@execute
+                }
+                val url = WallpaperCatalog.upx8SearchUrl(query) ?: return@execute
+                val json = client.text(url)
+                main.post {
+                    if (!current()) return@post
+                    if (json == null) {
+                        board.finish(WallpaperSearchSource.UPX8, WallpaperSearchFinish.FAILED)
+                    } else if (stopOthers.get()) {
+                        board.finish(WallpaperSearchSource.UPX8, WallpaperSearchFinish.EMPTY)
+                    } else when (val parsed = WallpaperCatalog.parseUpx8Search(json)) {
+                        WallpaperSearchParse.Invalid -> board.finish(WallpaperSearchSource.UPX8, WallpaperSearchFinish.FAILED)
+                        WallpaperSearchParse.Empty -> board.finish(WallpaperSearchSource.UPX8, WallpaperSearchFinish.EMPTY)
+                        is WallpaperSearchParse.Hits -> {
+                            board.add(WallpaperSearchSource.UPX8, parsed.images)
+                            board.finish(WallpaperSearchSource.UPX8, WallpaperSearchFinish.DONE)
+                        }
+                    }
+                    render()
+                }
+            }
+            pool.execute {
+                if (!current()) return@execute
+                if (stopOthers.get()) {
                     main.post { if (current()) { board.finish(WallpaperSearchSource.WALLHAVEN, WallpaperSearchFinish.EMPTY); render() } }
                     return@execute
                 }

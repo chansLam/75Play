@@ -65,6 +65,7 @@ class WallpaperSearchTest {
         mixed.add(WallpaperSearchSource.ZZZMH, listOf(WallpaperImage("https://imageai.zzzmh.cn/a.webp", "https://imageai.zzzmh.cn/t.webp")))
         mixed.finish(WallpaperSearchSource.ZZZMH, WallpaperSearchFinish.DONE)
         mixed.finish(WallpaperSearchSource.BING, WallpaperSearchFinish.FAILED)
+        mixed.finish(WallpaperSearchSource.UPX8, WallpaperSearchFinish.FAILED)
         mixed.finish(WallpaperSearchSource.WALLHAVEN, WallpaperSearchFinish.FAILED)
         assertEquals(WallpaperSearchStatus.HITS, mixed.status())
         assertEquals(1, mixed.visible().size)
@@ -75,6 +76,7 @@ class WallpaperSearchTest {
 
         val empty = WallpaperSearchBoard()
         empty.finish(WallpaperSearchSource.BING, WallpaperSearchFinish.EMPTY)
+        empty.finish(WallpaperSearchSource.UPX8, WallpaperSearchFinish.FAILED)
         empty.finish(WallpaperSearchSource.WALLHAVEN, WallpaperSearchFinish.FAILED)
         empty.finish(WallpaperSearchSource.ZZZMH, WallpaperSearchFinish.FAILED)
         assertEquals(WallpaperSearchStatus.NONE, empty.status())
