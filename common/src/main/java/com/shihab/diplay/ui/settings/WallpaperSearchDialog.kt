@@ -3,7 +3,6 @@ package com.shihab.diplay.ui.settings
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
@@ -12,6 +11,7 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -78,7 +78,59 @@ internal object WallpaperSearchDialog {
             textSize = LayoutMetrics.settingsCapTextSize(context)
         }
         val results = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        var pendingCategory: String? = null
+        val categories = listOf(
+            "nature" to R.string.settings_wallpaper_category_nature,
+            "city" to R.string.settings_wallpaper_category_city,
+            "animal" to R.string.settings_wallpaper_category_animal,
+            "car" to R.string.settings_wallpaper_category_car,
+            "anime" to R.string.settings_wallpaper_category_anime,
+            "game" to R.string.settings_wallpaper_category_game,
+            "space" to R.string.settings_wallpaper_category_space,
+            "abstract" to R.string.settings_wallpaper_category_abstract,
+            "sport" to R.string.settings_wallpaper_category_sport,
+        )
+        val categoryTitle = TextView(context).apply {
+            text = context.getString(R.string.settings_wallpaper_categories)
+            setTextColor(GlassColors.TEXT_MUTED)
+            textSize = LayoutMetrics.settingsCapTextSize(context)
+        }
+        val categoryRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        categories.forEach { (key, labelRes) ->
+            categoryRow.addView(Button(context).apply {
+                text = context.getString(labelRes)
+                isAllCaps = false
+                setBackgroundResource(GlassColors.btnSecondary())
+                setTextColor(GlassColors.TEXT_PRIMARY)
+                textSize = LayoutMetrics.settingsCapTextSize(context)
+                minHeight = 0
+                minimumHeight = 0
+                setPadding(
+                    LayoutMetrics.capPadH(context),
+                    LayoutMetrics.capPadV(context),
+                    LayoutMetrics.capPadH(context),
+                    LayoutMetrics.capPadV(context),
+                )
+                setOnClickListener {
+                    pendingCategory = key
+                    input.setText(text)
+                    search.performClick()
+                }
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply { marginEnd = LayoutMetrics.capPadH(context) / 2 }
+            })
+        }
+        val categoryStrip = HorizontalScrollView(context).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(categoryRow)
+        }
         content.addView(header)
+        content.addView(categoryTitle)
+        content.addView(categoryStrip)
         content.addView(progress)
         content.addView(status)
         content.addView(results)
@@ -101,6 +153,7 @@ internal object WallpaperSearchDialog {
         search.setOnClickListener {
             val ticket = generation.incrementAndGet()
             val query = input.text?.toString().orEmpty()
+            val category = pendingCategory.also { pendingCategory = null }
             shownPreview?.dismiss()
             shownPreview = null
             transport.cancel()
@@ -263,6 +316,28 @@ internal object WallpaperSearchDialog {
             }
             progress.visibility = View.VISIBLE
             status.visibility = View.GONE
+            if (category != null) {
+                WallpaperSearchSource.values().forEach { board.finish(it, WallpaperSearchFinish.EMPTY) }
+                pool.execute {
+                    if (!current()) return@execute
+                    val json = client.text(WallpaperCatalog.upx8CategoryUrl(category))
+                    main.post {
+                        if (!current()) return@post
+                        when (val parsed = json?.let(WallpaperCatalog::parseUpx8Search)) {
+                            null, WallpaperSearchParse.Invalid ->
+                                board.finish(WallpaperSearchSource.UPX8, WallpaperSearchFinish.FAILED)
+                            WallpaperSearchParse.Empty ->
+                                board.finish(WallpaperSearchSource.UPX8, WallpaperSearchFinish.EMPTY)
+                            is WallpaperSearchParse.Hits -> {
+                                board.add(WallpaperSearchSource.UPX8, parsed.images)
+                                board.finish(WallpaperSearchSource.UPX8, WallpaperSearchFinish.DONE)
+                            }
+                        }
+                        render()
+                    }
+                }
+                return@setOnClickListener
+            }
             pool.execute {
                 if (!current()) return@execute
                 val url = WallpaperCatalog.bingImageSearchUrl(query) ?: return@execute
@@ -453,7 +528,7 @@ internal object WallpaperSearchDialog {
         pool.execute {
             val bytes = client.bytes(image.thumbUrl, image.bingOriginal && !WallpaperHosts.allowed(image.thumbUrl))
             val bitmap = try {
-                bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+                bytes?.let { WallpaperBitmaps.decodeThumbnail(it, maxOf(edge, 1)) }
             } catch (error: OutOfMemoryError) {
                 null
             }

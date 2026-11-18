@@ -131,6 +131,11 @@ internal object WallpaperCatalog {
         return WallpaperFetch.Ready(WallpaperImage(full, full))
     }
 
+    fun upx8CategoryUrl(category: String): String {
+        val encoded = URLEncoder.encode(category.trim(), "UTF-8")
+        return "https://wp.upx8.com/api.php?format=json&category=$encoded&count=10&resolution=1920x1080"
+    }
+
     fun parsePeapixDaily(json: String): WallpaperFetch {
         val items = jsonArray(json) ?: return WallpaperFetch.Invalid
         if (items.length() == 0) return WallpaperFetch.Empty
@@ -284,11 +289,12 @@ internal object WallpaperCatalog {
     fun needsDailyDownload(mode: WallpaperMode, savedDay: String?, today: String): Boolean =
         mode == WallpaperMode.DAILY && savedDay != today
 
-    fun sampleSize(width: Int, height: Int): Int {
+    fun sampleSize(width: Int, height: Int, targetLongEdge: Int = MAX_LONG_EDGE): Int {
+        val target = targetLongEdge.coerceAtLeast(1)
         val longEdge = maxOf(width, height)
-        if (longEdge <= MAX_LONG_EDGE) return 1
+        if (longEdge <= target) return 1
         var sample = 1
-        while (sample <= longEdge / 2 && longEdge / sample > MAX_LONG_EDGE) {
+        while (sample <= longEdge / 2 && longEdge / sample > target) {
             val next = sample * 2
             if (next <= sample) break
             sample = next

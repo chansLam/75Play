@@ -353,10 +353,8 @@
     <string name="setting_edge_left">左 %1$d</string>
     <string name="setting_edge_right">右 %1$d</string>
     <string name="setting_edge_top">上 %1$d</string>
-    <string name="setting_fps_balanced">45 fps（均衡）</string>
     <string name="setting_fps_min_savings">15 fps（最省）</string>
     <string name="setting_fps_more_savings">30 fps（较省）</string>
-    <string name="setting_fps_smooth">60 fps（更流畅）</string>
     <string name="setting_input_enter_number">请输入数字</string>
     <string name="setting_main_buffered_audio">主缓冲音频</string>
     <string name="setting_media_channel">媒体声道</string>
@@ -413,6 +411,16 @@
     <string name="settings_wallpaper_search_empty">没有找到壁纸</string>
     <string name="settings_wallpaper_search_failed">暂时无法搜索，请稍后再试</string>
     <string name="settings_wallpaper_search_hint">输入关键词</string>
+    <string name="settings_wallpaper_categories">分类推荐</string>
+    <string name="settings_wallpaper_category_nature">风景</string>
+    <string name="settings_wallpaper_category_city">城市</string>
+    <string name="settings_wallpaper_category_animal">动物</string>
+    <string name="settings_wallpaper_category_car">汽车</string>
+    <string name="settings_wallpaper_category_anime">动漫</string>
+    <string name="settings_wallpaper_category_game">游戏</string>
+    <string name="settings_wallpaper_category_space">宇宙</string>
+    <string name="settings_wallpaper_category_abstract">抽象</string>
+    <string name="settings_wallpaper_category_sport">运动</string>
     <string name="settings_wallpaper_source">每日来源</string>
     <string name="settings_wallpaper_source_bing">必应</string>
     <string name="settings_wallpaper_source_wallhaven">Wallhaven</string>

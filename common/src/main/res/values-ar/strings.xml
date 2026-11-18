@@ -331,10 +331,8 @@
     <string name="setting_edge_left">اليسار %1$d</string>
     <string name="setting_edge_right">اليمين %1$d</string>
     <string name="setting_edge_top">الأعلى %1$d</string>
-    <string name="setting_fps_balanced">45 إطار/ث (متوازن)</string>
     <string name="setting_fps_min_savings">15 إطار/ث (الأقل استهلاكا)</string>
     <string name="setting_fps_more_savings">30 إطار/ث (أقل استهلاكا)</string>
-    <string name="setting_fps_smooth">60 إطار/ث (أكثر سلاسة)</string>
     <string name="setting_input_enter_number">الرجاء إدخال رقم</string>
     <string name="setting_main_buffered_audio">الصوت الرئيسي المخزن مؤقتا</string>
     <string name="setting_media_channel">قناة الوسائط</string>
@@ -414,6 +412,16 @@
     <string name="settings_wallpaper_search_empty">لم يتم العثور على خلفيات</string>
     <string name="settings_wallpaper_search_failed">البحث غير متاح الآن. حاول لاحقاً.</string>
     <string name="settings_wallpaper_search_hint">أدخل كلمة</string>
+    <string name="settings_wallpaper_categories">فئات مقترحة</string>
+    <string name="settings_wallpaper_category_nature">الطبيعة</string>
+    <string name="settings_wallpaper_category_city">المدينة</string>
+    <string name="settings_wallpaper_category_animal">الحيوانات</string>
+    <string name="settings_wallpaper_category_car">السيارات</string>
+    <string name="settings_wallpaper_category_anime">أنيمي</string>
+    <string name="settings_wallpaper_category_game">الألعاب</string>
+    <string name="settings_wallpaper_category_space">الفضاء</string>
+    <string name="settings_wallpaper_category_abstract">تجريدي</string>
+    <string name="settings_wallpaper_category_sport">رياضة</string>
     <string name="settings_wallpaper_source">مصدر اليوم</string>
     <string name="settings_wallpaper_source_bing">Bing</string>
     <string name="settings_wallpaper_source_wallhaven">Wallhaven</string>

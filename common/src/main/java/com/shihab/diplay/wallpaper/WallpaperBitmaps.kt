@@ -63,6 +63,25 @@ internal object WallpaperBitmaps {
         null
     }
 
+    fun decodeThumbnail(bytes: ByteArray, targetEdge: Int): Bitmap? = try {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) null
+        else {
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = WallpaperCatalog.sampleSize(
+                    bounds.outWidth,
+                    bounds.outHeight,
+                    targetLongEdge = targetEdge.coerceAtLeast(1),
+                )
+            }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        }
+    } catch (error: OutOfMemoryError) {
+        AppLog.w("Wallpaper", "thumbnail decode oom bytes=${bytes.size}")
+        null
+    }
+
     fun decodeFile(file: File): Bitmap? = try {
         if (!file.isFile) null
         else {

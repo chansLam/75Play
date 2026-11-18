@@ -233,6 +233,21 @@ class WallpaperCatalogTest {
         assertNull(WallpaperCatalog.upx8SearchUrl(" "))
     }
 
+    @Test fun categoryRecommendationUsesUpx8CategoryEndpoint() {
+        val url = WallpaperCatalog.upx8CategoryUrl("nature")
+        assertTrue(url.startsWith("https://wp.upx8.com/api.php?"))
+        assertTrue(url.contains("category=nature"))
+        assertTrue(url.contains("count=10"))
+        assertTrue(url.contains("resolution=1920x1080"))
+    }
+
+    @Test fun thumbnailSamplingTargetsDisplayEdgeWithoutFullDecode() {
+        assertEquals(8, WallpaperCatalog.sampleSize(1920, 1080, targetLongEdge = 240))
+        assertEquals(4, WallpaperCatalog.sampleSize(1920, 1080, targetLongEdge = 480))
+        assertEquals(1, WallpaperCatalog.sampleSize(240, 135, targetLongEdge = 240))
+        assertEquals(1024, WallpaperCatalog.sampleSize(1920, 1080, targetLongEdge = 1))
+    }
+
     @Test fun zzzSearchPairsDetailPagesAndSelectedTier() {
         val page = """<a class="card" href="/wallpaper/abc123" data-pid="abc123"><img src="https://imageai.zzzmh.cn/wallpaper/desktop/view/thumb/fff.webp" alt=""></a>"""
         val cards = WallpaperCatalog.parseZzzSearch(page) as ZzzCardParse.Cards

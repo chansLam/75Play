@@ -41,11 +41,11 @@ class CarPlayNightModePersistenceTest {
     }
 
     @Test fun allModesRoundTripWithoutChangingOtherPreferences() {
-        AirPlayPersistence.saveFps(context, 60)
+        AirPlayPersistence.saveFps(context, 30)
         for (mode in CarPlayNightMode.entries) {
             AirPlayPersistence.saveCarPlayNightMode(context, mode)
             assertEquals(mode, AirPlayPersistence.loadCarPlayNightMode(context))
-            assertEquals(60, AirPlayPersistence.loadFps(context))
+            assertEquals(30, AirPlayPersistence.loadFps(context))
         }
     }
     @Test fun scheduleTimesPersistAndInvalidStoredMinutesUseDefaults() {

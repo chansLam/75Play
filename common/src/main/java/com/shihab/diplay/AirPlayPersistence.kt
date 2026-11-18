@@ -32,6 +32,8 @@ object AirPlayPersistence {
     /** CS75 Plus：媒体在音频流 3，导航播报在音频流 10。 */
     const val DEFAULT_MEDIA_AUDIO_CHANNEL = 3
     const val DEFAULT_NAVIGATION_AUDIO_CHANNEL = 10
+    /** CS75 Plus 可选择帧率上限：设置页只提供 15/30。 */
+    const val MAX_SELECTABLE_FPS = 30
     private const val PREFS = "xcertplay_airplay"
 
     /**
@@ -469,7 +471,7 @@ object AirPlayPersistence {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             // Keep in sync with AirPlayDisplaySettings.DEFAULT_FPS (30).
             .getInt(KEY_FPS, AirPlayDisplaySettings.DEFAULT_FPS),
-    )
+    ).coerceAtMost(MAX_SELECTABLE_FPS)
 
     fun loadMediaBufferMillis(context: Context): Int = com.shihab.diplay.media.MediaAudioBuffer.sanitize(
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -506,7 +508,7 @@ object AirPlayPersistence {
 
     fun saveFps(context: Context, fps: Int) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putInt(KEY_FPS, AirPlayDisplaySettings.sanitizeFps(fps))
+            .putInt(KEY_FPS, AirPlayDisplaySettings.sanitizeFps(fps).coerceAtMost(MAX_SELECTABLE_FPS))
             .apply()
     }
 

@@ -331,10 +331,8 @@
     <string name="setting_edge_left">Слева %1$d</string>
     <string name="setting_edge_right">Справа %1$d</string>
     <string name="setting_edge_top">Сверху %1$d</string>
-    <string name="setting_fps_balanced">45 кадр/с (сбалансированно)</string>
     <string name="setting_fps_min_savings">15 кадр/с (экономично)</string>
     <string name="setting_fps_more_savings">30 кадр/с (экономично)</string>
-    <string name="setting_fps_smooth">60 кадр/с (плавно)</string>
     <string name="setting_input_enter_number">Введите число</string>
     <string name="setting_main_buffered_audio">Основной аудиобуфер</string>
     <string name="setting_media_channel">Канал медиа</string>
@@ -414,6 +412,16 @@
     <string name="settings_wallpaper_search_empty">Обоев не найдено</string>
     <string name="settings_wallpaper_search_failed">Поиск сейчас недоступен. Повторите позже.</string>
     <string name="settings_wallpaper_search_hint">Введите слово</string>
+    <string name="settings_wallpaper_categories">Рекомендуемые категории</string>
+    <string name="settings_wallpaper_category_nature">Природа</string>
+    <string name="settings_wallpaper_category_city">Город</string>
+    <string name="settings_wallpaper_category_animal">Животные</string>
+    <string name="settings_wallpaper_category_car">Авто</string>
+    <string name="settings_wallpaper_category_anime">Аниме</string>
+    <string name="settings_wallpaper_category_game">Игры</string>
+    <string name="settings_wallpaper_category_space">Космос</string>
+    <string name="settings_wallpaper_category_abstract">Абстракция</string>
+    <string name="settings_wallpaper_category_sport">Спорт</string>
     <string name="settings_wallpaper_source">Источник дня</string>
     <string name="settings_wallpaper_source_bing">Bing</string>
     <string name="settings_wallpaper_source_wallhaven">Wallhaven</string>

@@ -353,10 +353,8 @@
     <string name="setting_edge_left">Left %1$d</string>
     <string name="setting_edge_right">Right %1$d</string>
     <string name="setting_edge_top">Top %1$d</string>
-    <string name="setting_fps_balanced">45 fps (balanced)</string>
     <string name="setting_fps_min_savings">15 fps (lowest)</string>
     <string name="setting_fps_more_savings">30 fps (lower)</string>
-    <string name="setting_fps_smooth">60 fps (smoother)</string>
     <string name="setting_input_enter_number">Please enter a number</string>
     <string name="setting_main_buffered_audio">Main buffered audio</string>
     <string name="setting_media_channel">Media channel</string>
@@ -414,6 +412,16 @@
     <string name="settings_wallpaper_search_empty">No wallpapers found</string>
     <string name="settings_wallpaper_search_failed">Search is unavailable. Try again later.</string>
     <string name="settings_wallpaper_search_hint">Enter a keyword</string>
+    <string name="settings_wallpaper_categories">Recommended categories</string>
+    <string name="settings_wallpaper_category_nature">Landscape</string>
+    <string name="settings_wallpaper_category_city">City</string>
+    <string name="settings_wallpaper_category_animal">Animals</string>
+    <string name="settings_wallpaper_category_car">Cars</string>
+    <string name="settings_wallpaper_category_anime">Anime</string>
+    <string name="settings_wallpaper_category_game">Games</string>
+    <string name="settings_wallpaper_category_space">Space</string>
+    <string name="settings_wallpaper_category_abstract">Abstract</string>
+    <string name="settings_wallpaper_category_sport">Sports</string>
     <string name="settings_wallpaper_source">Daily source</string>
     <string name="settings_wallpaper_source_bing">Bing</string>
     <string name="settings_wallpaper_source_wallhaven">Wallhaven</string>
