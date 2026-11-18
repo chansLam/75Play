@@ -28,6 +28,8 @@ object RtspMessage {
 
     data class Parsed(val messages: List<Request>, val rest: ByteArray)
 
+    internal data class Scanned(val messages: List<Request>, val consumed: Int)
+
     /** Real requests carry headers under 1 KiB; the cap leaves room. */
     private const val MAX_HEADER_BYTES = 16 * 1024
 
@@ -48,12 +50,22 @@ object RtspMessage {
      * @throws ProtocolException when a header or body exceeds its cap.
      */
     fun parseMessages(buffer: ByteArray): Parsed {
+        val scanned = scanMessages(buffer, buffer.size)
+        return Parsed(scanned.messages, buffer.copyOfRange(scanned.consumed, buffer.size))
+    }
+
+    /**
+     * Same framing as [parseMessages], limited to [length] valid bytes. Bytes past [length] are
+     * ignored, and the unparsed tail is left in place: the caller drops [Scanned.consumed] bytes.
+     */
+    internal fun scanMessages(buffer: ByteArray, length: Int): Scanned {
         val messages = ArrayList<Request>()
         var offset = 0
-        while (offset < buffer.size) {
-            val headerEndIndex = indexOf(buffer, headerEnd, offset)
+        val end = length.coerceIn(0, buffer.size)
+        while (offset < end) {
+            val headerEndIndex = indexOf(buffer, headerEnd, offset, end)
             if (headerEndIndex == null || headerEndIndex - offset > MAX_HEADER_BYTES) {
-                if (buffer.size - offset > MAX_HEADER_BYTES) throw ProtocolException("RTSP header over $MAX_HEADER_BYTES bytes")
+                if (end - offset > MAX_HEADER_BYTES) throw ProtocolException("RTSP header over $MAX_HEADER_BYTES bytes")
                 break
             }
             val headerText = String(buffer, offset, headerEndIndex - offset, Charsets.US_ASCII)
@@ -74,7 +86,7 @@ object RtspMessage {
             val contentLength = headers["content-length"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
             if (contentLength > MAX_BODY_BYTES) throw ProtocolException("RTSP body of $contentLength bytes over $MAX_BODY_BYTES")
             val bodyEnd = bodyStart + contentLength
-            if (bodyEnd > buffer.size) break
+            if (bodyEnd > end) break
             messages.add(
                 Request(
                     method = requestLine[0],
@@ -86,7 +98,7 @@ object RtspMessage {
             )
             offset = bodyEnd
         }
-        return Parsed(messages, buffer.copyOfRange(offset, buffer.size))
+        return Scanned(messages, offset)
     }
 
     /** Builds a response, echoing the request protocol and CSeq. */
@@ -107,10 +119,12 @@ object RtspMessage {
         return head.toByteArray(Charsets.US_ASCII) + body
     }
 
-    private fun indexOf(source: ByteArray, target: ByteArray, start: Int): Int? {
+    private fun indexOf(source: ByteArray, target: ByteArray, start: Int, end: Int): Int? {
         if (target.isEmpty()) return start
+        val last = end - target.size
+        if (start > last) return null
         val first = target[0]
-        for (index in start..source.size - target.size) {
+        for (index in start..last) {
             if (source[index] == first && matches(source, index, target)) return index
         }
         return null

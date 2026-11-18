@@ -243,6 +243,9 @@
     <string name="about_device_model">设备型号</string>
     <string name="about_export">导出</string>
     <string name="about_export_report">诊断报告</string>
+    <string name="app_exit_row">退出应用</string>
+    <string name="app_exit_confirm_body">停止 CarPlay 会话并关闭 75Play？将返回车机桌面。</string>
+    <string name="app_exit_confirm">退出</string>
     <string name="about_gesture_fingers">%1$d 指</string>
     <string name="about_hardware_platform">硬件平台</string>
     <string name="about_info_board">主板</string>
@@ -380,6 +383,7 @@
     <string name="reconnect_required_message">部分设置需重新连接 CarPlay 才能生效。是否保存并重新连接？</string>
     <!-- 无障碍内容描述（cd_ 前缀） -->
     <string name="cd_floating_ball">悬浮球：点按模拟返回键，长按回到 75Play 主页</string>
+    <string name="cd_floating_ball_docked">悬浮球已贴边收起，点按箭头展开</string>
     <string name="cd_temp_bar">温度栏：显示室外、车内与空调设定温度</string>
     <string name="session_notification_text">CarPlay 连接已运行</string>
     <string name="session_notification_disconnect">断开连接</string>

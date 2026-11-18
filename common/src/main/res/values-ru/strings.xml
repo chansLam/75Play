@@ -381,6 +381,7 @@
     <string name="home_save_and_connect_carplay">Сохранить и подключить CarPlay</string>
     <string name="home_save_and_connect_wifi">Сохранить и подключить Wi-Fi</string>
     <string name="cd_floating_ball">Плавающая кнопка: нажмите для «Назад», удерживайте для возврата на главный экран DiPlay</string>
+    <string name="cd_floating_ball_docked">Плавающая кнопка скрыта у края. Нажмите стрелку, чтобы вернуть её</string>
     <string name="session_notification_text">CarPlay: соединение активно</string>
     <string name="session_notification_disconnect">Отключить</string>
     <string name="cd_temp_bar">Строка температуры: снаружи, в салоне и заданная температура кондиционера</string>
@@ -450,4 +451,7 @@
     <string name="usb_privilege_hint">Путь проводного iPhone меняется при каждом перечислении, поэтому обычная установка показывает диалог USB. С root установите это один раз для молчаливого разрешения; без root диалог остаётся.</string>
     <string name="usb_privilege_already">Это уже привилегированное системное приложение; доступ к USB предоставляется молча</string>
     <string name="usb_privilege_no_root">Root недоступен; будет использоваться системный диалог USB</string>
+    <string name="app_exit_row">Выйти из приложения</string>
+    <string name="app_exit_confirm_body">Остановить сеанс CarPlay и закрыть 75Play? Вы вернётесь на главный экран автомобиля.</string>
+    <string name="app_exit_confirm">Выйти</string>
 </resources>

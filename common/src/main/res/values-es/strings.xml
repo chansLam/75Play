@@ -381,6 +381,7 @@
     <string name="home_save_and_connect_carplay">Guardar y conectar CarPlay</string>
     <string name="home_save_and_connect_wifi">Guardar y conectar Wi-Fi</string>
     <string name="cd_floating_ball">Bola flotante: toque para Atrás, manténgala pulsada para volver al inicio de DiPlay</string>
+    <string name="cd_floating_ball_docked">Bola flotante oculta en el borde. Toque la flecha para mostrarla</string>
     <string name="session_notification_text">CarPlay conexión activa</string>
     <string name="session_notification_disconnect">Desconectar</string>
     <string name="cd_temp_bar">Barra de temperatura: exterior, interior y temperatura ajustada del aire</string>
@@ -450,4 +451,7 @@
     <string name="usb_privilege_hint">La ruta del iPhone con cable cambia en cada reenumeración, por lo que una instalación normal debe mostrar el diálogo USB. Con root, instala esto una vez para conceder el permiso en silencio; sin root se mantiene el diálogo.</string>
     <string name="usb_privilege_already">Ya es una app del sistema con privilegios; el acceso USB se concede en silencio</string>
     <string name="usb_privilege_no_root">No hay acceso root; se usará el diálogo USB del sistema</string>
+    <string name="app_exit_row">Salir de la aplicación</string>
+    <string name="app_exit_confirm_body">¿Detener la sesión de CarPlay y cerrar 75Play? Volverás a la pantalla de inicio del coche.</string>
+    <string name="app_exit_confirm">Salir</string>
 </resources>

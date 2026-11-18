@@ -118,7 +118,8 @@ object LayoutMetrics {
     /** 贴左的窄轨。宽度够放下选中胶囊和两个字的短标签。 */
     fun navWidth(context: Context): Int = px(context, tier(context, ShellComponentSize.NAV_WIDTH_COMPACT, ShellComponentSize.NAV_WIDTH_SHORT, ShellComponentSize.NAV_WIDTH_REGULAR))
     fun statusBarH(context: Context): Int = px(context, tier(context, ShellComponentSize.STATUS_BAR_COMPACT, ShellComponentSize.STATUS_BAR_SHORT, ShellComponentSize.STATUS_BAR_REGULAR))
-    fun statusClockSize(context: Context): Float = textSp(context, tier(context, ShellType.TITLE, ShellType.DISPLAY, ShellType.HEADING))
+    /** 原车机右上角时钟是 24px，三档都用这一级，避免短屏把时间放大成标题。 */
+    fun statusClockSize(context: Context): Float = textSp(context, ShellType.HEADING)
     fun statusDateSize(context: Context): Float = textSp(context, tier(context, ShellType.CAPTION, ShellType.LABEL, ShellType.LABEL))
     fun navEntryMinH(context: Context): Int = px(context, tier(context, ShellComponentSize.NAV_ENTRY_COMPACT, ShellComponentSize.NAV_ENTRY_SHORT, ShellComponentSize.NAV_ENTRY_REGULAR))
     fun navIconSize(context: Context): Int = px(context, tier(context, ShellComponentSize.ICON_SMALL, ShellComponentSize.ICON_MEDIUM, ShellComponentSize.ICON_MEDIUM))

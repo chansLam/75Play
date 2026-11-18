@@ -50,4 +50,23 @@ object WiredNcmTuning {
      * status notification cannot stall writes forever. Observed connect delay is about 15 s.
      */
     var hardWaitFallbackMillis: Long = 30_000L
+
+    /** CherryUSB reports NETWORK_CONNECTION before the bulk-OUT pipe is armed. */
+    var networkConnectionSettleMillis: Long = 1_000L
 }
+
+/** Remaining bulk-OUT quiet period after NETWORK_CONNECTION, rounded up for retry diagnostics. */
+internal fun networkConnectionSettleRemainingMillis(
+    networkConnected: Boolean,
+    connectedAtNanos: Long,
+    nowNanos: Long,
+    settleMillis: Long,
+): Long {
+    if (!networkConnected || connectedAtNanos == 0L || settleMillis <= 0L) return 0L
+    val elapsedNanos = (nowNanos - connectedAtNanos).coerceAtLeast(0L)
+    val remainingNanos = settleMillis * NANOS_PER_MILLISECOND - elapsedNanos
+    if (remainingNanos <= 0L) return 0L
+    return (remainingNanos + NANOS_PER_MILLISECOND - 1L) / NANOS_PER_MILLISECOND
+}
+
+private const val NANOS_PER_MILLISECOND = 1_000_000L

@@ -149,6 +149,59 @@ class IphoneUsbHost(
         return selected
     }
 
+    /**
+     * Issue #34 fallback for a persistent usbfs EBUSY: a prior session's residual interface claim
+     * makes SETCONFIGURATION fail on every retry. The caller's fd is already in an inconsistent
+     * state, so this first releases it, opens a clean fd and issues USBDEVFS_RESET there, then waits
+     * for re-enumeration, reopens, and selects the CarPlay configuration. This function always
+     * takes ownership of [prior] and releases it (the caller must not release it again). Returns
+     * null when recovery is not possible (the caller then fails the attempt as before).
+     */
+    private fun resetAndReopenForConfiguration(
+        prior: SharedUsbConnection,
+        staleDevice: UsbDevice,
+        knownConfiguration: CarPlayUsbConfiguration?,
+    ): Triple<SharedUsbDeviceConnection, CarPlayUsbConfiguration, LegacyUsbHostCompat.ConfigurationResult>? {
+        // Drop the inconsistent fd first; a reset issued on it returns ENODEV because the kernel
+        // no longer has a usable device state after the failed SETCONFIGURATION attempts.
+        runCatching { prior.release() }
+        return try {
+            diagnosticLog("usb configuration busy after retries; reopening on a clean fd and resetting device")
+            val resetHost = openCleanConnection(staleDevice) ?: return null
+            val resetErrno = LegacyUsbHostCompat.resetDevice(resetHost, onDiagnostic)
+            if (resetErrno != null && resetErrno != 0) {
+                diagnosticLog("usb device reset returned errno=$resetErrno")
+            }
+            // The reset fd is torn down by re-enumeration; release it before rediscovering.
+            runCatching { resetHost.release() }
+            val fresh = refreshDevice(staleDevice) ?: return null
+            val newConnection = openCleanConnection(fresh) ?: return null
+            val configuration = knownConfiguration
+                ?: IphoneCarPlayConfiguration.find(fresh, newConnection.connection)
+                ?: run {
+                    newConnection.release()
+                    return null
+                }
+            val result = selectCarPlayConfiguration(newConnection, configuration)
+            if (!result.selected) {
+                newConnection.release()
+                return null
+            }
+            Triple(newConnection, configuration, result)
+        } catch (error: Throwable) {
+            diagnosticLog("usb reset/reopen recovery failed: ${error.message}")
+            null
+        }
+    }
+
+    /** Opens a usbfs connection to [target], refreshing a stale device handle once if needed. */
+    private fun openCleanConnection(target: UsbDevice): SharedUsbDeviceConnection? {
+        val raw = usbManager.openDevice(target)
+            ?: refreshDevice(target)?.let { usbManager.openDevice(it) }
+            ?: return null
+        return SharedUsbDeviceConnection.own(raw)
+    }
+
     @Throws(IphoneUsbException::class)
     fun requestPermission(device: UsbDevice): PermissionRequest {
         requireConfiguredDevice(device)
@@ -408,10 +461,10 @@ class IphoneUsbHost(
         val connection = usbManager.openDevice(device)
             ?: refreshDevice(device)?.let { usbManager.openDevice(it) }
             ?: throw IphoneUsbException.DeviceUnavailable("UsbManager could not open the iPhone")
-        val sharedConnection = SharedUsbDeviceConnection.own(connection)
+        var sharedConnection = SharedUsbDeviceConnection.own(connection)
         var claimedInterface: UsbInterface? = null
         try {
-            val configuration = knownConfiguration ?: IphoneCarPlayConfiguration.find(device, connection)
+            var configuration = knownConfiguration ?: IphoneCarPlayConfiguration.find(device, connection)
                 ?: throw IphoneUsbException.Protocol(
                     "Re-enumerated iPhone exposes no USBMUX CarPlay configuration",
                 )
@@ -419,7 +472,19 @@ class IphoneUsbHost(
                 "usb open sdk=${Build.VERSION.SDK_INT} vid=${device.vendorId} pid=${device.productId} " +
                     "target=${configuration.id} interfaces=${IphoneCarPlayConfiguration.describe(configuration)}",
             )
-            val selected = selectCarPlayConfiguration(sharedConnection, configuration)
+            var selected = selectCarPlayConfiguration(sharedConnection, configuration)
+            if (!selected.selected && selected.errno == ERRNO_BUSY) {
+                // A residual usbfs claim (a prior session whose fd had not fully released)
+                // makes SETCONFIGURATION return EBUSY. Reset the device to force a clean
+                // re-enumeration, reopen, then select once more. This is the #34 fallback.
+                // resetAndReopenForConfiguration releases the prior sharedConnection itself.
+                val recovered = resetAndReopenForConfiguration(sharedConnection, device, knownConfiguration)
+                if (recovered != null) {
+                    sharedConnection = recovered.first
+                    configuration = recovered.second
+                    selected = recovered.third
+                }
+            }
             if (!selected.selected) {
                 throw IphoneUsbException.DeviceUnavailable(
                     "USB CarPlay configuration ${configuration.id} could not be selected; " +

@@ -263,6 +263,20 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         refreshStatus()
         refreshHomeFragment()
     }
+    override fun exitApplication() {
+        // Stop any live/provisioned session first, then tear down every background component so a
+        // parked CarPlay link or key-test guard cannot keep the process alive after the UI closes.
+        runCatching { CarPlayBackgroundSession.stop {} }
+        listOf(
+            CarPlayConnectService::class.java,
+            DiPlaySessionService::class.java,
+            com.shihab.diplay.network.CarPlayWirelessService::class.java,
+            com.shihab.diplay.host.SwcKeyTestGuardService::class.java,
+            com.shihab.diplay.host.AssistBackService::class.java,
+        ).forEach { service -> runCatching { applicationContext.stopService(Intent(applicationContext, service)) } }
+        finishAffinity()
+        android.os.Process.killProcess(android.os.Process.myPid())
+    }
     override fun hasCarPlaySession(): Boolean = CarPlayBackgroundSession.hasSession()
     override fun isCarPlayActive(): Boolean {
         // A parked session is still connected. The active flag is set when the phone accepts
@@ -274,7 +288,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         // reuse the owner. That bookkeeping is not a live connection: require a real controller,
         // otherwise the shell keeps showing "connected" after an unexpected drop and the manual
         // connect path races a session that no longer exists.
-        return CarPlayBackgroundSession.hasSession() && CarPlayBackgroundSession.snapshot() != null
+        return CarPlayBackgroundSession.hasSession() && CarPlayBackgroundSession.hasLiveController()
     }
     override fun isCarPlayConnecting(): Boolean =
         // Only the explicit connect flow flags — do NOT use hasSession()&&!active here:

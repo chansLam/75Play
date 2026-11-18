@@ -232,18 +232,28 @@ object HeadUnitVolume {
      *  - 通话：同样分通道，写 setPhoneVolume。
      */
     private fun stepActiveStream(direction: Int, fallbackCode: Int, label: String) {
-        val navActive = isStreamActive(HEAD_UNIT_NAVIGATION_STREAM, HEAD_UNIT_VOLUME_ACTIVE_PAST_MS)
-        val mediaActive = isStreamActive(AudioManager.STREAM_MUSIC, HEAD_UNIT_VOLUME_ACTIVE_PAST_MS)
-        val callActive = isStreamActive(AudioManager.STREAM_VOICE_CALL, HEAD_UNIT_VOLUME_ACTIVE_PAST_MS)
+        // Renderer can use any legacy stream in 1..20; detect the channels the user actually
+        // configured. Otherwise a call on stream 10 looks like navigation and volume keys edit
+        // the wrong channel.
+        val ctx = debugContext
+        val mediaStream = (ctx?.let(AirPlayPersistence::loadMediaAudioChannel) ?: AudioManager.STREAM_MUSIC)
+            .takeIf { it != 0 } ?: AudioManager.STREAM_MUSIC
+        val navigationStream = (ctx?.let(AirPlayPersistence::loadNavigationAudioChannel) ?: HEAD_UNIT_NAVIGATION_STREAM)
+            .takeIf { it != 0 } ?: HEAD_UNIT_NAVIGATION_STREAM
+        val callStream = (ctx?.let(AirPlayPersistence::loadCallAudioChannel) ?: AudioManager.STREAM_VOICE_CALL)
+            .takeIf { it != 0 } ?: AudioManager.STREAM_VOICE_CALL
+        val navActive = isStreamActive(navigationStream, HEAD_UNIT_VOLUME_ACTIVE_PAST_MS)
+        val mediaActive = isStreamActive(mediaStream, HEAD_UNIT_VOLUME_ACTIVE_PAST_MS)
+        val callActive = isStreamActive(callStream, HEAD_UNIT_VOLUME_ACTIVE_PAST_MS)
         when (headUnitVolumeChannel(callActive, navActive, mediaActive)) {
-            HeadUnitVolumeChannel.CALL -> stepChannelVolume(AudioManager.STREAM_VOICE_CALL, TX_SET_PHONE_VOLUME, direction, label)
-            HeadUnitVolumeChannel.NAVIGATION -> stepNavigationVolume(direction, label)
-            HeadUnitVolumeChannel.MEDIA -> stepChannelVolume(AudioManager.STREAM_MUSIC, TX_SET_MEDIA_VOLUME, direction, label)
+            HeadUnitVolumeChannel.CALL -> stepChannelVolume(callStream, TX_SET_PHONE_VOLUME, direction, label)
+            HeadUnitVolumeChannel.NAVIGATION -> stepNavigationVolume(navigationStream, direction, label)
+            HeadUnitVolumeChannel.MEDIA -> stepChannelVolume(mediaStream, TX_SET_MEDIA_VOLUME, direction, label)
         }
     }
 
-    /** 导航：复刻固件 setNaviVol，调 stream 10 并用广播让 WTVolumePanel 走导航分支。 */
-    private fun stepNavigationVolume(direction: Int, label: String) {
+    /** 导航：复刻固件 setNaviVol，调导航声道并用广播让 WTVolumePanel 走导航分支。 */
+    private fun stepNavigationVolume(stream: Int, direction: Int, label: String) {
         val ctx = debugContext
         val am = audioManager()
         if (ctx == null || am == null) {
@@ -251,10 +261,10 @@ object HeadUnitVolume {
             return
         }
         try {
-            val current = am.getStreamVolume(HEAD_UNIT_NAVIGATION_STREAM)
-            val max = am.getStreamMaxVolume(HEAD_UNIT_NAVIGATION_STREAM)
+            val current = am.getStreamVolume(stream)
+            val max = am.getStreamMaxVolume(stream)
             val next = (current + if (direction == AudioManager.ADJUST_RAISE) 1 else -1).coerceIn(0, max)
-            if (next != current) am.setStreamVolume(HEAD_UNIT_NAVIGATION_STREAM, next, 0)
+            if (next != current) am.setStreamVolume(stream, next, 0)
             val intent = android.content.Intent(ACTION_NAVI_VOLUME_CHANGE)
                 .addFlags(android.content.Intent.FLAG_RECEIVER_FOREGROUND)
             ctx.sendBroadcast(intent)

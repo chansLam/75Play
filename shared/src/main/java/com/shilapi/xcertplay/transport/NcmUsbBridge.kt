@@ -73,6 +73,8 @@ class NcmUsbBridge internal constructor(
      * timeouts are retried silently rather than counted as write failures.
      */
     @Volatile private var networkConnected = false
+    @Volatile private var networkConnectedAtNanos = 0L
+    private var loggedNetworkSettle = false
     private val readWatchdogStarted = AtomicBoolean(false)
     private val readWatchdogFired = AtomicBoolean(false)
     /** Monotonic time of the last inbound NCM frame; the read-stall watchdog keys off it. */
@@ -136,6 +138,21 @@ class NcmUsbBridge internal constructor(
             !networkConnected &&
             elapsedSinceOpenMillis() < WiredNcmTuning.hardWaitFallbackMillis
         ) {
+            return@synchronized 0
+        }
+        val settleRemainingMs = networkConnectionSettleRemainingMillis(
+            networkConnected = networkConnected,
+            connectedAtNanos = networkConnectedAtNanos,
+            nowNanos = System.nanoTime(),
+            settleMillis = WiredNcmTuning.networkConnectionSettleMillis,
+        )
+        if (settleRemainingMs > 0L) {
+            if (!loggedNetworkSettle) {
+                loggedNetworkSettle = true
+                val line = "ncm bulk-out waiting for NETWORK_CONNECTION settle; remainingMs=$settleRemainingMs"
+                Log.i(IphoneCarPlayConfiguration.TAG, line)
+                onDiagnostic(line)
+            }
             return@synchronized 0
         }
         val batch = NcmTxBatch.take(frames, ntbLimits)
@@ -512,7 +529,13 @@ class NcmUsbBridge internal constructor(
             // (byte 2): 0 = disconnected, 1 = connected. The 8-byte packet has no byte 8.
             val connected = data.getOrNull(2)?.toInt()?.and(0xff)
             if (notification == 0x00) {
-                networkConnected = connected == 1
+                if (connected == 1) {
+                    if (!networkConnected) networkConnectedAtNanos = System.nanoTime()
+                    networkConnected = true
+                } else {
+                    networkConnected = false
+                    networkConnectedAtNanos = 0L
+                }
             }
             val line = "ncm status notification #$notificationCount bytes=$transferred " +
                 "notification=0x${notification?.toString(16) ?: "?"} connected=$connected " +

@@ -7,6 +7,7 @@ import android.net.wifi.WifiConfiguration
 import android.net.wifi.WifiManager
 import android.os.Build
 import com.shihab.diplay.compat.realSdkInt
+import java.lang.reflect.Method
 
 /**
  * Reads whether the head unit's own Wi-Fi hotspot is on, for the "Car hotspot" link.
@@ -15,7 +16,7 @@ import com.shihab.diplay.compat.realSdkInt
  * On KitKat SoftAP can also be toggled via the hidden [enableIfPossible] path.
  */
 object CarHotspotStatus {
-    private const val ACTION_WIFI_AP_STATE_CHANGED = "android.net.wifi.WIFI_AP_STATE_CHANGED"
+    const val WIFI_AP_STATE_CHANGED_ACTION = "android.net.wifi.WIFI_AP_STATE_CHANGED"
     private const val EXTRA_WIFI_AP_STATE = "wifi_state"
     private const val EXTRA_WIFI_AP_MODE = "wifi_ap_mode"
     private const val WIFI_AP_STATE_ENABLED = 13
@@ -29,10 +30,16 @@ object CarHotspotStatus {
         val app = context.applicationContext
         val wifi = wifiManager(app)
         return read(
-            state = { wifi?.let { WifiManager::class.java.getMethod("getWifiApState").invoke(it) as? Int } },
-            enabled = { wifi?.let { WifiManager::class.java.getMethod("isWifiApEnabled").invoke(it) as? Boolean } },
-            sticky = { app.registerReceiver(null, IntentFilter(ACTION_WIFI_AP_STATE_CHANGED)) },
+            state = { wifi?.let { apStateMethod()?.invoke(it) as? Int } },
+            enabled = { wifi?.let { apEnabledMethod()?.invoke(it) as? Boolean } },
+            sticky = { app.registerReceiver(null, IntentFilter(WIFI_AP_STATE_CHANGED_ACTION)) },
         )
+    }
+
+    /** Tethered SoftAP state from a [WIFI_AP_STATE_CHANGED_ACTION] broadcast, or null when it does not say. */
+    fun fromBroadcast(intent: Intent): Boolean? {
+        if (intent.hasExtra(EXTRA_WIFI_AP_MODE) && intent.getIntExtra(EXTRA_WIFI_AP_MODE, -1) != 1) return null
+        return stateEnabled(intent.getIntExtra(EXTRA_WIFI_AP_STATE, -1))
     }
 
     /**
@@ -121,8 +128,25 @@ object CarHotspotStatus {
         stateEnabled(runCatching(state).getOrNull())?.let { return it }
         runCatching(enabled).getOrNull()?.let { return it }
         val intent = runCatching(sticky).getOrNull() ?: return null
-        // Local-only AP state says nothing about the car's tethered hotspot, including on multi-AP firmware.
-        if (intent.hasExtra(EXTRA_WIFI_AP_MODE) && intent.getIntExtra(EXTRA_WIFI_AP_MODE, -1) != 1) return null
-        return stateEnabled(intent.getIntExtra(EXTRA_WIFI_AP_STATE, -1))
+        return fromBroadcast(intent)
+    }
+
+    private var apStateLookup: Method? = null
+    private var apEnabledLookup: Method? = null
+    private var apMethodsResolved = false
+
+    private fun apStateMethod(): Method? = apMethods().first
+
+    private fun apEnabledMethod(): Method? = apMethods().second
+
+    private fun apMethods(): Pair<Method?, Method?> {
+        if (apMethodsResolved) return apStateLookup to apEnabledLookup
+        synchronized(this) {
+            if (apMethodsResolved) return apStateLookup to apEnabledLookup
+            apStateLookup = runCatching { WifiManager::class.java.getMethod("getWifiApState") }.getOrNull()
+            apEnabledLookup = runCatching { WifiManager::class.java.getMethod("isWifiApEnabled") }.getOrNull()
+            apMethodsResolved = true
+            return apStateLookup to apEnabledLookup
+        }
     }
 }

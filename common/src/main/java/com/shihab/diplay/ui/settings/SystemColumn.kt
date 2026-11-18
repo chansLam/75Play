@@ -58,6 +58,24 @@ internal class SystemColumn(page: Fragment) : AboutColumnKit(page) {
         card.addView(settingRow(ctx, ctx.getString(R.string.choose_save_location), capPick(ctx, ctx.getString(R.string.about_default)) { host.chooseReportDestination() }))
         card.addView(divider(ctx))
         addPrivilegedUsbRow(card)
+        card.addView(divider(ctx))
+        addExitRow(card)
+    }
+
+    private fun addExitRow(card: LinearLayout) {
+        val ctx = card.context
+        val button = ghostButton(ctx, ctx.getString(R.string.app_exit_confirm)) {
+            DiPlayDialog.showConfirm(
+                ctx,
+                ctx.getString(R.string.app_exit_row),
+                ctx.getString(R.string.app_exit_confirm_body),
+                ctx.getString(R.string.app_exit_confirm),
+                ctx.getString(R.string.cancel),
+                danger = true,
+                onConfirm = { host.exitApplication() },
+            )
+        }
+        card.addView(settingRow(ctx, ctx.getString(R.string.app_exit_row), button))
     }
 
     /**
@@ -70,7 +88,7 @@ internal class SystemColumn(page: Fragment) : AboutColumnKit(page) {
         val button = ghostButton(ctx, ctx.getString(R.string.usb_privilege_action)) {
             Thread {
                 when {
-                    root.hasManageUsb() || root.isSystemApp() ->
+                    root.hasManageUsb() ->
                         host.showGlassToast(ctx.getString(R.string.usb_privilege_already))
                     !root.isRootAvailable() ->
                         host.showGlassToast(ctx.getString(R.string.usb_privilege_no_root))

@@ -23,6 +23,9 @@ class DiPlayApplication : MultiDexApplication() {
         try {
             super.attachBaseContext(base)
             bootLog("attach-after-super-ok")
+            // Privileged installs wipe JNI on boot. Put the libraries back before any class
+            // loads them, or wired CarPlay fails after the USB dialog stops appearing.
+            com.shihab.diplay.host.PrivilegedNativeLibraries.ensure(this)
         } catch (t: Throwable) {
             bootLog("attach-EXCEPTION: " + t.javaClass.name + ": " + t.message)
             try {

@@ -12,21 +12,58 @@ class ControlCipher(private val readKey: ByteArray, private val writeKey: ByteAr
 
     private var readCounter = 0L
     private var writeCounter = 0L
+    private val readNonce = ByteArray(12)
 
     fun decrypt(buffer: ByteArray): Decrypted {
-        val output = ArrayList<ByteArray>()
+        val plain = StreamBuffer(buffer.size.coerceAtLeast(1))
+        val consumed = decryptInto(buffer, buffer.size, plain)
+        return Decrypted(plain.toByteArray(), buffer.copyOfRange(consumed, buffer.size))
+    }
+
+    /**
+     * Opens every complete frame in the first [length] bytes of [source] and appends the plaintext
+     * to [plain]. Returns how many ciphertext bytes were consumed. A tag failure leaves [plain]
+     * unchanged and does not advance the read counter past the bad frame.
+     */
+    internal fun decryptInto(source: ByteArray, length: Int, plain: StreamBuffer): Int {
+        val marked = plain.size
         var offset = 0
-        while (buffer.size - offset >= HEADER_SIZE) {
-            val length = readU16Le(buffer, offset)
-            val frameEnd = offset + HEADER_SIZE + length + TAG_SIZE
-            if (buffer.size < frameEnd) break
-            val aad = buffer.copyOfRange(offset, offset + HEADER_SIZE)
-            val ciphertextAndTag = buffer.copyOfRange(offset + HEADER_SIZE, frameEnd)
-            output.add(AirPlayCrypto.chachaOpen(readKey, AirPlayCrypto.nonce64(readCounter), ciphertextAndTag, aad))
-            readCounter++
-            offset = frameEnd
+        try {
+            while (length - offset >= HEADER_SIZE) {
+                val payload = readU16Le(source, offset)
+                val frameLength = HEADER_SIZE + payload + TAG_SIZE
+                if (length - offset < frameLength) break
+                plain.reserve(payload)
+                val written = AirPlayCrypto.chachaOpenRangeInto(
+                    readKey,
+                    nonce(readCounter),
+                    source,
+                    offset,
+                    HEADER_SIZE,
+                    source,
+                    offset + HEADER_SIZE,
+                    payload + TAG_SIZE,
+                    plain.bytes,
+                    plain.size,
+                )
+                plain.commit(written)
+                readCounter++
+                offset += frameLength
+            }
+            return offset
+        } catch (error: Exception) {
+            plain.truncate(marked)
+            throw error
         }
-        return Decrypted(concatBytes(*output.toTypedArray()), buffer.copyOfRange(offset, buffer.size))
+    }
+
+    private fun nonce(counter: Long): ByteArray {
+        var value = counter
+        for (index in 4 until readNonce.size) {
+            readNonce[index] = value.toByte()
+            value = value ushr 8
+        }
+        return readNonce
     }
 
     fun encrypt(plaintext: ByteArray): ByteArray {

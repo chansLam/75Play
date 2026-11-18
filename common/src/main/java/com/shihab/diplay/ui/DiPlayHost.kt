@@ -65,6 +65,8 @@ interface DiPlayHost {
     fun connectedBluetoothDeviceName(): String
     /** Whether the head-unit Bluetooth radio is currently enabled. */
     fun isBluetoothEnabled(): Boolean
+    /** Fully stop the session, background services and terminate this app process. */
+    fun exitApplication()
 }
 
 /** A nearby WiFi network shown in the LAN tab. */
