@@ -56,9 +56,7 @@ internal class SystemColumn(page: Fragment) : AboutColumnKit(page) {
         card.addView(divider(ctx))
         card.addView(settingRow(ctx, ctx.getString(R.string.about_export_report), ghostButton(ctx, ctx.getString(R.string.about_export)) { host.exportDiagnosticsNow() }))
         card.addView(settingRow(ctx, ctx.getString(R.string.choose_save_location), capPick(ctx, ctx.getString(R.string.about_default)) { host.chooseReportDestination() }))
-        card.addView(divider(ctx))
-        addPrivilegedUsbRow(card)
-        card.addView(divider(ctx))
+        if (addPrivilegedUsbRow(card)) card.addView(divider(ctx))
         addExitRow(card)
     }
 
@@ -81,17 +79,21 @@ internal class SystemColumn(page: Fragment) : AboutColumnKit(page) {
     /**
      * One-time privileged install so wired USB permission is granted silently. The heavy work
      * (su probe / remount / copy) runs off the UI thread; the reboot itself is confirmed first.
+     * When the app itself is already running from /system/priv-app the row is pointless, so hide it.
      */
-    private fun addPrivilegedUsbRow(card: LinearLayout) {
+    private fun addPrivilegedUsbRow(card: LinearLayout): Boolean {
         val ctx = card.context
         val root = com.shihab.diplay.host.RootController(ctx)
+        if (root.isPrivilegedInstall()) return false
         val button = ghostButton(ctx, ctx.getString(R.string.usb_privilege_action)) {
             Thread {
                 when {
-                    root.hasManageUsb() ->
+                    root.hasManageUsb() -> mainThread(ctx) {
                         host.showGlassToast(ctx.getString(R.string.usb_privilege_already))
-                    !root.isRootAvailable() ->
+                    }
+                    !root.isRootAvailable() -> mainThread(ctx) {
                         host.showGlassToast(ctx.getString(R.string.usb_privilege_no_root))
+                    }
                     else -> mainThread(ctx) {
                         DiPlayDialog.showConfirm(
                             ctx,
@@ -119,6 +121,7 @@ internal class SystemColumn(page: Fragment) : AboutColumnKit(page) {
         }
         card.addView(settingRow(ctx, ctx.getString(R.string.usb_privilege_row), button))
         card.addView(paragraph(ctx, ctx.getString(R.string.usb_privilege_hint)))
+        return true
     }
 
     private fun mainThread(ctx: android.content.Context, block: () -> Unit) {

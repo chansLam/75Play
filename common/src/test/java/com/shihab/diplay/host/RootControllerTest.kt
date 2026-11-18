@@ -19,15 +19,36 @@ class RootControllerTest {
         val explicitRestore = script.indexOf("mount -o remount,ro /system; ro_status=")
         val clearTrap = script.indexOf("trap - EXIT HUP INT TERM")
         val failureExit = script.indexOf("if [ \$status -ne 0 ]; then exit \$status; fi")
-        val guardedSync = script.indexOf("sync || exit \$?")
+        val sync = script.indexOf("sync;")
         val reboot = script.lastIndexOf("reboot")
 
         assertTrue(trap in 0 until firstMutableStep)
         assertTrue(signalTrap in (trap + 1) until firstMutableStep)
         assertTrue(explicitRestore in (firstMutableStep + 1) until clearTrap)
         assertTrue(clearTrap in (explicitRestore + 1) until failureExit)
-        assertTrue(failureExit in (clearTrap + 1) until guardedSync)
-        assertTrue(guardedSync in (failureExit + 1) until reboot)
+        assertTrue(failureExit in (clearTrap + 1) until sync)
+        assertTrue(sync in (failureExit + 1) until reboot)
+    }
+
+    @Test
+    fun startupSyncCopiesWithoutRebooting() {
+        val script = privilegedInstallScript(
+            sourceApk = "/data/app/75Play.apk",
+            targetApk = "/system/priv-app/75Play.apk",
+            nativeLibDir = "/data/app-lib/com.shihab.diplay",
+            reboot = false,
+        )
+
+        assertTrue(script.contains("sync;"))
+        assertFalse(script.contains("reboot"))
+    }
+
+    @Test
+    fun privilegedPathDetectionOnlyMatchesTheSystemCopy() {
+        assertTrue(isPrivilegedApkPath("/system/priv-app/75Play.apk"))
+        assertTrue(isPrivilegedApkPath("/system/priv-app/75Play/base.apk"))
+        assertFalse(isPrivilegedApkPath("/data/app/com.shihab.diplay-1.apk"))
+        assertFalse(isPrivilegedApkPath("/system/app/75Play.apk"))
     }
 
     @Test

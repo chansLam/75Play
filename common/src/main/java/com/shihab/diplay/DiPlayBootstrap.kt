@@ -2,16 +2,20 @@ package com.shihab.diplay
 
 import android.content.Context
 import com.shihab.diplay.airplay.AirPlayIdentity
+import com.shihab.diplay.host.RootController
 import com.shihab.diplay.mfi.LocalMfiAuthenticationClient
 import com.shihab.diplay.orchestration.MfiTarget
+import com.shihab.diplay.util.AppLog
 import java.io.File
 import java.security.MessageDigest
 
 /** Installs the private beta's experimental identity. It has no remote fallback. */
 internal object DiPlayBootstrap {
     @Volatile private var ready = false
+    @Volatile private var privilegedSyncStarted = false
 
     @Synchronized fun ensure(context: Context, mfiTarget: MfiTarget) {
+        syncPrivilegedCopy(context.applicationContext)
         if (mfiTarget != MfiTarget.LOCAL) return
         if (ready) return
         val privateRoot = context.filesDir
@@ -71,6 +75,36 @@ internal object DiPlayBootstrap {
         writeStamp(target, context)
         AirPlayPersistence.saveDebugLogsEnabled(context, false)
         ready = true
+    }
+
+    /**
+     * Copies the running /data/app APK over the existing privileged copy. Runs once per process
+     * on the first bootstrap call, off the caller's thread, and never reboots.
+     */
+    private fun syncPrivilegedCopy(context: Context) {
+        if (privilegedSyncStarted) return
+        privilegedSyncStarted = true
+        Thread {
+            val root = RootController(context)
+            AppLog.i(
+                "DiPlayPrivSync",
+                "source=${context.applicationInfo.sourceDir} privileged=${root.isPrivilegedInstall()} " +
+                    "privCopy=${root.hasPrivilegedCopy()}",
+            )
+            val result = runCatching { root.syncPrivilegedCopyIfNeeded() }
+            val sync = result.getOrNull()
+            when {
+                result.isFailure -> AppLog.w(
+                    "DiPlayPrivSync",
+                    "privileged copy sync failed: ${result.exceptionOrNull()?.javaClass?.simpleName}",
+                )
+                sync?.error != null -> AppLog.w("DiPlayPrivSync", "privileged copy sync: ${sync.error}")
+                sync?.copied == true -> AppLog.i(
+                    "DiPlayPrivSync",
+                    "copied current APK to /system/priv-app; restart the head unit to apply",
+                )
+            }
+        }.apply { isDaemon = true }.start()
     }
 
     private fun sameAuthenticationFiles(first: File, second: File): Boolean =
