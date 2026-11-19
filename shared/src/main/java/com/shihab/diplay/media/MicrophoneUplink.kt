@@ -496,7 +496,7 @@ internal class MicrophoneUplink(
     }
 
     private companion object {
-        const val TAG = "xcertplay-usb"
+        const val TAG = "xcertplay"
         const val MIN_READ_BYTES = 2_048
         const val CLOSE_JOIN_MILLIS = 500L
         const val ECHO_TAIL_MILLIS = 250

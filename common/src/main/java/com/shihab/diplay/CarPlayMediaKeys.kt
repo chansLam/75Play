@@ -64,6 +64,7 @@ internal object CarPlayMediaKeys {
     private var focusOwner: Any? = null
     private var focusEventRevision = 0L
     private var focusHeld = false
+    private var suspended = false
     /** Some car firmware never sends a gain callback after the phone call ends. */
     private var transientFocusInterrupted = false
     private var appContext: Context? = null
@@ -100,6 +101,24 @@ internal object CarPlayMediaKeys {
         }
     }
 
+    fun suspend() {
+        synchronized(lock) {
+            val wasMediaAudioActive = mediaAudioActive
+            releaseMediaRouteLocked()
+            mediaAudioActive = wasMediaAudioActive
+            suspended = true
+        }
+    }
+
+    fun resume(context: Context) {
+        synchronized(lock) {
+            if (controller == null || legacyClient != null) return
+            appContext = context.applicationContext
+            suspended = false
+            if (mediaAudioActive || nowPlaying.playing) start(context)
+        }
+    }
+
     /** Called when CarPlay music starts or stops; may run on any thread. */
     fun onMediaAudioChanged(active: Boolean) {
         mainHandler.post { synchronized(lock) { updateLocked(active) } }
@@ -109,7 +128,7 @@ internal object CarPlayMediaKeys {
     private fun onIphonePlaying(expected: CarPlayController, playing: Boolean) {
         if (playing) mainHandler.post {
             synchronized(lock) {
-                if (controller === expected) regainFocusLocked(onIphonePlaybackResume = true)
+                if (controller === expected && !suspended) regainFocusLocked(onIphonePlaybackResume = true)
             }
         }
     }
@@ -182,6 +201,10 @@ internal object CarPlayMediaKeys {
         val context = appContext ?: return
         if (controller == null) return
         mediaAudioActive = active
+        if (suspended) {
+            publishPlaybackStateLocked()
+            return
+        }
         if (active && focusOwner == null) start(context) else if (active) regainFocusLocked()
         publishPlaybackStateLocked()
     }
@@ -258,14 +281,22 @@ internal object CarPlayMediaKeys {
     }
 
     private fun releaseLocked() {
+        suspended = false
         transientFocusInterrupted = false
         focusOwner = null
         artworkOwner = null
         artworkQueue.clear()
-        mediaAudioActive = false
         nowPlaying = CarPlayNowPlaying()
         artwork = null
         artworkCache.clear()
+        releaseMediaRouteLocked()
+    }
+
+    private fun releaseMediaRouteLocked() {
+        mediaAudioActive = false
+        transientFocusInterrupted = false
+        focusOwner = null
+        focusEventRevision += 1
         @Suppress("DEPRECATION")
         val audio = appContext?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
         legacyClient?.let { audio?.unregisterRemoteControlClient(it) }
@@ -293,6 +324,9 @@ internal object CarPlayMediaKeys {
     }
 
     private fun send(index: Int, source: String) {
+        synchronized(lock) {
+            if (suspended) return
+        }
         // While the car's video player is on screen the media keys drive it: a CarPlay play/pause
         // would make the iPhone end the video session.
         if (CarPlayVideo.onMediaKey(index)) {

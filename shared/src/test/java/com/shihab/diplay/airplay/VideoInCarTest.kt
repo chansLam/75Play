@@ -25,10 +25,15 @@ class VideoInCarTest {
     fun videoPlaybackInfoIsDeclaredOnlyWhenEnabled() {
         assertFalse(AirPlayInfoPlist.build(config).containsKey("videoPlaybackInfo"))
 
-        val info = AirPlayInfoPlist.build(config.copy(videoInCar = true))["videoPlaybackInfo"] as Map<*, *>
+        assertFalse(AirPlayInfoPlist.build(config).containsKey("playbackCapabilities"))
+        val built = AirPlayInfoPlist.build(config.copy(videoInCar = true))
+        val info = built["videoPlaybackInfo"] as Map<*, *>
         assertEquals(false, info["videoPlaybackAllowed"])
         assertEquals("465TVmEAAAAB", info["featuresEx"])
         assertEquals(false, (info["playbackCapabilities"] as Map<*, *>)["supportsFPSSecureStop"])
+        val top = built["playbackCapabilities"] as Map<*, *>
+        assertEquals(false, top["supportsFPSSecureStop"])
+        assertEquals(true, top["supportsUIForAudioOnlyContent"])
     }
 
     @Test
@@ -37,6 +42,30 @@ class VideoInCarTest {
         assertFalse("videoPlayback" in setupEnabledFeatures(config, proposed))
         assertFalse("videoPlayback" in setupEnabledFeatures(config.copy(videoInCar = true), listOf("iAPChannel")))
         assertTrue("videoPlayback" in setupEnabledFeatures(config.copy(videoInCar = true), proposed))
+    }
+
+    @Test
+    fun rewritesLocalhostToPeerHost() {
+        assertEquals(
+            "http://192.168.1.5:50211/mirror/index.m3u8",
+            VideoInCar.rewriteLocalhost("http://127.0.0.1:50211/mirror/index.m3u8", "192.168.1.5"),
+        )
+        assertEquals(
+            "http://192.168.1.5:50211/mirror/index.m3u8",
+            VideoInCar.rewriteLocalhost("http://localhost:50211/mirror/index.m3u8", "192.168.1.5"),
+        )
+        assertEquals(
+            "https://192.168.1.5/v.mp4",
+            VideoInCar.rewriteLocalhost("https://127.0.0.1/v.mp4", "192.168.1.5"),
+        )
+        assertEquals(
+            "http://example.com/v.m3u8",
+            VideoInCar.rewriteLocalhost("http://example.com/v.m3u8", "192.168.1.5"),
+        )
+        assertEquals(
+            "mainm3u8://127.0.0.1/index.m3u8",
+            VideoInCar.rewriteLocalhost("mainm3u8://127.0.0.1/index.m3u8", "192.168.1.5"),
+        )
     }
 
     @Test

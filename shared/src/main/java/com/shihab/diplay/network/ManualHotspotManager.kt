@@ -275,7 +275,7 @@ class ManualHotspotManager(
         readSoftApConfiguration() ?: readLegacyApConfiguration()
 
     private fun readSoftApConfiguration(): ManualApConfiguration? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        if (Build.VERSION.SDK_INT < 30) return null
         val snapshot = runCatching {
             Class.forName("com.shihab.diplay.network.PlatformSoftApReader")
                 .getMethod("read", WifiManager::class.java)
@@ -367,7 +367,7 @@ class ManualHotspotManager(
     )
 
     private companion object {
-        const val TAG = "xcertplay-usb"
+        const val TAG = "xcertplay"
 
     }
 }

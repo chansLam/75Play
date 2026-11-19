@@ -19,6 +19,7 @@ import com.shihab.diplay.SessionLogFile
 import com.shihab.diplay.compat.realSdkInt
 import com.shihab.diplay.connect.ConnectBroadcasts
 import com.shihab.diplay.host.CarPlayBackgroundSession
+import com.shihab.diplay.host.CarPlayRecoveryGate
 import com.shihab.diplay.host.R
 import com.shihab.diplay.util.AppLog
 import java.io.File
@@ -103,7 +104,13 @@ class CarPlayConnectService : Service() {
                 cancelConnect()
                 return START_NOT_STICKY
             }
-            else -> beginConnect()
+            else -> {
+                if (CarPlayRecoveryGate.isSuppressed()) {
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                beginConnect()
+            }
         }
         return START_NOT_STICKY
     }
@@ -128,7 +135,7 @@ class CarPlayConnectService : Service() {
             return
         }
         started = true
-        if (realSdkInt() >= Build.VERSION_CODES.M) {
+        if (realSdkInt() >= 23) {
             val missingPermission = listOf(
                 android.Manifest.permission.RECORD_AUDIO,
                 android.Manifest.permission.ACCESS_FINE_LOCATION,
@@ -354,7 +361,7 @@ class CarPlayConnectService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT,
         )
         // The channel class is loaded by name so Dalvik does not verify it on KitKat.
-        val builder = if (realSdkInt() >= Build.VERSION_CODES.O) oreoBuilder() else Notification.Builder(this)
+        val builder = if (realSdkInt() >= 26) oreoBuilder() else Notification.Builder(this)
         return builder
             .setSmallIcon(R.drawable.ic_carplay)
             .setContentTitle(getString(R.string.connecting_to_your_iphone))

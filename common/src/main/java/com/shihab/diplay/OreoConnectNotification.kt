@@ -1,7 +1,6 @@
 package com.shihab.diplay
 
 import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 
@@ -10,12 +9,18 @@ import android.content.Context
  */
 internal object OreoConnectNotification {
     private const val CHANNEL_ID = "carplay_connect"
+    private const val IMPORTANCE_LOW = 2
 
     @JvmStatic
     fun builder(context: Context): Notification.Builder {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channel = NotificationChannel(CHANNEL_ID, "CarPlay", NotificationManager.IMPORTANCE_LOW)
-        manager.createNotificationChannel(channel)
-        return Notification.Builder(context, CHANNEL_ID)
+        val channelClass = Class.forName("android.app.NotificationChannel")
+        val channel = channelClass.getConstructor(String::class.java, CharSequence::class.java, Int::class.javaPrimitiveType)
+            .newInstance(CHANNEL_ID, "CarPlay", IMPORTANCE_LOW)
+        NotificationManager::class.java.getMethod("createNotificationChannel", channelClass)
+            .invoke(manager, channel)
+        return Notification.Builder::class.java
+            .getConstructor(Context::class.java, String::class.java)
+            .newInstance(context, CHANNEL_ID)
     }
 }

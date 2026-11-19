@@ -1,5 +1,6 @@
 package com.shihab.diplay.host
 
+import com.shihab.diplay.CarPlayMediaKeys
 import com.shihab.diplay.CarPlayHostActivity
 import com.shihab.diplay.media.AndroidMediaSink
 import com.shihab.diplay.orchestration.CarPlayController
@@ -21,11 +22,14 @@ internal object CarPlayBackgroundSession {
 
     fun stop(completion: () -> Unit = {}) {
         val action: (((() -> Unit)) -> Unit)?
+        var controllerToDetach: CarPlayController? = null
         synchronized(this) {
             if (stopping) { stopWaiters.add(completion); return }
             action = stopAction
+            controllerToDetach = controller
             if (action != null) { stopping = true; stopWaiters.add(completion) }
         }
+        controllerToDetach?.let { CarPlayMediaKeys.detach(it) }
         if (action == null) { completion(); return }
         action.invoke {
             val callbacks = synchronized(this) {
@@ -134,17 +138,21 @@ internal object CarPlayBackgroundSession {
         return true
     }
 
-    @Synchronized
     fun clear(expected: CarPlayController? = null, keepOwner: Boolean = false) {
-        if (expected != null && controller !== expected) return
-        controller = null
-        sink = null
-        if (!keepOwner) { stopAction = null; owner = null }
-        active = false
-        width = 0
-        height = 0
-        display = null
-        if (!keepOwner) clusterMapHeld = false
+        var controllerToDetach: CarPlayController? = null
+        synchronized(this) {
+            if (expected != null && controller !== expected) return
+            controllerToDetach = controller
+            controller = null
+            sink = null
+            if (!keepOwner) { stopAction = null; owner = null }
+            active = false
+            width = 0
+            height = 0
+            display = null
+            if (!keepOwner) clusterMapHeld = false
+        }
+        controllerToDetach?.let { CarPlayMediaKeys.detach(it) }
     }
 
     /**
@@ -176,8 +184,10 @@ internal object CarPlayBackgroundSession {
      * and runs anyone already waiting on [stop].
      */
     fun forceReset() {
+        var controllerToDetach: CarPlayController? = null
         val callbacks = synchronized(this) {
             if (owner is CarPlayHostActivity) return
+            controllerToDetach = controller
             val pending = stopWaiters.toList()
             stopWaiters.clear()
             stopAction = null
@@ -192,6 +202,7 @@ internal object CarPlayBackgroundSession {
             clusterMapHeld = false
             pending
         }
+        controllerToDetach?.let { CarPlayMediaKeys.detach(it) }
         callbacks.forEach { runCatching { it() } }
     }
 

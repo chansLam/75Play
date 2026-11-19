@@ -12,7 +12,7 @@ interface CarPlayVideoListener {
     fun onVideoAllowedChanged(allowed: Boolean)
 
     /** A playback message from the iPhone, e.g. insertPlayQueueItem, setRate, seek, stop. Any thread. */
-    fun onVideoMessage(streamId: Long, message: Map<String, Any?>)
+    fun onVideoMessage(streamId: Long, message: Map<String, Any?>, peerHost: String? = null)
 
     /** The iPhone asks the car to show its video player (requestUI "videoplayback:"). Any thread. */
     fun onVideoUiRequested()
@@ -29,6 +29,7 @@ internal class VideoInCarGate(
     private val readParked: () -> Boolean?,
     private val onChanged: (Boolean) -> Unit,
     private val onObserved: (Boolean?) -> Unit = {},
+    private val allowWhenUnknown: Boolean = false,
 ) : Closeable {
     @Volatile private var closed = false
     private var observed = false
@@ -53,7 +54,7 @@ internal class VideoInCarGate(
             lastParked = parked
             onObserved(parked)
         }
-        val allowed = parked == true
+        val allowed = parked ?: allowWhenUnknown
         if (allowed == VideoInCar.allowed || closed) return
         VideoInCar.allowed = allowed
         onChanged(allowed)

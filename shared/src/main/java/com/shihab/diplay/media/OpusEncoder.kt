@@ -148,7 +148,7 @@ internal class OpusEncoder(bitrate: Int) : Closeable {
     }
 
     private companion object {
-        const val TAG = "xcertplay-usb"
+        const val TAG = "xcertplay"
         const val SAMPLE_RATE = 48_000
         const val CHANNELS = 1
         const val INPUT_TIMEOUT_US = 10_000L

@@ -95,7 +95,10 @@ internal class HostTouchGestures(private val activity: CarPlayHostActivity) {
             return true
         }
         val contacts = CarPlayTouchMapper.contacts(event, content)
-        val queued = activity.controller?.sendTouch(contacts) ?: false
+        val queued = activity.controller?.sendTouch(
+            contacts,
+            coalesceMove = event.actionMasked == MotionEvent.ACTION_MOVE,
+        ) ?: false
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN,
             MotionEvent.ACTION_POINTER_DOWN,

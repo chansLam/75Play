@@ -116,7 +116,11 @@ internal object CarPlayConnectStack {
         listener: AirPlaySessionListener,
         onStage: (String) -> Unit,
         onFailed: (String) -> Unit,
-    ): CarPlayStackBuilt = CarPlayStackBuilt(
-        CarPlaySessionFactory.buildHeadless(ctx, listener, onStage, onFailed),
-    )
+    ): CarPlayStackBuilt {
+        val built = CarPlayStackBuilt(
+            CarPlaySessionFactory.buildHeadless(ctx, listener, onStage, onFailed),
+        )
+        if (built.controller.videoInCarEnabled()) CarPlayVideo.attach(ctx, built.controller)
+        return built
+    }
 }

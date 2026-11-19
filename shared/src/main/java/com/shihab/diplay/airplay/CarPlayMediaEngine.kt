@@ -61,6 +61,8 @@ internal fun currentScreenListener(
         if (isCurrent()) {
             onData()
             sink.onVideoFrame(type, naluBytes)
+        } else {
+            VideoFrameBuffers.give(naluBytes)
         }
     }
     override fun onFrame(naluBytes: ByteArray, senderNanos: Long, arrivalNanos: Long, byteCount: Int) {
@@ -117,6 +119,7 @@ class CarPlayMediaEngine(
     private val screenReapScheduler = Executors.newSingleThreadScheduledExecutor { runnable ->
         Thread(runnable, "xcertplay-screen-reap").apply { isDaemon = true }
     }
+    @Volatile private var closed = false
     /** Test seam: production uses [SCREEN_REAP_GRACE_MILLIS]. */
     internal var screenReapGraceMillis: Long = SCREEN_REAP_GRACE_MILLIS
 
@@ -233,6 +236,7 @@ class CarPlayMediaEngine(
     }
 
     private fun scheduleScreenReap(session: AirPlaySession) {
+        if (closed) return
         // Future-only cancel: rescheduling the second grace must keep videoRecoveryAttempted.
         pendingScreenReaps.remove(session)?.cancel(false)
         val graceMillis = screenReapGraceMillis
@@ -255,6 +259,15 @@ class CarPlayMediaEngine(
                 }
             }
         }, graceMillis, TimeUnit.MILLISECONDS)
+    }
+
+    override fun close() {
+        if (closed) return
+        closed = true
+        pendingScreenReaps.values.forEach { it.cancel(false) }
+        pendingScreenReaps.clear()
+        videoRecoveryAttempted.clear()
+        screenReapScheduler.shutdownNow()
     }
 
     private fun cancelScreenReap(session: AirPlaySession) {
@@ -753,7 +766,7 @@ class CarPlayMediaEngine(
         type == STREAM_TYPE_MAIN_SCREEN || type == STREAM_TYPE_ALT_SCREEN
 
     private companion object {
-        const val TAG = "xcertplay-usb"
+        const val TAG = "xcertplay"
         const val STREAM_TYPE_MAIN_SCREEN = 110
         const val STREAM_TYPE_ALT_SCREEN = 111
         /**

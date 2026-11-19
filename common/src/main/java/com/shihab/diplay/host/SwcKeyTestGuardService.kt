@@ -21,4 +21,9 @@ class SwcKeyTestGuardService : Service() {
         stopSelf()
         return START_NOT_STICKY
     }
+
+    override fun onDestroy() {
+        SwcCarPlayKeys.forceOff(this)
+        super.onDestroy()
+    }
 }

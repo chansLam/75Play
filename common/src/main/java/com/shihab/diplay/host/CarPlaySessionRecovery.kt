@@ -48,11 +48,16 @@ internal class CarPlaySessionRecovery(context: Context) {
     // Tracks USB enumeration, not the wireless preference. DETACHED is unreliable on this head
     // unit, and a saved wireless preference must not hide an unplug of an auto-detected wired link.
     @Volatile private var usbPresentLastPoll = false
+    private var usbReappearancePolls = 0
 
     fun start() {
         if (!running.compareAndSet(false, true)) return
         attachHandle = runCatching {
-            iphoneHost.registerAttachReceiver { scheduleRecoveryCheck(ATTACH_DEBOUNCE_MILLIS) }
+            iphoneHost.registerAttachReceiver {
+                CarPlayRecoveryGate.iphoneAttached()
+                usbReappearancePolls = 0
+                scheduleRecoveryCheck(ATTACH_DEBOUNCE_MILLIS)
+            }
         }.getOrNull()
         // Physical cable unplug: do not wait for the read watchdog (8-10s) on a frozen host.
         // Abort the in-flight link and return to the shell immediately.
@@ -117,6 +122,19 @@ internal class CarPlaySessionRecovery(context: Context) {
         if (!DiPlayPreferences.autoConnect(appContext)) return
         val wireless = AirPlayPersistence.loadWirelessEnabled(appContext)
         val usbPresent = iphoneHost.discover().isNotEmpty()
+        if (CarPlayRecoveryGate.isIphoneDetachSuppressed()) {
+            if (usbPresent && !usbPresentLastPoll) {
+                usbReappearancePolls++
+                if (usbReappearancePolls >= USB_REAPPEARANCE_POLLS) {
+                    CarPlayRecoveryGate.iphoneAttached()
+                    usbReappearancePolls = 0
+                }
+            } else if (!usbPresent) {
+                usbReappearancePolls = 0
+            }
+        } else {
+            usbReappearancePolls = 0
+        }
         val snapshot = CarPlayBackgroundSession.snapshot()
         if (
             shouldDropLinkAfterUsbLoss(
@@ -133,6 +151,8 @@ internal class CarPlaySessionRecovery(context: Context) {
         }
         usbPresentLastPoll = usbPresent
 
+        if (CarPlayRecoveryGate.isSuppressed()) return
+
         // A healthy session (or an in-flight connect) already exists: nothing to recover.
         if (CarPlayConnectService.connecting) return
         if (snapshot != null) return
@@ -147,6 +167,8 @@ internal class CarPlaySessionRecovery(context: Context) {
     private fun onIphoneDetached() {
         if (!running.get()) return
         usbPresentLastPoll = false
+        usbReappearancePolls = 0
+        CarPlayRecoveryGate.iphoneDetached()
         android.util.Log.i("CarPlayRecovery", "iPhone gone; returning to shell and closing session")
         // The service remains alive briefly after the handshake while the host adopts its
         // controller. "connecting" is already false in that window, but it still needs the
@@ -168,12 +190,14 @@ internal class CarPlaySessionRecovery(context: Context) {
     }
 
     private fun startConnectService() {
+        if (CarPlayRecoveryGate.isSuppressed()) return
         val intent = Intent(appContext, CarPlayConnectService::class.java)
             .setAction(CarPlayConnectService.ACTION_START)
         runCatching { appContext.startService(intent) }
     }
 
     private fun openCarPlayHost() {
+        if (CarPlayRecoveryGate.isSuppressed()) return
         val intent = Intent(appContext, CarPlayHostActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { appContext.startActivity(intent) }
@@ -183,5 +207,6 @@ internal class CarPlaySessionRecovery(context: Context) {
         const val POLL_INTERVAL_MILLIS = 3_000L
         const val ATTACH_DEBOUNCE_MILLIS = 1_500L
         const val RESET_AFTER_DETACH_MILLIS = 300L
+        const val USB_REAPPEARANCE_POLLS = 2
     }
 }

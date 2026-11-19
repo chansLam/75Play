@@ -109,7 +109,7 @@ class NcmUsbBridge internal constructor(
     private var readRequest: UsbRequest? = null
     private var readQueued = false
     private val readQueuePolicy = UsbReadQueuePolicy(
-        if (realSdkInt() < Build.VERSION_CODES.P) USBFS_BULK_URB_CEILING_BYTES else Int.MAX_VALUE,
+        if (realSdkInt() < 28) USBFS_BULK_URB_CEILING_BYTES else Int.MAX_VALUE,
     )
     private val statusRunning = AtomicBoolean(statusEndpoint != null)
     private val statusThread = statusEndpoint?.let { endpoint ->
@@ -165,9 +165,7 @@ class NcmUsbBridge internal constructor(
             this.sequence.also { this.sequence = (this.sequence + 1) and 0xffff }
         }
         val block = Ntb16Codec.buildFrames(batch, sequence, ntbLimits.maxBlockBytes, ntbLimits.alignment)
-        val blockBytes = NativeNcmBatch.select(batch, ntbLimits).blockBytes.let { encoded ->
-            if (encoded % USB_PACKET_SIZE == 0) encoded + 1 else encoded
-        }
+        val blockBytes = block.size
         ensureWriteWatchdog()
         writeInFlightSinceNs = System.nanoTime()
         var failedAfterNanos = 0L
@@ -496,7 +494,7 @@ class NcmUsbBridge internal constructor(
         sharedConnection.release()
         requestToClose?.let(sharedConnection::forget)
         if (requestToClose == null || reaped || !cancelled ||
-            realSdkInt() >= Build.VERSION_CODES.O
+            realSdkInt() >= 26
         ) {
             runCatching { requestToClose?.close() }
         }
@@ -661,16 +659,16 @@ class NcmUsbBridge internal constructor(
     private fun readChunk(timeoutMillis: Long): Int? {
         if (!useAsyncRead) {
             checkOpen()
-            val chunk = try {
+            val chunkLength = try {
                 dataIo.receive(
                     timeoutMillis.coerceIn(1L, Int.MAX_VALUE.toLong()).toInt(),
+                    readBuffer,
                     readBuffer.size,
                 )
             } catch (error: RuntimeException) {
                 throw failSession("NCM synchronous read failed", error)
-            } ?: return null
-            chunk.copyInto(readBuffer)
-            return chunk.size
+            }
+            return chunkLength.takeIf { it > 0 }
         }
         checkOpen()
         var acceptedFallback: UsbReadQueueResult? = null

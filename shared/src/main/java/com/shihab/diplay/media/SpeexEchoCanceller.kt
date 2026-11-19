@@ -44,7 +44,7 @@ internal class SpeexEchoCanceller private constructor(
     }
 
     companion object {
-        private const val TAG = "xcertplay-usb"
+        private const val TAG = "xcertplay"
         private const val ECHO_SUPPRESS_DB = -40
         private const val ECHO_SUPPRESS_ACTIVE_DB = -15
 

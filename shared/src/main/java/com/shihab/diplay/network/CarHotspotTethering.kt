@@ -42,7 +42,7 @@ object CarHotspotTethering {
         val deadline = System.nanoTime() + timeoutMillis * 1_000_000L
         val observedAdbState = AtomicReference<Boolean?>()
         // KitKat SoftAP (CS75 Plus OS_S311-WT): one enable path, with the saved credentials.
-        if (realSdkInt() < Build.VERSION_CODES.O) {
+        if (realSdkInt() < 26) {
             when (CarHotspotStatus.isEnabled(context)) {
                 true -> {
                     log("car hotspot auto-enable: ${Result.READY.diagnostic} (already on)")
@@ -76,12 +76,8 @@ object CarHotspotTethering {
         }
         val startReflection: (ResultReceiver) -> Unit = { receiver ->
             if (realSdkInt() >= 37) throw NoSuchMethodException("Hidden tethering service is unavailable on API 37+")
-            val conn = if (realSdkInt() >= Build.VERSION_CODES.M) {
-                context.getSystemService(ConnectivityManager::class.java)
-            } else {
-                @Suppress("DEPRECATION")
-                context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            }
+            @Suppress("DEPRECATION")
+            val conn = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
             val service = ConnectivityManager::class.java.getDeclaredField("mService")
                 .apply { isAccessible = true }
                 .get(conn)

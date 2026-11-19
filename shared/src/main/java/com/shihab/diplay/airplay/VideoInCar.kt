@@ -113,40 +113,63 @@ object VideoInCar {
         return Base64Compat.encodeToString(littleEndian)
     }
 
-    /**
-     * /info videoPlaybackInfo. The capabilities follow the web app's playerCapabilities, with what this
-     * player cannot do turned off.
-     */
+    fun playbackCapabilities(): Map<String, Any?> = linkedMapOf(
+        "supportsOfflineHLS" to false,
+        "supportsAirPlayVideoWithSharePlay" to false,
+        "supportsInterstitials" to false,
+        "supportsIntegratedTimeline" to false,
+        "supportsAVMetrics" to false,
+        "supportsUIForAudioOnlyContent" to true,
+        "supportsFPSSecureStop" to false,
+    )
+
+    /** /info videoPlaybackInfo, retaining the nested capabilities for older senders. */
     fun info(legacyFeatures: Long, allowed: Boolean): Map<String, Any?> = linkedMapOf(
         "videoPlaybackAllowed" to allowed,
         "featuresEx" to featuresEx(legacyFeatures),
-        "playbackCapabilities" to linkedMapOf(
-            "supportsOfflineHLS" to false,
-            "supportsAirPlayVideoWithSharePlay" to false,
-            "supportsInterstitials" to false,
-            "supportsIntegratedTimeline" to false,
-            "supportsAVMetrics" to false,
-            "supportsUIForAudioOnlyContent" to true,
-            "supportsFPSSecureStop" to false,
-        ),
+        "playbackCapabilities" to playbackCapabilities(),
     )
 
     /** A queued media item the car can play. */
     data class Item(val uuid: Any?, val url: String, val startMillis: Int)
+
+    fun rewriteLocalhost(url: String, peerHost: String): String {
+        if (peerHost.isBlank()) return url
+        val schemeEnd = url.indexOf("://")
+        if (schemeEnd < 0) return url
+        val scheme = url.substring(0, schemeEnd).lowercase()
+        if (scheme != "http" && scheme != "https") return url
+        val rest = url.substring(schemeEnd + 3)
+        val lowerRest = rest.lowercase()
+        for (prefix in listOf("127.0.0.1", "localhost")) {
+            if (!lowerRest.startsWith(prefix)) continue
+            val afterHost = rest.substring(prefix.length)
+            if (afterHost.isEmpty() || afterHost[0] == ':' || afterHost[0] == '/' ||
+                afterHost[0] == '?' || afterHost[0] == '#'
+            ) {
+                return url.substring(0, schemeEnd + 3) + peerHost + afterHost
+            }
+        }
+        return url
+    }
 
     /**
      * The item of an insertPlayQueueItem message, or null when its media cannot play here. With
      * [iphoneLoadsAppSchemes] an app's own scheme (served by its resource loader) is accepted too, for a
      * player that asks the iPhone for such URLs (unhandledURL).
      */
-    fun parseItem(message: Map<String, Any?>, iphoneLoadsAppSchemes: Boolean = false): Item? {
+    fun parseItem(
+        message: Map<String, Any?>,
+        iphoneLoadsAppSchemes: Boolean = false,
+        peerHost: String? = null,
+    ): Item? {
         val item = message["item"] as? Map<*, *> ?: return null
         val url = item["Content-Location"] as? String ?: return null
         if (!isPlayableUrl(url, iphoneLoadsAppSchemes)) return null
         val startSeconds = (item["Start-Position-Seconds"] as? Number)?.toDouble()
             ?: (item["Start-Position"] as? Map<*, *>)?.let(::seconds)
         val startMillis = startSeconds?.let { (it * 1000).toLong().coerceIn(0, Int.MAX_VALUE.toLong()).toInt() } ?: 0
-        return Item(item["uuid"], url, startMillis)
+        return Item(item["uuid"], peerHost?.let { rewriteLocalhost(url, it) } ?: url, startMillis)
     }
 
     /** The target of a seek message in milliseconds. */

@@ -4,6 +4,24 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AirPlayHidInputSemanticsTest {
+    @Test fun touchReportScalesNormalizedCoordinatesWithoutCopyingContacts() {
+        val report = AirPlayHid.touchReport(
+            listOf(
+                AirPlayContact(0, 0.25, 0.5, true),
+                AirPlayContact(1, 0.75, 0.25, true),
+            ),
+            xScale = 1920.0,
+            yScale = 1080.0,
+        )
+        assertArrayEquals(
+            byteArrayOf(
+                0, 1, 0xe0.toByte(), 0x01, 0x1c.toByte(), 0x02,
+                1, 1, 0xa0.toByte(), 0x05, 0x0e, 0x01,
+            ),
+            report,
+        )
+    }
+
     @Test fun touchscreenCoordinatesRemainAbsoluteSixteenBitValuesForBothContacts() {
         val device = AirPlayHid.touchHidDevice(1920, 1080, "test-display")
         val fields = inputFields(device["hidDescriptor"] as ByteArray).filter {

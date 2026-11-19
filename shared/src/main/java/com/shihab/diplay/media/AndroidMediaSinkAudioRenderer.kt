@@ -123,7 +123,8 @@ internal class AudioRenderer(
             }
         }
         val owned = retainForPlayback(rtp)
-        if (!started || !queue.offer(AudioPacket(owned, sample))) {
+        val packet = AudioPacket(owned, sample)
+        if (!started || !offerDroppingOldest(packet)) {
             AudioPacketBuffers.give(owned)
             if (started) {
                 packetsDropped.incrementAndGet()
@@ -131,10 +132,21 @@ internal class AudioRenderer(
             }
             if (started && !droppedPacketsLogged) {
                 droppedPacketsLogged = true
-                AppLog.w(TAG, "audio queue full; dropping newest packets to bound latency")
+                AppLog.w(TAG, "audio queue full; dropping oldest packets to bound latency")
                 report("Audio: queue full audioType=${format.audioType}")
             }
         }
+    }
+
+    private fun offerDroppingOldest(packet: AudioPacket): Boolean {
+        if (queue.offer(packet)) return true
+        val discarded = queue.poll()
+        if (discarded != null) {
+            AudioPacketBuffers.give(discarded.rtp)
+            packetsDropped.incrementAndGet()
+            packetsDroppedTotal.incrementAndGet()
+        }
+        return queue.offer(packet)
     }
 
     /**
@@ -1055,7 +1067,7 @@ internal class AudioRenderer(
     private fun AudioTrack.compatUnderruns(): Int = 0
 
     private companion object {
-        const val TAG = "xcertplay-usb"
+        const val TAG = "xcertplay"
         // AudioManager.STREAM_ACCESSIBILITY was added in API 26 (value 10). Keep compatibility for API < 26.
         const val STREAM_ACCESSIBILITY_COMPAT = 10
         const val AAC_OBJECT_TYPE_LC = 2

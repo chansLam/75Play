@@ -35,7 +35,7 @@ import com.shihab.diplay.util.AppLog
 
 /** KitKat system NSD can be present but nonfunctional; modern ROMs need interface-scoped mDNS. */
 internal fun useBundledCarPlayMdns(sdkInt: Int): Boolean =
-    sdkInt < Build.VERSION_CODES.LOLLIPOP || sdkInt > Build.VERSION_CODES.P
+        sdkInt < 21 || sdkInt > 28
 
 /** Binding one address family must not lose the other when Android 4.x cannot reuse port 5353. */
 internal fun <T> bindAvailableMdnsFamilies(
@@ -173,8 +173,9 @@ class CarPlayBonjour(
             .getSystemService(Context.NSD_SERVICE) as? NsdManager
             ?: throw IOException("Android NSD service is unavailable")
     }
-    private val services = LinkedBlockingQueue<NsdServiceInfo>()
-    private val interfaceServices = LinkedBlockingQueue<Pair<CarPlayBonjourEndpoint, InetAddress>>()
+    private val services = LinkedBlockingQueue<NsdServiceInfo>(DISCOVERY_QUEUE_CAPACITY)
+    private val interfaceServices =
+        LinkedBlockingQueue<Pair<CarPlayBonjourEndpoint, InetAddress>>(DISCOVERY_QUEUE_CAPACITY)
     private val discoveryEvents = LinkedBlockingQueue<CarPlayBonjourEvent.Discovery>(32)
     private val seenServices = Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
     private val lifecycleLock = Any()
@@ -199,12 +200,10 @@ class CarPlayBonjour(
             "bonjourAddressMismatch=${addressMismatchCount.get()} connectProbes=${probeCount.get()} " +
             "connectProbe2xx=${successfulProbeCount.get()} lastProbe=${lastProbe.get()} " +
             "mdnsFamilies=$publishedFamilies"
-    private val multicastLock = ((context.applicationContext ?: context).let { ctx ->
-        (ctx.getSystemService(Context.WIFI_SERVICE) as? WifiManager)
-            ?: runCatching {
-                if (realSdkInt() >= Build.VERSION_CODES.M) ctx.getSystemService(WifiManager::class.java) else null
-            }.getOrNull()
-    })?.createMulticastLock("carplay-bonjour")?.apply { setReferenceCounted(false) }
+    private val multicastLock = ((context.applicationContext ?: context)
+        .getSystemService(Context.WIFI_SERVICE) as? WifiManager)
+        ?.createMulticastLock("carplay-bonjour")
+        ?.apply { setReferenceCounted(false) }
 
     private var started = false
     @Volatile
@@ -253,7 +252,10 @@ class CarPlayBonjour(
                 event.name, address.hostAddress ?: return, info.port,
                 info.getPropertyString("id"),
             )
-            interfaceServices.offer(endpoint to address)
+            if (!interfaceServices.offer(endpoint to address)) {
+                seenServices.remove("${event.name}|${address is Inet4Address}")
+                AppLog.w(TAG, "CarPlay mDNS endpoint queue full; waiting for a later advertisement")
+            }
         }
     }
 
@@ -295,7 +297,10 @@ class CarPlayBonjour(
             val type = serviceInfo.serviceType ?: CARPLAY_CONTROL_SERVICE_TYPE
             val key = "$type|$name"
             if (!seenServices.add(key)) return
-            services.offer(serviceInfo)
+            if (!services.offer(serviceInfo)) {
+                seenServices.remove(key)
+                AppLog.w(TAG, "CarPlay NSD service queue full; waiting for a later advertisement")
+            }
         }
 
         override fun onServiceLost(serviceInfo: NsdServiceInfo) {
@@ -445,6 +450,7 @@ class CarPlayBonjour(
             services.clear()
             interfaceServices.clear()
             discoveryEvents.clear()
+            seenServices.clear()
             dnsToClose = interfaceMdns.toList()
             interfaceMdns.clear()
             publishedFamilies = "none"
@@ -749,6 +755,7 @@ class CarPlayBonjour(
         const val CARPLAY_CONTROL_SERVICE_TYPE = "_carplay-ctrl._tcp"
         const val MDNS_PORT = 5353
         const val WORKER_POLL_MILLIS = 500L
+        const val DISCOVERY_QUEUE_CAPACITY = 16
         const val RESOLVE_ATTEMPTS = 3
         const val RESOLVE_TIMEOUT_MILLIS = 10_000L
         const val RESOLVE_RETRY_DELAY_MILLIS = 250L

@@ -18,6 +18,7 @@ import android.content.ServiceConnection
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.Process
 import com.shihab.diplay.airplay.AirPlayListenerIdentity
 import com.shihab.diplay.airplay.AirPlayTcpAccepted
 import com.shihab.diplay.airplay.AirPlayConfig
@@ -65,6 +66,7 @@ import java.net.InetAddress
 import java.net.Inet6Address
 import java.net.NetworkInterface
 import java.util.Collections
+import java.util.ArrayDeque
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
@@ -157,8 +159,17 @@ class CarPlayController(
         ThreadFactory { Thread(it, "diplay-carplay-main").apply { isDaemon = true } },
     )
     private val touchExecutor: ExecutorService = Executors.newSingleThreadExecutor(
-        ThreadFactory { Thread(it, "diplay-carplay-touch").apply { isDaemon = true } },
+        ThreadFactory { task ->
+            Thread({
+                runCatching { Process.setThreadPriority(Process.THREAD_PRIORITY_DISPLAY) }
+                task.run()
+            }, "diplay-carplay-touch").apply { isDaemon = true }
+        },
     )
+    private val touchMoveLock = Any()
+    private var pendingTouchMove: (() -> Unit)? = null
+    private val pendingTouchCommands = ArrayDeque<() -> Unit>()
+    private var touchMoveDrainQueued = false
     private val tunnelExecutor: ExecutorService = Executors.newSingleThreadExecutor(
         ThreadFactory { Thread(it, "diplay-carplay-tunnel").apply { isDaemon = true } },
     )
@@ -220,6 +231,10 @@ class CarPlayController(
     /** Answers the iPhone on a video in car remote control session; a network write, any thread. */
     fun sendVideoMessage(streamId: Long, message: Map<String, Any?>): Boolean =
         activeSession?.sendRemoteControlMessage(streamId, message) ?: false
+
+    fun videoInCarEnabled(): Boolean = airPlayConfig.videoInCar
+
+    fun isVideoPlaybackAllowedWithoutVehicleStatus(): Boolean = vehicleStatusProvider == null
 
     @Volatile private var hotspot: WirelessHotspotManager? = null
     @Volatile private var wifiScanPause: WifiScanPause? = null
@@ -342,7 +357,7 @@ class CarPlayController(
         }
 
         override fun onRemoteControlMessage(session: AirPlaySession, streamId: Long, message: Map<String, Any?>) {
-            if (activeSession === session) videoListener?.onVideoMessage(streamId, message)
+            if (activeSession === session) videoListener?.onVideoMessage(streamId, message, session.host)
         }
 
         override fun onVideoPlaybackUiRequested(session: AirPlaySession) {
@@ -437,6 +452,7 @@ class CarPlayController(
                 onObserved = { parked ->
                     debugLog("video in car gear=${when (parked) { true -> "P"; false -> "not-P"; null -> "unknown" }}")
                 },
+                allowWhenUnknown = vehicleStatusProvider == null,
             ).also { it.start() }
         }
         startMfi()
@@ -459,14 +475,74 @@ class CarPlayController(
         }
     }
 
-    fun sendTouch(contacts: List<AirPlayContact>): Boolean {
+    fun sendTouch(contacts: List<AirPlayContact>, coalesceMove: Boolean = false): Boolean {
         if (closed) return false
         val session = activeSession ?: return false
         return try {
-            touchExecutor.execute { session.sendTouch(contacts) }
+            val send: () -> Unit = {
+                if (!closed && activeSession === session) session.sendTouch(contacts)
+            }
+            if (coalesceMove) {
+                enqueueTouch(send, coalesceMove = true)
+            } else {
+                enqueueTouch(send, coalesceMove = false)
+            }
             true
         } catch (_: Exception) {
             false
+        }
+    }
+
+    /**
+     * MotionEvent can arrive faster than a legacy USB/Wi-Fi event socket can drain. A move is a
+     * state update, not a command that must be replayed, so keep only the newest queued move.
+     * Down/up reports continue through [touchExecutor] in order and therefore cannot be skipped.
+     */
+    private fun enqueueTouch(action: () -> Unit, coalesceMove: Boolean): Boolean {
+        val schedule = synchronized(touchMoveLock) {
+            if (coalesceMove) {
+                pendingTouchMove = action
+            } else {
+                pendingTouchMove?.let {
+                    pendingTouchCommands.addLast(it)
+                    pendingTouchMove = null
+                }
+                pendingTouchCommands.addLast(action)
+            }
+            if (touchMoveDrainQueued) false else {
+                touchMoveDrainQueued = true
+                true
+            }
+        }
+        if (!schedule) return true
+        return try {
+            touchExecutor.execute {
+                while (true) {
+                    val next = synchronized(touchMoveLock) {
+                        val current = if (pendingTouchCommands.isNotEmpty()) {
+                            pendingTouchCommands.removeFirst()
+                        } else {
+                            pendingTouchMove.also { pendingTouchMove = null }
+                        }
+                        if (current == null) {
+                            touchMoveDrainQueued = false
+                        }
+                        current
+                    }
+                    if (next == null) {
+                        return@execute
+                    }
+                    runCatching { next() }
+                }
+            }
+            true
+        } catch (error: Exception) {
+            synchronized(touchMoveLock) {
+                pendingTouchMove = null
+                pendingTouchCommands.clear()
+                touchMoveDrainQueued = false
+            }
+            throw error
         }
     }
 
@@ -474,8 +550,8 @@ class CarPlayController(
     fun zoomMap(zoomIn: Boolean) {
         if (closed) return
         val session = activeSession ?: return
-        touchExecutor.execute {
-            if (closed || activeSession !== session) return@execute
+        enqueueTouch({
+            if (closed || activeSession !== session) return@enqueueTouch
             val steps = 5
             for (step in 0..steps) {
                 val spread = if (zoomIn) 0.06 + step * 0.035 else 0.28 - step * 0.035
@@ -485,10 +561,10 @@ class CarPlayController(
                         AirPlayContact(1, 0.5 + spread, 0.5, true),
                     ),
                 )
-                if (!sleepTouch(20)) return@execute
+                if (!sleepTouch(20)) return@enqueueTouch
             }
             session.sendTouch(emptyList())
-        }
+        }, coalesceMove = false)
     }
 
     /**
@@ -498,12 +574,12 @@ class CarPlayController(
     fun cycleMapView() {
         if (closed) return
         val session = activeSession ?: return
-        touchExecutor.execute {
-            if (closed || activeSession !== session) return@execute
+        enqueueTouch({
+            if (closed || activeSession !== session) return@enqueueTouch
             session.sendTouch(listOf(AirPlayContact(0, 0.90, 0.16, true)))
-            if (!sleepTouch(50)) return@execute
+            if (!sleepTouch(50)) return@enqueueTouch
             session.sendTouch(emptyList())
-        }
+        }, coalesceMove = false)
     }
 
     private fun sleepTouch(millis: Long): Boolean = try {
@@ -519,12 +595,11 @@ class CarPlayController(
         val session = activeSession ?: return false
         val token = session.mainScreenSessionToken() ?: return false
         return try {
-            touchExecutor.execute {
+            enqueueTouch({
                 if (!closed && activeSession === session && session.mainScreenSessionToken() === token) {
                     debugLog("View area $index sent=${session.showViewArea(index)}")
                 }
-            }
-            true
+            }, coalesceMove = false)
         } catch (_: Exception) {
             false
         }
@@ -537,12 +612,11 @@ class CarPlayController(
         val token = session.mainScreenSessionToken() ?: return false
         if (closed || activeSession !== session) return false
         return try {
-            touchExecutor.execute {
+            enqueueTouch({
                 if (!closed && activeSession === session && session.mainScreenSessionToken() === token) {
                     session.sendKnob(state, momentary)
                 }
-            }
-            true
+            }, coalesceMove = false)
         } catch (_: Exception) {
             false
         }
@@ -565,8 +639,7 @@ class CarPlayController(
         if (closed) return false
         val session = activeSession ?: return false
         return try {
-            touchExecutor.execute { session.invokeSiri() }
-            true
+            enqueueTouch({ session.invokeSiri() }, coalesceMove = false)
         } catch (_: Exception) {
             false
         }
@@ -582,8 +655,7 @@ class CarPlayController(
         if (closed) return false
         val session = activeSession ?: return false
         return try {
-            touchExecutor.execute { session.sendTelephony(index) }
-            true
+            enqueueTouch({ session.sendTelephony(index) }, coalesceMove = false)
         } catch (_: Exception) {
             false
         }
@@ -593,8 +665,7 @@ class CarPlayController(
         if (closed) return false
         val session = activeSession ?: return false
         return try {
-            touchExecutor.execute { session.sendMedia(index) }
-            true
+            enqueueTouch({ session.sendMedia(index) }, coalesceMove = false)
         } catch (_: Exception) {
             false
         }
@@ -637,6 +708,7 @@ class CarPlayController(
                     wirelessRuntimeIdentification = null
                     wirelessAirPlayEndpoint = null
                     closeWiredResources()
+                    closeBestEffort("media engine") { media.close() }
                     closeBestEffort("location provider") { locationProvider?.close() }
                 } finally {
                     executor.shutdownNow()
@@ -673,7 +745,7 @@ class CarPlayController(
             return
         }
         try {
-            touchExecutor.execute {
+            if (!enqueueTouch({
                 val sent = synchronized(clusterUiLock) {
                     if (closed || activeSession !== session || session.clusterStream != stream) {
                         return@synchronized false
@@ -688,7 +760,7 @@ class CarPlayController(
                     delivered
                 }
                 onComplete(sent)
-            }
+            }, coalesceMove = false)) onComplete(false)
         } catch (_: java.util.concurrent.RejectedExecutionException) {
             onComplete(false)
         }
@@ -702,7 +774,7 @@ class CarPlayController(
             return
         }
         try {
-            touchExecutor.execute {
+            if (!enqueueTouch({
                 val sent = synchronized(clusterUiLock) {
                     if (closed || activeSession !== session || session.clusterStream != stream) {
                         return@synchronized false
@@ -720,7 +792,7 @@ class CarPlayController(
                     sent
                 }
                 onComplete(sent)
-            }
+            }, coalesceMove = false)) onComplete(false)
         } catch (_: java.util.concurrent.RejectedExecutionException) {
             onComplete(false)
         }
@@ -729,7 +801,7 @@ class CarPlayController(
     /** A new phone inherits the last accepted selection; all command work stays off its listener. */
     private fun restoreDashboardContent(session: AirPlaySession) {
         try {
-            touchExecutor.execute {
+            enqueueTouch({
                 synchronized(clusterUiLock) {
                     if (closed || activeSession !== session) return@synchronized
                     val url = requestedDashboardUrl ?: return@synchronized
@@ -740,7 +812,7 @@ class CarPlayController(
                         dashboardMapEpoch.incrementAndGet()
                     }
                 }
-            }
+            }, coalesceMove = false)
         } catch (t: java.util.concurrent.RejectedExecutionException) {
             // Closing the controller also discards the pending restore.
             AppLog.w(TAG, "dashboard restore rejected while closing", t)

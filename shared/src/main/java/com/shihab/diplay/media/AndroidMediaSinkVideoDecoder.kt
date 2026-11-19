@@ -3,6 +3,7 @@ package com.shihab.diplay.media
 import android.media.MediaCodec
 import android.media.MediaCodecList
 import android.media.MediaFormat
+import android.os.Process
 import android.os.Build
 import android.view.Surface
 import com.shihab.diplay.airplay.VideoCodec
@@ -46,6 +47,7 @@ internal class VideoDecoder(
     private var resumedAtNanos = 0L
     private var lastQueuedLocalNanos = 0L
     private val queue = VideoDecodeQueue.forDevice()
+    private val lifecycleLock = Any()
     @Volatile private var running = true
     @Volatile private var decoder: MediaCodec? = null
     private var outputSurface: Surface? = surface
@@ -96,9 +98,14 @@ internal class VideoDecoder(
 
     fun submit(nalus: ByteArray, byteCount: Int = nalus.size, senderNanos: Long = 0L, arrivalNanos: Long = 0L) {
         val count = byteCount.coerceIn(0, nalus.size)
-        stats.onReceived(count)
-        // Pacing runs on the worker, in queue order: callbacks of a replaced stream may still deliver here.
-        queue.offer(VideoJob.Frame(nalus, senderNanos = senderNanos, arrivalNanos = arrivalNanos, length = count))
+        synchronized(lifecycleLock) {
+            if (!running) {
+                VideoFrameBuffers.give(nalus)
+                return
+            }
+            stats.onReceived(count)
+            queue.offer(VideoJob.Frame(nalus, senderNanos = senderNanos, arrivalNanos = arrivalNanos, length = count))
+        }
     }
 
     fun setSurface(surface: Surface?) {
@@ -148,11 +155,12 @@ internal class VideoDecoder(
     }
 
     override fun close() {
-        running = false
+        synchronized(lifecycleLock) { running = false }
         thread.interrupt()
     }
 
     private fun run() {
+        runCatching { Process.setThreadPriority(Process.THREAD_PRIORITY_DISPLAY) }
         try {
             while (running) {
                 val job = queue.poll(5)
@@ -669,6 +677,7 @@ internal class VideoDecoder(
         if (consecutiveInputWithoutOutput <= 0 || outputSurface == null || lastConfig == null) return
         val now = System.nanoTime()
         if (surfaceAttachedAtNs == 0L || now - surfaceAttachedAtNs < SURFACE_WARMUP_NS) return
+        if (lastQueuedNanos != 0L && now - lastQueuedNanos > STILL_GAP_NS) return
         val sinceOutput = if (lastOutputRenderedNs == 0L) Long.MAX_VALUE else now - lastOutputRenderedNs
         if (sinceOutput < MIN_OUTPUT_STALL_NS) return
         val forceRebuild = stallRebuildTracker.onStall()
@@ -883,7 +892,7 @@ internal class VideoDecoder(
     }
 
     private companion object {
-        const val TAG = "xcertplay-usb"
+        const val TAG = "xcertplay"
         const val VIDEO_AVC_MIME = "video/avc"
         const val VIDEO_HEVC_MIME = "video/hevc"
         // KitKat / i.MX6: 8 MB KEY_MAX_INPUT_SIZE reservations stress 2 GB Dalvik heaps.

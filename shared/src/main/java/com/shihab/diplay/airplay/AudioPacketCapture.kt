@@ -127,7 +127,7 @@ class AudioPacketCapture(
     }
 
     private companion object {
-        const val TAG = "xcertplay-usb"
+        const val TAG = "xcertplay"
         const val VERSION = 1
         const val HEADER_BYTES = 16
         const val FLUSH_INTERVAL_PACKETS = 16

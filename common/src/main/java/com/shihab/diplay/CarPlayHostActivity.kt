@@ -276,8 +276,10 @@ class CarPlayHostActivity : ComponentActivity() {
     internal var stageWatchdogGeneration = 0
     internal var sink: AndroidMediaSink? = null
     internal var controller: CarPlayController? = null
+    private var pendingMainSurface: Surface? = null
     private val videoSurfaceOwner = CarPlayVideoSurfaceOwner<Surface>(
         detach = { surface ->
+            if (pendingMainSurface === surface) pendingMainSurface = null
             sink?.clearSurface(SCREEN_TYPE_MAIN, surface)
         },
         release = { it.release() },
@@ -737,6 +739,7 @@ class CarPlayHostActivity : ComponentActivity() {
             GenericSwcBroadcast.stop(this)
             SwcCarPlayKeys.start(this) { controller }
         }
+        CarPlayMediaKeys.resume(this)
         logThemeState(ThemeModeDiagnostics.Source.START, resources.configuration)
         mainHandler.removeCallbacks(pollConfiguration)
         mainHandler.post(pollConfiguration)
@@ -881,6 +884,7 @@ class CarPlayHostActivity : ComponentActivity() {
         isActivityStarted = false
         GenericSwcBroadcast.stop(this)
         SwcCarPlayKeys.stop(this)
+        CarPlayMediaKeys.suspend()
         logThemeState(ThemeModeDiagnostics.Source.STOP, resources.configuration)
         mainHandler.removeCallbacks(pollConfiguration)
         // Unified keep-alive for every way the UI can leave (back to shell, home key, launching
@@ -1698,7 +1702,14 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     internal fun attachSurface(surface: Surface) {
+        pendingMainSurface = surface
         sink?.setSurface(SCREEN_TYPE_MAIN, surface)
+    }
+
+    /** Rebinds a SurfaceView created before a background session was adopted. */
+    internal fun attachCurrentVideoSurface() {
+        val surface = currentSurface ?: pendingMainSurface ?: return
+        attachSurface(surface)
     }
 
     /**
@@ -2034,7 +2045,7 @@ class CarPlayHostActivity : ComponentActivity() {
         @JvmStatic var pictureVisible = false
         private var pictureOwner = 0
         const val SIDE_PANEL_REFRESH_MILLIS = 5_000L
-        const val TAG = "xcertplay-usb"
+        const val TAG = "xcertplay"
         const val SCREEN_TYPE_MAIN = 110
         const val SCREEN_TYPE_ALT = 111
         // On the teardown thread: bounded sequencing wait. Release notification retains ownership beyond

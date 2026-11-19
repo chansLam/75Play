@@ -92,6 +92,21 @@ class CarPlayMediaFocusForwardingTest {
         verify(sink).onMediaAudioFocusChanged(AudioManager.AUDIOFOCUS_GAIN)
     }
 
+    @Test fun backgroundSuspensionReleasesMediaKeyRouteAndResumeRestoresIt() {
+        val controller = mock(CarPlayController::class.java).also(controllers::add)
+        val sink = spy(AndroidMediaSink()).also(sinks::add)
+        start(controller, sink)
+
+        assertNotNull(ReflectionHelpers.getField<Any>(CarPlayMediaKeys, "legacyClient"))
+        CarPlayMediaKeys.suspend()
+        assertSame(controller, ReflectionHelpers.getField<Any>(CarPlayMediaKeys, "controller"))
+        assertNull(ReflectionHelpers.getField<Any>(CarPlayMediaKeys, "legacyClient"))
+        assertNull(ReflectionHelpers.getField<Any>(CarPlayMediaKeys, "legacyFocusListener"))
+
+        CarPlayMediaKeys.resume(app)
+        assertNotNull(ReflectionHelpers.getField<Any>(CarPlayMediaKeys, "legacyClient"))
+    }
+
     @Test fun immediateRegrantRestoresFocusButRejectedRequestDoesNot() {
         val controller = mock(CarPlayController::class.java).also(controllers::add)
         val sink = spy(AndroidMediaSink()).also(sinks::add)

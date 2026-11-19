@@ -7,6 +7,7 @@ import com.shihab.diplay.network.CarHotspotEnable
 import com.shihab.diplay.network.CarHotspotStatus
 import com.shihab.diplay.connect.ShellPhonePicker
 import com.shihab.diplay.host.CarPlayBackgroundSession
+import com.shihab.diplay.host.CarPlayRecoveryGate
 import com.shihab.diplay.host.FloatingBall
 import com.shihab.diplay.host.GenericSwcLearn
 import com.shihab.diplay.host.ImmersiveBars
@@ -253,11 +254,18 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
 
     override fun getStr(resId: Int): String = getString(resId)
     override fun disconnectSession() {
+        CarPlayRecoveryGate.userRequestedDisconnect()
         if (isCarPlayConnecting()) {
             cancelConnectAttempt()
             return
         }
-        CarPlayBackgroundSession.stop { runOnUiThread { refreshStatus(); refreshHomeFragment() } }
+        CarPlayBackgroundSession.stop {
+            runOnUiThread {
+                runCatching { stopService(Intent(applicationContext, DiPlaySessionService::class.java)) }
+                refreshStatus()
+                refreshHomeFragment()
+            }
+        }
         // stop() sets isStopping synchronously — refresh now so the play icon / disconnect
         // row do not linger as "still connected" while teardown finishes.
         refreshStatus()
@@ -297,6 +305,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         shellConnect.isConnecting()
     override fun connectStageLabel(): String = shellConnect.stageLabel.orEmpty()
     override fun cancelConnectAttempt() {
+        CarPlayRecoveryGate.userRequestedDisconnect()
         connectEpoch.incrementAndGet()
         shellConnect.cancel()
     }
@@ -695,7 +704,9 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
             if (isFinishing || isDestroyed) return@setParkedSessionLost
             handler.post {
                 if (isFinishing || isDestroyed) return@post
-                if (DiPlayPreferences.autoConnect(this) && !CarPlayBackgroundSession.hasSession()) {
+                if (DiPlayPreferences.autoConnect(this) &&
+                    !CarPlayRecoveryGate.isSuppressed() &&
+                    !CarPlayBackgroundSession.hasSession()) {
                     connect(DiPlayPreferences.autoConnectWireless(this))
                 }
             }
@@ -754,7 +765,9 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
             initialLaunch = false
             startCarHotspotOnLaunch()
             if (setupError == null && !CarPlayBackgroundSession.hasSession() &&
-                DiPlayPreferences.autoConnect(this) && intent.getStringExtra("page") == null) {
+                DiPlayPreferences.autoConnect(this) &&
+                !CarPlayRecoveryGate.isSuppressed() &&
+                intent.getStringExtra("page") == null) {
                 handler.post { connect(DiPlayPreferences.autoConnectWireless(this)) }
             }
         }
@@ -891,6 +904,7 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
     }
 
     override fun connect(wireless: Boolean) {
+        CarPlayRecoveryGate.userRequestedConnect()
         if (!suppressWifiResetFlagClear) autoWifiResetUsed = false
         startupHotspotCancelled = true
         if (wireless && pendingCarHotspotSetup) { toast(getString(R.string.save_your_hotspot_details_in_connection_setup_first)); return }

@@ -25,6 +25,19 @@ class CarPlayMediaEngineTest {
     }
 
     @Test
+    fun closeStopsScreenReapScheduler() {
+        val engine = CarPlayMediaEngine(object : MediaSink {})
+        val schedulerField = CarPlayMediaEngine::class.java
+            .getDeclaredField("screenReapScheduler")
+            .apply { isAccessible = true }
+        val scheduler = schedulerField.get(engine) as java.util.concurrent.ScheduledExecutorService
+
+        engine.close()
+
+        assertTrue(scheduler.isShutdown)
+    }
+
+    @Test
     fun streamConnectionIdUsesUnsignedDecimalForHkdfSalt() {
         assertEquals("18446744073709551615", unsignedPlistDecimal(-1L))
         assertEquals(

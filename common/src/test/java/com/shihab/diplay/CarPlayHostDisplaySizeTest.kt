@@ -410,7 +410,7 @@ class CarPlayHostDisplaySizeTest {
             setField("sessionDisplay", it)
         }
 
-    private fun keepLogs(): Int = ShadowLog.getLogsForTag("xcertplay-usb").count {
+    private fun keepLogs(): Int = ShadowLog.getLogsForTag("xcertplay").count {
         it.msg.contains("keeping CarPlay session")
     }
 

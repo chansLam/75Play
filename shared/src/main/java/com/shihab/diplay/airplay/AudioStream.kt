@@ -93,10 +93,11 @@ class AudioStream(
         val stats = StreamReceiveStats("audio type=$streamType", onDiagnostic)
         val buffer = ByteArray(DATAGRAM_BYTES)
         val nonce = ByteArray(12)
+        val packet = DatagramPacket(buffer, buffer.size)
         var failures = 0
         try {
             while (!closed.get()) {
-                val packet = DatagramPacket(buffer, buffer.size)
+                packet.length = buffer.size
                 try {
                     stats.reading()
                     socket.receive(packet)
@@ -200,10 +201,12 @@ class AudioStream(
 
     private fun runControl(socket: DatagramSocket) {
         val buffer = ByteArray(DATAGRAM_BYTES)
+        val packet = DatagramPacket(buffer, buffer.size)
         var failures = 0
         while (!closed.get()) {
             try {
-                socket.receive(DatagramPacket(buffer, buffer.size))
+                packet.length = buffer.size
+                socket.receive(packet)
                 failures = 0
             } catch (_: Exception) {
                 if (closed.get()) return
@@ -242,7 +245,7 @@ class AudioStream(
         joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
 
     private companion object {
-        const val TAG = "xcertplay-usb"
+        const val TAG = "xcertplay"
         const val DATAGRAM_BYTES = 4_096
         const val AUDIO_RECEIVE_BUFFER_BYTES = 512 * 1024
         const val RTP_HEADER_LEN = 12

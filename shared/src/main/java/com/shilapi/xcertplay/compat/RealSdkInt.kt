@@ -16,19 +16,19 @@ fun realSdkInt(): Int {
     val reported = Build.VERSION.SDK_INT
     val release = Build.VERSION.RELEASE ?: return reported
     // Map 4.4.x release to API 19 regardless of what SDK_INT claims.
-    if (release.startsWith("4.4") && reported > Build.VERSION_CODES.KITKAT) {
-        return Build.VERSION_CODES.KITKAT
+    if (release.startsWith("4.4") && reported > 19) {
+        return 19
     }
     // Map 5.x release to API 21/22.
-    if (release.startsWith("5.0") && reported > Build.VERSION_CODES.LOLLIPOP) {
-        return Build.VERSION_CODES.LOLLIPOP
+    if (release.startsWith("5.0") && reported > 21) {
+        return 21
     }
-    if (release.startsWith("5.1") && reported > Build.VERSION_CODES.LOLLIPOP_MR1) {
-        return Build.VERSION_CODES.LOLLIPOP_MR1
+    if (release.startsWith("5.1") && reported > 22) {
+        return 22
     }
     // Map 6.0 release to API 23.
-    if (release.startsWith("6.0") && reported > Build.VERSION_CODES.M) {
-        return Build.VERSION_CODES.M
+    if (release.startsWith("6.0") && reported > 23) {
+        return 23
     }
     return reported
 }

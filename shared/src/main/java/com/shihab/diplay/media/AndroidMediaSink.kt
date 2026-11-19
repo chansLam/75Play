@@ -125,7 +125,7 @@ class AndroidMediaSink(
         try {
             recoveryExecutor.execute {
                 try { videoRecoveryHandlers[type]?.invoke() }
-                catch (error: Exception) { AppLog.w("xcertplay-usb", "Video keyframe request failed", error) }
+                catch (error: Exception) { AppLog.w("xcertplay", "Video keyframe request failed", error) }
                 finally { recoveryPending.set(false) }
             }
         } catch (_: java.util.concurrent.RejectedExecutionException) { recoveryPending.set(false) }
@@ -196,7 +196,7 @@ class AndroidMediaSink(
 
     private fun settleDetach(type: Int, decoder: VideoDecoder, request: SurfaceDetachRequest, deadline: Long): Boolean {
         if (decoder.awaitDetach(request, deadline)) return true
-        AppLog.w("xcertplay-usb", "Video detach not confirmed in time type=$type; closing that decoder")
+        AppLog.w("xcertplay", "Video detach not confirmed in time type=$type; closing that decoder")
         videoDiagnosticHandlers[type]?.invoke("surface detach not confirmed; decoder closed")
         // The stream's next frame starts a fresh decoder on no surface, so it cannot compete for this one.
         retire(type, decoder)
@@ -323,16 +323,18 @@ class AndroidMediaSink(
         byteCount: Int,
     ) {
         val count = byteCount.coerceIn(0, naluBytes.size)
-        synchronized(videoOwnershipLock) {
+        val targets = synchronized(videoOwnershipLock) {
             if (videoClosed) {
                 VideoFrameBuffers.give(naluBytes)
                 return
             }
-            videoDecoder(type).submit(naluBytes, count, senderNanos, arrivalNanos)
-            mirrorDecoders(type).forEach { mirror ->
-                val copy = naluBytes.copyOf(count)
-                mirror.submit(copy, copy.size, senderNanos, arrivalNanos)
-            }
+            videoDecoder(type) to mirrorDecoders(type)
+        }
+        targets.first.submit(naluBytes, count, senderNanos, arrivalNanos)
+        targets.second.forEach { mirror ->
+            val copy = VideoFrameBuffers.take(count)
+            naluBytes.copyInto(copy, 0, 0, count)
+            mirror.submit(copy, count, senderNanos, arrivalNanos)
         }
     }
 
@@ -359,7 +361,7 @@ class AndroidMediaSink(
     override fun onAudioStarted(id: AudioStreamId, format: AudioFormat, firstSample: Int) {
         // Log every downlink stream start (audioType+codec), not just telephony, so navigation/alert
         // silence can be diagnosed the same way: is the stream arriving, and which codec is it using?
-        AppLog.i("xcertplay-usb", "audio downlink started id=$id audioType=${format.audioType} codec=${format.codec} rate=${format.sampleRate} ch=${format.channels}")
+        AppLog.i("xcertplay", "audio downlink started id=$id audioType=${format.audioType} codec=${format.codec} rate=${format.sampleRate} ch=${format.channels}")
         runCatching {
             onAudioDiagnostic("Audio: stream started audioType=${format.audioType} codec=${format.codec} rate=${format.sampleRate} ch=${format.channels}")
         }
@@ -425,7 +427,7 @@ class AndroidMediaSink(
                 restoreAudioMode(id)
             }
         } catch (error: Exception) {
-            AppLog.e("xcertplay-usb", "microphone start failed stream=$id", error)
+            AppLog.e("xcertplay", "microphone start failed stream=$id", error)
             MicrophoneCaptureStats.reportStartFailure(config, error, onAudioDiagnostic)
             onMicrophoneStopped(id)
         }
@@ -452,7 +454,7 @@ class AndroidMediaSink(
             earpieceFallbackTried = false
             val speakerRequested = runCatching(callSpeakerphone).getOrDefault(false)
             if (speakerRequested) callSpeaker = CallSpeaker.on(manager)
-            AppLog.i("xcertplay-usb", "call route mode kept ${manager.mode} (no IN_COMMUNICATION) stream=$id")
+            AppLog.i("xcertplay", "call route mode kept ${manager.mode} (no IN_COMMUNICATION) stream=$id")
             runCatching {
                 onAudioDiagnostic("Audio: call keeps mode=$savedAudioMode stream=$id" +
                     if (speakerRequested) " loudspeaker=${callSpeaker != null}" else "")
@@ -476,10 +478,10 @@ class AndroidMediaSink(
             callSpeaker = null
             val line = try {
                 manager.mode = savedAudioMode
-                AppLog.i("xcertplay-usb", "audio mode restored to ${manager.mode}")
+                AppLog.i("xcertplay", "audio mode restored to ${manager.mode}")
                 "Audio: mode restored requested=$savedAudioMode now=${manager.mode} stream=$active"
             } catch (error: RuntimeException) {
-                AppLog.w("xcertplay-usb", "could not restore audio mode $savedAudioMode", error)
+                AppLog.w("xcertplay", "could not restore audio mode $savedAudioMode", error)
                 "Audio: mode restore failed requested=$savedAudioMode now=${manager.mode}" +
                     " error=${error.javaClass.simpleName}"
             }

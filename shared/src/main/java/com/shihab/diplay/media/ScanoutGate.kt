@@ -24,8 +24,8 @@ internal class ScanoutGate(
     }
 
     companion object {
-        /** Shorter than a 60 fps period, longer than two releases in one drain. */
-        const val MIN_GAP_NS = 12_000_000L
+        /** Keep two MediaCodec renders out of the same 60 Hz scanout interval on i.MX6. */
+        const val MIN_GAP_NS = 16_000_000L
         private const val NEVER = Long.MIN_VALUE
     }
 }

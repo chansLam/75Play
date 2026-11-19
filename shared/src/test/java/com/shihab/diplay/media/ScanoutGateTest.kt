@@ -21,6 +21,12 @@ class ScanoutGateTest {
         assertTrue(showOnScanout(gate, 16_000_000L, toScreen = true, catchUp = false, newerReady = false, collapseBursts = true))
     }
 
+    @Test fun aReleaseAtTwelveMillisecondsIsStillInsideTheRefreshInterval() {
+        val gate = ScanoutGate()
+        assertTrue(showOnScanout(gate, 0, toScreen = true, catchUp = false, newerReady = false, collapseBursts = true))
+        assertFalse(showOnScanout(gate, 12_000_000L, toScreen = true, catchUp = false, newerReady = false, collapseBursts = true))
+    }
+
     @Test fun burstShowsTheNewestFrameAndDropsTheOneAlreadyWaiting() {
         val gate = ScanoutGate()
         assertTrue(showOnScanout(gate, 0, toScreen = true, catchUp = false, newerReady = false, collapseBursts = true))

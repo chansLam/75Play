@@ -55,6 +55,7 @@ interface AirPlayMediaHandler {
     fun onFeedback(session: AirPlaySession): Map<String, Any?>? = null
     fun onTeardown(session: AirPlaySession, type: Int) {}
     fun onSessionClosed(session: AirPlaySession) {}
+    fun close() {}
     fun setIapTunnelHandler(handler: ((BlockingDuplexByteStream) -> Boolean)?) {}
     fun onSetupResponseSent(session: AirPlaySession) {}
     /** Whether a media packet arrived within [maxAgeMillis], or null when unavailable. */
@@ -144,7 +145,10 @@ class AirPlaySession(
         sendCommand(
             linkedMapOf(
                 "type" to "setVideoPlaybackAllowed",
-                "params" to linkedMapOf("videoPlaybackAllowed" to allowed),
+                "params" to linkedMapOf(
+                    "videoPlaybackAllowed" to allowed,
+                    "playbackStatus" to "video",
+                ),
             ),
         )
     }
@@ -349,19 +353,18 @@ class AirPlaySession(
     }
 
     fun sendTouch(contacts: List<AirPlayContact>): Boolean {
-        val scaled = contacts.map {
-            it.copy(x = it.x * config.main.widthPixels, y = it.y * config.main.heightPixels)
-        }
-        val report = AirPlayHid.touchReport(scaled)
+        val xScale = config.main.widthPixels.toDouble()
+        val yScale = config.main.heightPixels.toDouble()
+        val report = AirPlayHid.touchReport(contacts, xScale, yScale)
         val sendStartNs = System.nanoTime()
         val sent = sendHidReport(AirPlayHid.TOUCH_HID_UID, report)
         if (sent) com.shihab.diplay.media.TouchLatencyProbe.onTouchSent(sendStartNs, System.nanoTime() - sendStartNs)
         if (sent && firstTouchSendLogged.compareAndSet(false, true)) {
-            val first = scaled.firstOrNull()
+            val first = contacts.firstOrNull()
             AppLog.i(
                 TAG,
-                "airplay touch report sent contacts=${scaled.size} first=" +
-                    "(${first?.x},${first?.y},down=${first?.down}) report=${report.toHexString()}",
+                "airplay touch report sent contacts=${contacts.size} first=" +
+                    "(${first?.x?.times(xScale)},${first?.y?.times(yScale)},down=${first?.down}) report=${report.toHexString()}",
             )
         } else if (!sent && touchSendFailureLogged.compareAndSet(false, true)) {
             AppLog.w(TAG, "airplay touch dropped: event channel is not ready")
@@ -1007,7 +1010,7 @@ class AirPlaySession(
     }
 
     private companion object {
-        const val TAG = "xcertplay-usb"
+        const val TAG = "xcertplay"
         const val PLIST_CONTENT_TYPE = "application/x-apple-binary-plist"
         const val PAIRING_CONTENT_TYPE = "application/pairing+tlv8"
         const val OCTET_CONTENT_TYPE = "application/octet-stream"

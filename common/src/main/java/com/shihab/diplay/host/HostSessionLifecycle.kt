@@ -36,7 +36,7 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
     private var reconnectRunnable: Runnable? = null
 
     private companion object {
-        const val TAG = "xcertplay-usb"
+        const val TAG = "xcertplay"
         const val RECONNECT_DELAY_MILLIS = 2_000L
         const val IAP_TUNNEL_RECONNECT_DELAY_MILLIS = 15_000L
         const val CONTROLLER_CLOSE_TIMEOUT_MILLIS = 4_000L
@@ -271,6 +271,7 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
             createSessionListener(generation),
             createStatusReporter(generation),
         )
+        if (snapshot.controller.videoInCarEnabled()) CarPlayVideo.attach(this, snapshot.controller)
         if (snapshot.controller.activeAirPlaySessionToken() != null) {
             CarPlayBackgroundSession.active = true
         }
@@ -278,7 +279,7 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
             onScreenStreamStateChanged(wirelessStartup.generation, type, active)
         }
         snapshot.controller.reportEveryVideoFrame = host.wantsVideoFrameNotifications()
-        currentSurface?.let(::attachSurface)
+        attachCurrentVideoSurface()
         val serviceReused = snapshot.controller.hasActiveAirPlayAttachment()
         appendLog(
             if (serviceReused) {
@@ -356,7 +357,7 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
             controllerGeneration = controllerGeneration,
         )
         sink = renderer
-        currentSurface?.let(::attachSurface)
+        attachCurrentVideoSurface()
         val media = createMediaEngine(renderer)
         val pairings = AirPlayPersistence.loadPairings(this) { id, key ->
             AirPlayPersistence.savePairing(this, id, key)

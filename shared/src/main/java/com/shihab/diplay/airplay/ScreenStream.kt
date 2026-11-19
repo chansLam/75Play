@@ -194,7 +194,7 @@ class ScreenStream(
     }
 
     private companion object {
-        const val TAG = "xcertplay-usb"
+        const val TAG = "xcertplay"
         const val HEADER_LEN = 128
         const val OPCODE_OFFSET = 4
         const val OP_VIDEO_FRAME = 0

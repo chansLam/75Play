@@ -60,11 +60,9 @@ internal class SyncUsbfsNcmIo(
         )
     }
 
-    override fun receive(timeoutMillis: Int, maxBytes: Int): ByteArray? {
-        val size = maxBytes.coerceAtMost(SYNC_CHUNK_MAX_BYTES)
-        val buffer = ByteArray(size)
-        val transferred = readBulk(buffer, size, timeoutMillis)
-        return if (transferred > 0) buffer.copyOf(transferred) else null
+    override fun receive(timeoutMillis: Int, buffer: ByteArray, maxBytes: Int): Int {
+        val size = maxBytes.coerceAtMost(buffer.size).coerceAtMost(SYNC_CHUNK_MAX_BYTES)
+        return readBulk(buffer, size, timeoutMillis).coerceAtLeast(0)
     }
 
     override fun abort() = Unit

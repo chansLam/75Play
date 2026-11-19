@@ -58,7 +58,7 @@ object CarHotspotEnable {
         }
         val requested = CarHotspotStatus.enableIfPossible(app, preferred)
         log("CarHotspotEnable: enableIfPossible=$requested ssid=${ssid?.takeIf { it.isNotBlank() } ?: "(rom)"}")
-        if (requested == null && realSdkInt() >= Build.VERSION_CODES.O) {
+        if (requested == null && realSdkInt() >= 26) {
             return Result(false, "unsupported sdk")
         }
         if (waitUntilReadyMs > 0L) {

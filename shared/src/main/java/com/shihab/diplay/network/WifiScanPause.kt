@@ -52,7 +52,7 @@ internal class WifiScanPause(
         internal const val TAG = "DiPlayWifiScan"
 
         fun eligible(backend: WirelessHotspotBackend, sdk: Int = realSdkInt()): Boolean =
-            sdk == Build.VERSION_CODES.Q && backend != WirelessHotspotBackend.EXISTING_WIFI
+            sdk == 29 && backend != WirelessHotspotBackend.EXISTING_WIFI
 
         fun restoreIfNeeded(context: Context) = ProcessWifiScanPause.recover(context.applicationContext)
 
@@ -70,7 +70,7 @@ internal class WifiScanPause(
          * attempted, which is what DiLink 3 runs.
          */
         fun enableConnectivityManagerTransaction(): Int? {
-            if (realSdkInt() != Build.VERSION_CODES.Q) return null
+            if (realSdkInt() != 29) return null
             return runCatching {
                 val stub = Class.forName("android.net.wifi.IWifiManager\$Stub")
                 val lookup = Class::class.java.getDeclaredMethod("getDeclaredField", String::class.java)

@@ -71,7 +71,7 @@ internal object LegacyUsbHostCompat {
         nativeSelect: (Int, Int) -> Int = { fd, target -> LegacyUsbHostNative.setConfiguration(fd, target) },
     ): ConfigurationResult {
         val target = configuration.id
-        val legacy = realSdkInt() <= Build.VERSION_CODES.P
+        val legacy = realSdkInt() <= 28
         val before = activeConfiguration(connection)
         if (!legacy && before == target) {
             return ConfigurationResult(true, null, before)
@@ -81,7 +81,7 @@ internal object LegacyUsbHostCompat {
         // As in the Android-8 reference APK, always ask the host kernel to select it
         // before claiming interfaces. A matching phone value cannot mask a failed ioctl.
         val frameworkSelected = runCatching {
-            realSdkInt() >= Build.VERSION_CODES.LOLLIPOP &&
+            realSdkInt() >= 21 &&
                 selectUsbConfiguration(connection, configuration)
         }.getOrDefault(false)
         SystemClock.sleep(CONFIG_SETTLE_MILLIS)
@@ -93,11 +93,11 @@ internal object LegacyUsbHostCompat {
         if (frameworkActive == target && (frameworkSelected || !legacy)) {
             return ConfigurationResult(true, null, frameworkActive)
         }
-        if (frameworkSelected && frameworkActive == null && realSdkInt() > Build.VERSION_CODES.P) {
+        if (frameworkSelected && frameworkActive == null && realSdkInt() > 28) {
             return ConfigurationResult(true, null, null)
         }
 
-        if (realSdkInt() > Build.VERSION_CODES.P) {
+        if (realSdkInt() > 28) {
             return ConfigurationResult(false, null, activeConfiguration(connection))
         }
 
@@ -140,7 +140,7 @@ internal object LegacyUsbHostCompat {
 
     fun claim(connection: SharedUsbConnection, usbInterface: UsbInterface): ClaimResult {
         if (connection.claimInterface(usbInterface, true)) return ClaimResult(true, null)
-        if (realSdkInt() > Build.VERSION_CODES.P) return ClaimResult(false, null)
+        if (realSdkInt() > 28) return ClaimResult(false, null)
         val fd = runCatching { connection.fileDescriptor }.getOrDefault(-1)
         return forceClaimFd(fd, usbInterface)
     }
@@ -148,7 +148,7 @@ internal object LegacyUsbHostCompat {
     /** Framework-typed overload kept for callers that own a plain connection (CH341 host). */
     fun claim(connection: UsbDeviceConnection, usbInterface: UsbInterface): ClaimResult {
         if (connection.claimInterface(usbInterface, true)) return ClaimResult(true, null)
-        if (realSdkInt() > Build.VERSION_CODES.P) return ClaimResult(false, null)
+        if (realSdkInt() > 28) return ClaimResult(false, null)
         val fd = runCatching { connection.fileDescriptor }.getOrDefault(-1)
         return forceClaimFd(fd, usbInterface)
     }
@@ -171,7 +171,7 @@ internal object LegacyUsbHostCompat {
 
     fun select(connection: SharedUsbConnection, usbInterface: UsbInterface): SelectResult {
         if (realSdkInt() >= 21 && connection.setInterface(usbInterface)) return SelectResult(true, null)
-        if (realSdkInt() > Build.VERSION_CODES.P) return SelectResult(false, null)
+        if (realSdkInt() > 28) return SelectResult(false, null)
 
         val fd = runCatching { connection.fileDescriptor }.getOrDefault(-1)
         if (fd < 0) {

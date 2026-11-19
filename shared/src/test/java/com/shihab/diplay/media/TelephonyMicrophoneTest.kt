@@ -192,7 +192,7 @@ class TelephonyMicrophoneTest {
         sink.onMicrophoneStarted(telephony, config("telephony"))
         assertEquals(AudioRecord.RECORDSTATE_RECORDING, awaitCapture().recordingState)
         assertTrue(ShadowAudioEffect.getAudioEffects().isEmpty())
-        assertTrue(ShadowLog.getLogsForTag("xcertplay-usb").any {
+        assertTrue(ShadowLog.getLogsForTag("xcertplay").any {
             it.msg.contains("could not be enabled status=${AudioEffect.ERROR_INVALID_OPERATION}")
         })
     }
@@ -386,7 +386,7 @@ class TelephonyMicrophoneTest {
         return requireNotNull(recorder.get())
     }
 
-    private fun microphoneLog(): String = ShadowLog.getLogsForTag("xcertplay-usb").joinToString("\n") {
+    private fun microphoneLog(): String = ShadowLog.getLogsForTag("xcertplay").joinToString("\n") {
         "${it.msg} ${it.throwable ?: ""}"
     }
 

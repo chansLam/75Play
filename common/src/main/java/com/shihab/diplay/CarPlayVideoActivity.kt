@@ -1,16 +1,15 @@
 package com.shihab.diplay
 
 import android.app.Activity
-import android.content.res.ColorStateList
 import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
-import com.shihab.diplay.compat.realSdkInt
 import android.os.Handler
 import android.os.Looper
-import android.util.TypedValue
 import android.view.Gravity
+import android.view.Surface
+import android.view.SurfaceHolder
+import android.view.SurfaceView
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -19,9 +18,6 @@ import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.annotation.OptIn
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -34,26 +30,15 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsManifest
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.ui.PlayerView
 import com.shihab.diplay.airplay.VideoInCar
+import com.shihab.diplay.compat.realSdkInt
 import com.shihab.diplay.host.R
 import com.shihab.diplay.ui.FocusSupport
 import com.shihab.diplay.ui.dp
-import java.util.Locale
-import androidx.media3.ui.R as Media3R
-import kotlin.math.roundToInt
 import com.shihab.diplay.util.AppLog
+import java.util.Locale
 
-/**
- * The car's own player for iOS 27 video in car (see [CarPlayVideo]). Full screen over CarPlay, which
- * stays connected underneath; a tap shows Back to CarPlay, play/pause, 10 s back and forward and the
- * time bar for a few seconds.
- *
- * Media3 ExoPlayer parses media in the app: the head unit's own MP4 parser aborted on progressive
- * Safari video on a DiLink 5.0 Tang. URLs the car cannot load (an app's own scheme, app-served AES-128
- * keys) go to the iPhone (IphoneResolvingDataSource). The HLS encryption is logged, without URLs, so a
- * protected item that cannot play here is easy to tell apart.
- */
+/** API 19-compatible player for iOS 27 video in car. */
 @OptIn(UnstableApi::class)
 class CarPlayVideoActivity : Activity() {
     private val playerHost = object : CarPlayVideo.PlayerHost {
@@ -66,14 +51,16 @@ class CarPlayVideoActivity : Activity() {
     }
     private val main = Handler(Looper.getMainLooper())
     private lateinit var player: ExoPlayer
+    private lateinit var surfaceView: SurfaceView
     private lateinit var controls: View
     private lateinit var playPause: ImageView
     private lateinit var position: TextView
     private lateinit var length: TextView
     private lateinit var timeBar: SeekBar
-    private var scrubbing = false
+    private var surface: Surface? = null
     private var loadedUrl: String? = null
     private var prepared = false
+    private var scrubbing = false
     private var encryptionLogged = false
     private val hideControls = Runnable {
         controls.visibility = View.GONE
@@ -88,19 +75,36 @@ class CarPlayVideoActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        WindowInsetsControllerCompat(window, window.decorView).apply {
-            hide(WindowInsetsCompat.Type.systemBars())
-            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        window.setFlags(
+            android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN,
+            android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN,
+        )
+        window.decorView.systemUiVisibility = (
+            View.SYSTEM_UI_FLAG_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            )
+        surfaceView = SurfaceView(this).apply {
+            holder.addCallback(surfaceCallback)
+            setBackgroundColor(Color.BLACK)
         }
         val http = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
         val sources = IphoneResolvingDataSource.Factory(DefaultDataSource.Factory(this, http))
-        player = ExoPlayer.Builder(this).setMediaSourceFactory(DefaultMediaSourceFactory(sources)).build()
+        player = ExoPlayer.Builder(this)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(sources))
+            .build()
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_READY && !prepared) {
                     prepared = true
-                    AppLog.i(TAG, "prepared duration=${player.duration} ms size=${player.videoSize.width}x${player.videoSize.height}")
+                    AppLog.i(
+                        TAG,
+                        "prepared duration=${player.duration} ms size=${player.videoSize.width}x${player.videoSize.height}",
+                    )
+                    applyRate()
                 }
             }
 
@@ -110,78 +114,81 @@ class CarPlayVideoActivity : Activity() {
                 AppLog.w(TAG, "player error ${error.errorCodeName}: ${causes(error)}")
                 CarPlayVideo.onPlayerFailed(
                     when (error.errorCode) {
-                        in 2000..2999 -> VideoInCar.ERROR_NETWORK // IO
-                        in 4000..4999 -> VideoInCar.ERROR_DECODER // decoding
-                        else -> VideoInCar.ERROR_INCOMPATIBLE_ASSET // parsing, DRM, unsupported
+                        in 2000..2999 -> VideoInCar.ERROR_NETWORK
+                        in 4000..4999 -> VideoInCar.ERROR_DECODER
+                        else -> VideoInCar.ERROR_INCOMPATIBLE_ASSET
                     },
                 )
             }
         })
-        val view = PlayerView(this).apply {
-            useController = false
-            setShutterBackgroundColor(Color.BLACK)
-            this.player = this@CarPlayVideoActivity.player
-        }
         controls = controlBar()
         setContentView(FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
-            addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER))
+            addView(surfaceView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             addView(controls, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         })
-        view.setOnClickListener { showControls() }
+        surfaceView.setOnClickListener { showControls() }
         CarPlayVideo.activity = playerHost
         load()
         showControls()
     }
 
+    private val surfaceCallback = object : SurfaceHolder.Callback {
+        override fun surfaceCreated(holder: SurfaceHolder) {
+            surface = holder.surface
+            player.setVideoSurface(holder.surface)
+        }
+
+        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
+
+        override fun surfaceDestroyed(holder: SurfaceHolder) {
+            surface = null
+            player.clearVideoSurface()
+        }
+    }
+
     private fun controlBar(): View {
         val back = TextView(this).apply {
-            text = "‹  " + getString(R.string.video_back_to_carplay)
+            text = "<  " + getString(R.string.video_back_to_carplay)
             setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+            textSize = 20f
             gravity = Gravity.CENTER
             minHeight = dp(64)
             minWidth = dp(64)
             setPadding(dp(24), 0, dp(24), 0)
-            val bg = GradientDrawable().apply {
-                cornerRadius = dp(32).toFloat()
-                setColor(0xCC0C1830.toInt())
-                setStroke(maxOf(1, dp(1)), 0x667EB8FF)
-            }
-            background = compatibleRipple(ColorStateList.valueOf(0x33FFFFFF), bg, null)
+            setBackgroundColor(0xCC0C1830.toInt())
             isFocusable = true
-            FocusSupport.attachStrokeOverlay(this, 32)
+            FocusSupport.attachStrokeOverlay(this, 8)
             setOnClickListener { finish() }
         }
-        fun round(icon: Int, label: String, onClick: () -> Unit) = ImageView(this).apply {
+        fun button(icon: Int, label: String, onClick: () -> Unit) = ImageView(this).apply {
             setImageResource(icon)
-            setColorFilter(Color.WHITE)
             contentDescription = label
-            scaleType = ImageView.ScaleType.FIT_CENTER
+            scaleType = ImageView.ScaleType.CENTER
             setPadding(dp(18), dp(18), dp(18), dp(18))
-            val bg = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(0xCC0C1830.toInt())
-                setStroke(maxOf(1, dp(1)), 0x667EB8FF)
-            }
-            background = compatibleRipple(ColorStateList.valueOf(0x33FFFFFF), bg, null)
+            setBackgroundColor(0xCC0C1830.toInt())
             isFocusable = true
-            FocusSupport.attachStrokeOverlay(this, 10)
+            FocusSupport.attachStrokeOverlay(this, 8)
             setOnClickListener { onClick(); showControls() }
         }
-        playPause = round(Media3R.drawable.exo_icon_play, getString(R.string.video_play)) { CarPlayVideo.setPlaying(!CarPlayVideo.playing) }
+        playPause = button(android.R.drawable.ic_media_play, getString(R.string.video_play)) {
+            CarPlayVideo.setPlaying(!CarPlayVideo.playing)
+        }
         val buttons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            addView(round(Media3R.drawable.exo_icon_rewind, getString(Media3R.string.exo_controls_rewind_description)) { skip(-CarPlayVideo.SKIP_MILLIS) },
+            addView(button(android.R.drawable.ic_media_rew, getString(R.string.video_play)) { skip(-CarPlayVideo.SKIP_MILLIS) },
                 LinearLayout.LayoutParams(dp(80), dp(80)))
-            addView(playPause, LinearLayout.LayoutParams(dp(96), dp(96)).apply { marginStart = dp(48); marginEnd = dp(48) })
-            addView(round(Media3R.drawable.exo_icon_fastforward, getString(Media3R.string.exo_controls_fastforward_description)) { skip(CarPlayVideo.SKIP_MILLIS) },
+            addView(playPause, LinearLayout.LayoutParams(dp(96), dp(96)).apply {
+                marginStart = dp(48)
+                marginEnd = dp(48)
+            })
+            addView(button(android.R.drawable.ic_media_ff, getString(R.string.video_play)) { skip(CarPlayVideo.SKIP_MILLIS) },
                 LinearLayout.LayoutParams(dp(80), dp(80)))
         }
         fun timeText() = TextView(this).apply {
             setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+            textSize = 18f
         }
         position = timeText()
         length = timeText()
@@ -216,16 +223,14 @@ class CarPlayVideoActivity : Activity() {
         val bottom = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(32), dp(48), dp(32), dp(24))
-            background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xE60C1830.toInt(), 0x000C1830))
+            setBackgroundColor(0xE60C1830.toInt())
             addView(buttons)
-            addView(timeRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                .apply { topMargin = dp(16) })
+            addView(timeRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
         return FrameLayout(this).apply {
             addView(back, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START)
                 .apply { setMargins(dp(24), dp(24), dp(24), dp(24)) })
             addView(bottom, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
-            // A tap on the picture while the controls show hides them again.
             setOnClickListener { hideControls.run() }
         }
     }
@@ -241,26 +246,25 @@ class CarPlayVideoActivity : Activity() {
     }
 
     private fun updatePlayPause() {
-        val playing = CarPlayVideo.playing
-        playPause.setImageResource(if (playing) Media3R.drawable.exo_icon_pause else Media3R.drawable.exo_icon_play)
-        playPause.contentDescription = getString(if (playing) R.string.video_pause else R.string.video_play)
+        playPause.setImageResource(if (CarPlayVideo.playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play)
+        playPause.contentDescription = getString(if (CarPlayVideo.playing) R.string.video_pause else R.string.video_play)
     }
 
-    /** The time bar: position, buffered part and length; no bar while the length is unknown (live). */
     private fun updateTime() {
-        val total = player.duration.takeIf { prepared && it != C.TIME_UNSET && it > 0 }
-        timeBar.isEnabled = total != null
-        timeBar.visibility = if (total != null) View.VISIBLE else View.INVISIBLE
-        length.text = total?.let(::time) ?: ""
-        if (total == null) {
+        val duration = player.duration.takeIf { prepared && it != C.TIME_UNSET && it > 0L } ?: 0L
+        timeBar.isEnabled = duration > 0
+        timeBar.visibility = if (duration > 0) View.VISIBLE else View.INVISIBLE
+        length.text = if (duration > 0) time(duration) else ""
+        if (duration <= 0) {
             position.text = if (prepared) time(player.currentPosition) else ""
             return
         }
-        timeBar.max = total.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-        timeBar.secondaryProgress = player.bufferedPosition.coerceIn(0, total).toInt()
+        timeBar.max = duration.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        timeBar.secondaryProgress = player.bufferedPosition.coerceIn(0L, duration).toInt()
         if (!scrubbing) {
-            timeBar.progress = player.currentPosition.coerceIn(0, total).toInt()
-            position.text = time(player.currentPosition)
+            val current = player.currentPosition.coerceIn(0L, duration)
+            timeBar.progress = current.toInt()
+            position.text = time(current)
         }
     }
 
@@ -271,11 +275,12 @@ class CarPlayVideoActivity : Activity() {
     }
 
     fun state(): VideoInCar.PlayerState {
-        val duration = player.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0) ?: 0
+        val duration = player.duration.takeIf { prepared && it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L
+        val current = player.currentPosition.coerceAtLeast(0L)
         return VideoInCar.PlayerState(
             prepared = prepared,
             playing = player.isPlaying,
-            positionSeconds = player.currentPosition / 1000.0,
+            positionSeconds = current / 1000.0,
             durationSeconds = duration / 1000.0,
             bufferedSeconds = player.bufferedPosition / 1000.0,
         )
@@ -302,33 +307,34 @@ class CarPlayVideoActivity : Activity() {
         if (controls.visibility == View.VISIBLE) updatePlayPause()
     }
 
-    /** Moves the playback position by [deltaMillis], within the video. */
     fun skip(deltaMillis: Int) {
         if (!prepared) return
-        val end = player.duration.takeIf { it != C.TIME_UNSET } ?: Long.MAX_VALUE
-        player.seekTo((player.currentPosition + deltaMillis).coerceIn(0, end))
+        val duration = player.duration.takeIf { it != C.TIME_UNSET } ?: Long.MAX_VALUE
+        player.seekTo((player.currentPosition + deltaMillis).coerceIn(0L, duration))
     }
 
     fun applySeek() {
         val target = CarPlayVideo.pendingSeekMillis ?: return
-        player.seekTo(target.toLong()) // ExoPlayer seeks to the exact position
+        if (prepared) player.seekTo(target.toLong())
         CarPlayVideo.pendingSeekMillis = null
     }
 
-    // Which encryption the HLS stream uses, without URLs (they carry tokens).
     private fun logEncryption() {
         if (encryptionLogged) return
         val manifest = player.currentManifest as? HlsManifest ?: return
         encryptionLogged = true
         val media = manifest.mediaPlaylist
         val keyScheme = media.segments.firstNotNullOfOrNull { it.fullSegmentEncryptionKeyUri }
-            ?.let { android.net.Uri.parse(it).scheme ?: "relative" }
+            ?.let { Uri.parse(it).scheme ?: "relative" }
         val drm = media.protectionSchemes?.let { init ->
             (0 until init.schemeDataCount).map { init.get(it).uuid }
         }
         val sessionKeys = manifest.multivariantPlaylist.sessionKeyDrmInitData.map { it.schemeType }
-        AppLog.i(TAG, "HLS encryption aes128KeyScheme=$keyScheme sampleAesSchemeType=${media.protectionSchemes?.schemeType} " +
-            "drmUuids=$drm sessionKeys=$sessionKeys segments=${media.segments.size}")
+        AppLog.i(
+            TAG,
+            "HLS encryption aes128KeyScheme=$keyScheme sampleAesSchemeType=${media.protectionSchemes?.schemeType} " +
+                "drmUuids=$drm sessionKeys=$sessionKeys segments=${media.segments.size}",
+        )
     }
 
     private fun causes(error: Throwable): String = generateSequence(error) { it.cause }.take(4)

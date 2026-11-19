@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.os.IBinder
+import com.shihab.diplay.host.CarPlayRecoveryGate
 import com.shihab.diplay.host.R
 
 /** Keeps an explicitly started connection alive when another car app is in the foreground. */
@@ -24,6 +25,7 @@ class DiPlaySessionService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            CarPlayRecoveryGate.userRequestedDisconnect()
             CarPlayBackgroundSession.stop()
             stopSelf()
             return START_NOT_STICKY

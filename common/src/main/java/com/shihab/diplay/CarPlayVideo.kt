@@ -65,6 +65,7 @@ internal object CarPlayVideo : CarPlayVideoListener {
     fun attach(context: Context, next: CarPlayController) {
         appContext = context.applicationContext
         controller = next
+        if (next.isVideoPlaybackAllowedWithoutVehicleStatus()) VideoInCar.allowed = true
         next.videoListener = this
     }
 
@@ -85,8 +86,8 @@ internal object CarPlayVideo : CarPlayVideoListener {
         main.post { show() }
     }
 
-    override fun onVideoMessage(streamId: Long, message: Map<String, Any?>) {
-        main.post { handle(streamId, message) }
+    override fun onVideoMessage(streamId: Long, message: Map<String, Any?>, peerHost: String?) {
+        main.post { handle(streamId, message, peerHost) }
     }
 
     /**
@@ -128,13 +129,13 @@ internal object CarPlayVideo : CarPlayVideoListener {
         if (playing) setPlaying(false)
     }
 
-    private fun handle(streamId: Long, message: Map<String, Any?>) {
+    private fun handle(streamId: Long, message: Map<String, Any?>, peerHost: String?) {
         this.streamId = streamId
         val request = message["kind"] == "request"
         when (val type = message["type"] as? String) {
             "insertPlayQueueItem" -> {
                 // An app's own scheme is loaded through the iPhone (IphoneResolvingDataSource).
-                val item = VideoInCar.parseItem(message, iphoneLoadsAppSchemes = true)
+                val item = VideoInCar.parseItem(message, iphoneLoadsAppSchemes = true, peerHost = peerHost)
                 if (item == null) {
                     AppLog.w(TAG, "queue item this player cannot play")
                     return

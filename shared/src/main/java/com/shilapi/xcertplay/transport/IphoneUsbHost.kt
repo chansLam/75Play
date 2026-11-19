@@ -700,7 +700,7 @@ class Iap2UsbSession internal constructor(
     )
     private val syncReadBuffer = ByteArray(USBFS_BULK_URB_CEILING_BYTES)
     private val readQueuePolicy = UsbReadQueuePolicy(
-        if (realSdkInt() < Build.VERSION_CODES.P) USBFS_BULK_URB_CEILING_BYTES else Int.MAX_VALUE,
+        if (realSdkInt() < 28) USBFS_BULK_URB_CEILING_BYTES else Int.MAX_VALUE,
     )
 
     fun markAborted() {
@@ -788,7 +788,7 @@ class Iap2UsbSession internal constructor(
             } catch (_: TimeoutException) {
                 // T3 and similar head units fake SDK_INT (report 27 while really 4.4).
                 // cancel() is unreliable on the real API 19, so use the real level here.
-                if (realSdkInt() >= Build.VERSION_CODES.O) {
+                if (realSdkInt() >= 26) {
                     // Upstream #625: a read that completes between the timeout and the cancel
                     // can no longer be cancelled — drain it and keep its bytes so the session
                     // survives instead of dying every few minutes.
@@ -859,7 +859,7 @@ class Iap2UsbSession internal constructor(
         sharedConnection.release()
         requestToCancel?.let(sharedConnection::forget)
         if (requestToCancel == null || reaped || !cancelled ||
-            realSdkInt() >= Build.VERSION_CODES.O
+            realSdkInt() >= 26
         ) {
             runCatching { requestToCancel?.close() }
         }
@@ -951,7 +951,7 @@ class Iap2UsbSession internal constructor(
         const val USBMUX_READ_CHUNK_BYTES = 65_536
         const val CANCEL_DRAIN_TIMEOUT_MILLIS = 1_000L
         // Android 4.x reads synchronously; see readSynchronously().
-        const val ASYNC_USB_READ_MIN_SDK = Build.VERSION_CODES.N
+        const val ASYNC_USB_READ_MIN_SDK = 24
     }
 }
 

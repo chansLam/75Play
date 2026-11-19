@@ -39,6 +39,17 @@ class VideoInCarGateTest {
     }
 
     @Test
+    fun unknownGearCanBeAllowedWhenNoVehicleStatusSourceExists() {
+        val changes = mutableListOf<Boolean>()
+        val gate = VideoInCarGate({ null }, onChanged = { changes += it }, allowWhenUnknown = true)
+
+        gate.update(null)
+
+        assertEquals(listOf(true), changes)
+        assertEquals(true, VideoInCar.allowed)
+    }
+
+    @Test
     fun observationsDistinguishUnknownParkAndNotPark() {
         val observations = mutableListOf<Boolean?>()
         val gate = VideoInCarGate({ null }, {}, observations::add)

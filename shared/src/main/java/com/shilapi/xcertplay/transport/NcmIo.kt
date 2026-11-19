@@ -5,7 +5,7 @@ import java.io.Closeable
 /** Session data plane for one claimed NCM bulk IN/OUT pair. */
 internal interface NcmIo : Closeable {
     fun submitOut(block: ByteArray, timeoutMillis: Int): NcmSubmit
-    fun receive(timeoutMillis: Int, maxBytes: Int): ByteArray?
+    fun receive(timeoutMillis: Int, buffer: ByteArray, maxBytes: Int): Int
     fun abort()
 }
 

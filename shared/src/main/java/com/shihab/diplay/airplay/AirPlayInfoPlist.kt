@@ -85,6 +85,7 @@ object AirPlayInfoPlist {
             // The iPhone tears down a session that enables videoPlayback without this key.
             val legacy = features(config)
             info["videoPlaybackInfo"] = VideoInCar.info(legacy, VideoInCar.allowed)
+            info["playbackCapabilities"] = VideoInCar.playbackCapabilities()
         }
         return info
     }

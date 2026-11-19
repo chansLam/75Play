@@ -49,7 +49,7 @@ object CarHotspotStatus {
      */
     fun enableIfPossible(context: Context, preferredConfig: WifiConfiguration? = null): Boolean? {
         // Spoofed ROMs may report SDK ≥ 26 while RELEASE is still 4.4.x.
-        if (realSdkInt() >= Build.VERSION_CODES.O) return null
+        if (realSdkInt() >= 26) return null
         val wifi = wifiManager(context.applicationContext) ?: return null
         return runCatching {
             @Suppress("DEPRECATION")
@@ -104,13 +104,10 @@ object CarHotspotStatus {
     private fun unquoteWifi(value: String?): String? =
         value?.trim()?.removeSurrounding("\"")?.takeIf { it.isNotBlank() && it != "<unknown ssid>" }
 
-    private fun wifiManager(app: Context): WifiManager? =
-        if (realSdkInt() >= Build.VERSION_CODES.M) {
-            app.getSystemService(WifiManager::class.java)
-        } else {
-            @Suppress("DEPRECATION")
-            app.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-        }
+    private fun wifiManager(app: Context): WifiManager? {
+        @Suppress("DEPRECATION")
+        return app.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+    }
 
     /** SSID and passphrase already stored by the head unit, when the ROM exposes them. */
     fun savedSoftAp(context: Context): SavedSoftAp? {
