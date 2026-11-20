@@ -263,6 +263,13 @@ class CarPlayHostActivity : ComponentActivity() {
     internal var picturePanelGeneration = 0
     internal var gestureOverlay: View? = null
     internal var loadingLayer: View? = null
+    /**
+     * Opaque cover over the video surface until its first decoded frame. Some head units show
+     * the Surface's uninitialised/stale buffer as noise or torn colour blocks for the first
+     * moments of a CarPlay connection; keeping this black hides that garbage without delaying
+     * the picture by more than the first rendered frame.
+     */
+    internal var videoCover: View? = null
     /** In-host app list opened by the CarPlay OEM button. */
     internal var systemAppsMenu: View? = null
     internal var systemAppsOpen = false
@@ -303,6 +310,9 @@ class CarPlayHostActivity : ComponentActivity() {
             }
             override fun framePresented() {
                 hideVideoLoading()
+            }
+            override fun showVideoCover() {
+                videoCover?.visibility = View.VISIBLE
             }
             override fun liveSink(): AndroidMediaSink? = sink
             override fun retiringSinks(): Collection<AndroidMediaSink> = retiringSinks
@@ -1003,6 +1013,13 @@ class CarPlayHostActivity : ComponentActivity() {
         }
         root.addView(loading, FrameLayout.LayoutParams(-1, -1))
         loading.visibility = View.GONE
+        val cover = View(this).apply {
+            setBackgroundColor(Color.BLACK)
+            isClickable = false
+            isFocusable = false
+        }
+        videoCover = cover
+        root.addView(cover, FrameLayout.LayoutParams(-1, -1))
         root.addView(gestureLayer, FrameLayout.LayoutParams(-1, -1))
         // Above the gesture layer: OEM button opens a centered app popup (apps load on open).
         systemAppsMenu = buildSystemAppsMenu(emptyList()).apply { visibility = View.GONE }
@@ -1953,12 +1970,14 @@ class CarPlayHostActivity : ComponentActivity() {
     internal fun showVideoLoading() {
         notePicture(false)
         controller?.reportEveryVideoFrame = true
+        videoCover?.visibility = View.VISIBLE
         loadingLayer?.visibility = View.GONE
     }
 
     internal fun hideVideoLoading() {
         notePicture(true)
         controller?.reportEveryVideoFrame = false
+        videoCover?.visibility = View.GONE
         loadingLayer?.visibility = View.GONE
     }
 

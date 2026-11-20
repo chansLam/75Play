@@ -80,11 +80,12 @@ internal class VideoDecodeQueue(
 ) {
     companion object {
         /**
-         * Twelve frames covers a Wi-Fi jitter burst at 30 fps without becoming a long backlog.
-         * Overflow keeps the newest keyframe and the frames after it, so playback stays continuous.
+         * A CarPlay connection starts with a burst of frames while the phone settles its display
+         * mode. Twenty-four frames (about 0.8 s at 30 fps) absorb that burst without letting a
+         * long backlog build; overflow still keeps the newest keyframe and the frames after it.
          */
         fun forDevice(): VideoDecodeQueue =
-            VideoDecodeQueue(maxFrames = 12, maxBytes = 2 * 1024 * 1024)
+            VideoDecodeQueue(maxFrames = 24, maxBytes = 3 * 1024 * 1024)
     }
     private val jobs = ArrayDeque<VideoJob>()
     private val lock = ReentrantLock()

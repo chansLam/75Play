@@ -47,7 +47,7 @@ class VideoDecodeQueueTest {
 
     @Test fun deviceQueueKeepsTheNewestKeyframeInsteadOfFreezingForAResync() {
         val queue = VideoDecodeQueue.forDevice()
-        repeat(12) { queue.offer(VideoJob.Frame(byteArrayOf(1))) }
+        repeat(24) { queue.offer(VideoJob.Frame(byteArrayOf(1))) }
         val keyframe = byteArrayOf(0, 0, 0, 1, 0x65, 1)
         val following = byteArrayOf(0, 0, 0, 1, 0x41, 2)
         queue.offer(VideoJob.Frame(keyframe))

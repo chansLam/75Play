@@ -683,7 +683,10 @@ internal class VideoDecoder(
     }
 
     private fun maybeRebuildAfterOutputStall() {
-        if (consecutiveInputWithoutOutput <= 0 || outputSurface == null || lastConfig == null) return
+        // One outstanding frame is normal when the decoder is waiting for the next input or the
+        // display is quiet. Treating it as a stall requests a keyframe every few seconds, and
+        // those unnecessary keyframes are visible as a brief flash/corrupt frame on some units.
+        if (consecutiveInputWithoutOutput < 2 || outputSurface == null || lastConfig == null) return
         val now = System.nanoTime()
         if (surfaceAttachedAtNs == 0L || now - surfaceAttachedAtNs < SURFACE_WARMUP_NS) return
         if (lastQueuedNanos != 0L && now - lastQueuedNanos > STILL_GAP_NS) return
@@ -930,7 +933,7 @@ internal class VideoDecoder(
         const val SENDER_PAUSE_NS = 120_000_000L
         // Frames before a pause that wait for it: the decoder holds about two, sometimes three.
         const val PAUSE_HELD_FRAMES = 3
-        const val MIN_OUTPUT_STALL_NS = 1_500_000_000L
+        const val MIN_OUTPUT_STALL_NS = 2_500_000_000L
         const val SURFACE_WARMUP_NS = 3_500_000_000L
         // Long enough for the opening IDR of a fresh SETUP to be queued (this car delivered it
         // about 300 ms after the decoder came up) and short enough that a reused GOP still asks.

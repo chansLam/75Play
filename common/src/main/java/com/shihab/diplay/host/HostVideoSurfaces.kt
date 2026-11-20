@@ -40,6 +40,8 @@ internal class HostVideoSurfaces(
         fun videoSize(): Pair<Int, Int>?
         fun smoothVideo(): Boolean
         fun refreshMainPicture()
+        /** Keep the video surface covered until the next decoded frame reaches it. */
+        fun showVideoCover()
         /** A decoded frame reached the TextureView. SurfaceView uses the session listener instead. */
         fun framePresented()
         fun liveSink(): AndroidMediaSink?
@@ -62,6 +64,7 @@ internal class HostVideoSurfaces(
                 }
             }
             bridge.log(if (existing === surface) "Texture surface reused" else "Texture surface created")
+            bridge.showVideoCover()
             bridge.attach(surface)
             bridge.layout(width, height)
             bridge.schedule(width, height)
@@ -101,6 +104,7 @@ internal class HostVideoSurfaces(
             val surface = holder.surface
             owner.replace(surface, releaseOnDetach = false)
             bridge.log("SurfaceView video surface created valid=${surface.isValid}")
+            bridge.showVideoCover()
             bridge.attach(surface)
             // The new surface is bound. Parked decoders need a keyframe; a still screen sends none.
             bridge.refreshMainPicture()
