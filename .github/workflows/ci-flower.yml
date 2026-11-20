@@ -16,14 +16,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Fetch local commit from bundle
+      - name: Apply local fix
         run: |
           set -euo pipefail
-          curl -L --retry 3 -o "$RUNNER_TEMP/local.bundle" "https://aka.doubaocdn.com/s/ZHUfmNBUxU"
-          git bundle verify "$RUNNER_TEMP/local.bundle"
-          git fetch "$RUNNER_TEMP/local.bundle" HEAD:refs/heads/ci-build
-          git checkout ci-build
-          git log --oneline -2
+          git apply --verbose .github/ci-flower.patch
+          git diff --stat
 
       - uses: actions/setup-java@v4
         with:

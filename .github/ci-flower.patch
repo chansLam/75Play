@@ -1,0 +1,144 @@
+diff --git a/common/src/main/java/com/shihab/diplay/CarPlayHostActivity.kt b/common/src/main/java/com/shihab/diplay/CarPlayHostActivity.kt
+index b2d00c4..ceb31a3 100644
+--- a/common/src/main/java/com/shihab/diplay/CarPlayHostActivity.kt
++++ b/common/src/main/java/com/shihab/diplay/CarPlayHostActivity.kt
+@@ -263,6 +263,13 @@ class CarPlayHostActivity : ComponentActivity() {
+     internal var picturePanelGeneration = 0
+     internal var gestureOverlay: View? = null
+     internal var loadingLayer: View? = null
++    /**
++     * Opaque cover over the video surface until its first decoded frame. Some head units show
++     * the Surface's uninitialised/stale buffer as noise or torn colour blocks for the first
++     * moments of a CarPlay connection; keeping this black hides that garbage without delaying
++     * the picture by more than the first rendered frame.
++     */
++    internal var videoCover: View? = null
+     /** In-host app list opened by the CarPlay OEM button. */
+     internal var systemAppsMenu: View? = null
+     internal var systemAppsOpen = false
+@@ -304,6 +311,9 @@ class CarPlayHostActivity : ComponentActivity() {
+             override fun framePresented() {
+                 hideVideoLoading()
+             }
++            override fun showVideoCover() {
++                videoCover?.visibility = View.VISIBLE
++            }
+             override fun liveSink(): AndroidMediaSink? = sink
+             override fun retiringSinks(): Collection<AndroidMediaSink> = retiringSinks
+         },
+@@ -1003,6 +1013,13 @@ class CarPlayHostActivity : ComponentActivity() {
+         }
+         root.addView(loading, FrameLayout.LayoutParams(-1, -1))
+         loading.visibility = View.GONE
++        val cover = View(this).apply {
++            setBackgroundColor(Color.BLACK)
++            isClickable = false
++            isFocusable = false
++        }
++        videoCover = cover
++        root.addView(cover, FrameLayout.LayoutParams(-1, -1))
+         root.addView(gestureLayer, FrameLayout.LayoutParams(-1, -1))
+         // Above the gesture layer: OEM button opens a centered app popup (apps load on open).
+         systemAppsMenu = buildSystemAppsMenu(emptyList()).apply { visibility = View.GONE }
+@@ -1953,12 +1970,14 @@ class CarPlayHostActivity : ComponentActivity() {
+     internal fun showVideoLoading() {
+         notePicture(false)
+         controller?.reportEveryVideoFrame = true
++        videoCover?.visibility = View.VISIBLE
+         loadingLayer?.visibility = View.GONE
+     }
+ 
+     internal fun hideVideoLoading() {
+         notePicture(true)
+         controller?.reportEveryVideoFrame = false
++        videoCover?.visibility = View.GONE
+         loadingLayer?.visibility = View.GONE
+     }
+ 
+@@ -diff --git a/common/src/main/java/com/shihab/diplay/host/HostVideoSurfaces.kt b/common/src/main/java/com/shihab/diplay/host/HostVideoSurfaces.kt
+index 8b2fa74..5db649b 100644
+--- a/common/src/main/java/com/shihab/diplay/host/HostVideoSurfaces.kt
++++ b/common/src/main/java/com/shihab/diplay/host/HostVideoSurfaces.kt
+@@ -40,6 +40,8 @@ internal class HostVideoSurfaces(
+         fun videoSize(): Pair<Int, Int>?
+         fun smoothVideo(): Boolean
+         fun refreshMainPicture()
++        /** Keep the video surface covered until the next decoded frame reaches it. */
++        fun showVideoCover()
+         /** A decoded frame reached the TextureView. SurfaceView uses the session listener instead. */
+         fun framePresented()
+         fun liveSink(): AndroidMediaSink?
+@@ -62,6 +64,7 @@ internal class HostVideoSurfaces(
+                 }
+             }
+             bridge.log(if (existing === surface) "Texture surface reused" else "Texture surface created")
++            bridge.showVideoCover()
+             bridge.attach(surface)
+             bridge.layout(width, height)
+             bridge.schedule(width, height)
+@@ -101,6 +104,7 @@ internal class HostVideoSurfaces(
+             val surface = holder.surface
+             owner.replace(surface, releaseOnDetach = false)
+             bridge.log("SurfaceView video surface created valid=${surface.isValid}")
++            bridge.showVideoCover()
+             bridge.attach(surface)
+             // The new surface is bound. Parked decoders need a keyframe; a still screen sends none.
+             bridge.refreshMainPicture()
+ diff --git a/shared/src/main/java/com/shihab/diplay/media/AndroidMediaSinkVideoDecoder.kt b/shared/src/main/java/com/shihab/diplay/media/AndroidMediaSinkVideoDecoder.kt
+index aee9901..68776f9 100644
+--- a/shared/src/main/java/com/shihab/diplay/media/AndroidMediaSinkVideoDecoder.kt
++++ b/shared/src/main/java/com/shihab/diplay/media/AndroidMediaSinkVideoDecoder.kt
+@@ -683,7 +683,10 @@ internal class VideoDecoder(
+     }
+ 
+     private fun maybeRebuildAfterOutputStall() {
+-        if (consecutiveInputWithoutOutput <= 0 || outputSurface == null || lastConfig == null) return
++        // One outstanding frame is normal when the decoder is waiting for the next input or the
++        // display is quiet. Treating it as a stall requests a keyframe every few seconds, and
++        // those unnecessary keyframes are visible as a brief flash/corrupt frame on some units.
++        if (consecutiveInputWithoutOutput < 2 || outputSurface == null || lastConfig == null) return
+         val now = System.nanoTime()
+         if (surfaceAttachedAtNs == 0L || now - surfaceAttachedAtNs < SURFACE_WARMUP_NS) return
+         if (lastQueuedNanos != 0L && now - lastQueuedNanos > STILL_GAP_NS) return
+@@ -930,7 +933,7 @@ internal class VideoDecoder(
+         const val SENDER_PAUSE_NS = 120_000_000L
+         // Frames before a pause that wait for it: the decoder holds about two, sometimes three.
+         const val PAUSE_HELD_FRAMES = 3
+-        const val MIN_OUTPUT_STALL_NS = 1_500_000_000L
++        const val MIN_OUTPUT_STALL_NS = 2_500_000_000L
+         const val SURFACE_WARMUP_NS = 3_500_000_000L
+         // Long enough for the opening IDR of a fresh SETUP to be queued (this car delivered it
+         // about 300 ms after the decoder came up) and short enough that a reused GOP still asks.
+ diff --git a/shared/src/main/java/com/shihab/diplay/media/VideoDecodeQueue.kt b/shared/src/main/java/com/shihab/diplay/media/VideoDecodeQueue.kt
+index 0461e6b..67c547a 100644
+--- a/shared/src/main/java/com/shihab/diplay/media/VideoDecodeQueue.kt
++++ b/shared/src/main/java/com/shihab/diplay/media/VideoDecodeQueue.kt
+@@ -80,11 +80,12 @@ internal class VideoDecodeQueue(
+ ) {
+     companion object {
+         /**
+-         * Twelve frames covers a Wi-Fi jitter burst at 30 fps without becoming a long backlog.
+-         * Overflow keeps the newest keyframe and the frames after it, so playback stays continuous.
++         * A CarPlay connection starts with a burst of frames while the phone settles its display
++         * mode. Twenty-four frames (about 0.8 s at 30 fps) absorb that burst without letting a
++         * long backlog build; overflow still keeps the newest keyframe and the frames after it.
+          */
+         fun forDevice(): VideoDecodeQueue =
+-            VideoDecodeQueue(maxFrames = 12, maxBytes = 2 * 1024 * 1024)
++            VideoDecodeQueue(maxFrames = 24, maxBytes = 3 * 1024 * 1024)
+     }
+     private val jobs = ArrayDeque<VideoJob>()
+     private val lock = ReentrantLock()
+ diff --git a/shared/src/test/java/com/shihab/diplay/media/VideoDecodeQueueTest.kt b/shared/src/test/java/com/shihab/diplay/media/VideoDecodeQueueTest.kt
+index 303eb9e..eb23fbf 100644
+--- a/shared/src/test/java/com/shihab/diplay/media/VideoDecodeQueueTest.kt
++++ b/shared/src/test/java/com/shihab/diplay/media/VideoDecodeQueueTest.kt
+@@ -47,7 +47,7 @@ class VideoDecodeQueueTest {
+ 
+     @Test fun deviceQueueKeepsTheNewestKeyframeInsteadOfFreezingForAResync() {
+         val queue = VideoDecodeQueue.forDevice()
+-        repeat(12) { queue.offer(VideoJob.Frame(byteArrayOf(1))) }
++        repeat(24) { queue.offer(VideoJob.Frame(byteArrayOf(1))) }
+         val keyframe = byteArrayOf(0, 0, 0, 1, 0x65, 1)
+         val following = byteArrayOf(0, 0, 0, 1, 0x41, 2)
+         queue.offer(VideoJob.Frame(keyframe))
