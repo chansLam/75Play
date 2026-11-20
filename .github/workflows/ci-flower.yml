@@ -19,7 +19,8 @@ jobs:
       - name: Apply local fix
         run: |
           set -euo pipefail
-          git apply --verbose .github/ci-flower.patch
+          base64 -d .github/ci-flower.patch.b64 > "$RUNNER_TEMP/fix.patch"
+          git apply --verbose "$RUNNER_TEMP/fix.patch"
           git diff --stat
 
       - uses: actions/setup-java@v4
