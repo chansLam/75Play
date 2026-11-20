@@ -76,7 +76,7 @@ internal object PlatformAppLocales {
         val locales = if (locale == null) {
             localeListClass.getMethod("getEmptyLocaleList").invoke(null)
         } else {
-            localeListClass.getConstructor(Locale::class.java).newInstance(locale)
+            localeListClass.getConstructor(Array<Locale>::class.java).newInstance(arrayOf(locale))
         }
         manager.javaClass.getMethod("setApplicationLocales", localeListClass).invoke(manager, locales)
     }
