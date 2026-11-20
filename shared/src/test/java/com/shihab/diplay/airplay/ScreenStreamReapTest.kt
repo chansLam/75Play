@@ -100,7 +100,6 @@ class ScreenStreamReapTest {
             btMac = "02:00:00:00:00:01",
             sourceVersion = "1.0",
             main = AirPlayDisplayConfig(widthPixels = 800, heightPixels = 480),
-            videoInCar = false,
         ),
         identity = AirPlayIdentity.generate(),
         pairings = PairingStore(),

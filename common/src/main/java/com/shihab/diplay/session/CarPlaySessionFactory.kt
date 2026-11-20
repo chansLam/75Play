@@ -289,7 +289,6 @@ internal object CarPlaySessionFactory {
             model = model,
             oemLabel = AirPlayPersistence.defaultOemLabel(ctx),
             icons = listOf(loadAirPlayIcon(ctx)),
-            videoInCar = true,
             mainBufferedAudio = AirPlayPersistence.loadMainBufferedAudio(ctx),
         )
 

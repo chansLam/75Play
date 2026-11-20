@@ -199,18 +199,6 @@ class CarPlayWirelessService : Service() {
                                 if (current.listenerIdentity == null || !internalPeer) current.listener.onSessionActive(session)
                             }
 
-                            override fun onRemoteControlMessage(
-                                session: AirPlaySession,
-                                streamId: Long,
-                                message: Map<String, Any?>,
-                            ) {
-                                current.listener.onRemoteControlMessage(session, streamId, message)
-                            }
-
-                            override fun onVideoPlaybackUiRequested(session: AirPlaySession) {
-                                current.listener.onVideoPlaybackUiRequested(session)
-                            }
-
                             override fun onSessionEnded(session: AirPlaySession) {
                                 removeSession(session)
                                 if (current.listenerIdentity == null || !internalPeer) current.listener.onSessionEnded(session)

@@ -73,6 +73,22 @@ class VideoDecodeQueueTest {
         assertNull(queue.poll(0))
     }
 
+    @Test fun trimmingToQueuedKeyframePreservesControlJobsAndAccounting() {
+        val queue = VideoDecodeQueue(maxFrames = 2)
+        val config = VideoJob.Config(VideoCodec.H264, byteArrayOf(1))
+        val detach = VideoJob.DetachSurface(SurfaceDetachRequest(Any(), false))
+        val keyframe = VideoJob.Frame(byteArrayOf(0, 0, 0, 1, 0x65, 1))
+        val predicted = VideoJob.Frame(byteArrayOf(0, 0, 0, 1, 0x41, 2))
+        queue.offer(config)
+        queue.offer(VideoJob.Frame(byteArrayOf(1)))
+        queue.offer(detach)
+        queue.offer(keyframe)
+        queue.offer(predicted)
+        assertEquals(2, queue.pendingFrameCount())
+        assertEquals(listOf(config, detach, keyframe, predicted), queue.drain())
+        assertEquals(0, queue.pendingFrameCount())
+    }
+
     @Test fun dequeueThenOverflowUsesOnlyPendingFrames() {
         val queue = VideoDecodeQueue(maxFrames = 2, maxBytes = 5)
         queue.offer(VideoJob.Frame(ByteArray(3)))

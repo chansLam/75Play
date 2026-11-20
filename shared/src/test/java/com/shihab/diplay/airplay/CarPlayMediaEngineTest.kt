@@ -119,24 +119,6 @@ class CarPlayMediaEngineTest {
     }
 
     @Test
-    fun videoRemoteControlSessionsAreAcceptedOnlyWithVideoInCar() {
-        val stream = mapOf("type" to 130L, "clientTypeUUID" to "A6B27562-B43A-4F2D-B75F-82391E250194", "controlType" to 1L)
-        val engine = CarPlayMediaEngine(object : MediaSink {})
-        val plain = testSession()
-        val video = testSession(videoInCar = true)
-        try {
-            assertNull(engine.onDataStream(plain, stream))
-            val first = engine.onDataStream(video, stream)
-            assertEquals(130, first?.get("type"))
-            assertEquals(3L, first?.get("streamID"))
-            assertEquals(4L, engine.onDataStream(video, stream)?.get("streamID"))
-        } finally {
-            plain.close()
-            video.close()
-        }
-    }
-
-    @Test
     fun onAudioRegistersMicrophoneUplinkPortWithTransportBridge() {
         val downlink = mutableListOf<Int>()
         val uplink = mutableListOf<Int>()
@@ -218,7 +200,6 @@ class CarPlayMediaEngineTest {
     }
 
     private fun testSession(
-        videoInCar: Boolean = false,
         socket: Socket = Socket(),
         registerPort: ((Int, Boolean) -> Unit)? = null,
         registerUdpUplink: ((Int) -> Unit)? = null,
@@ -230,7 +211,6 @@ class CarPlayMediaEngineTest {
             btMac = "02:00:00:00:00:01",
             sourceVersion = "1.0",
             main = AirPlayDisplayConfig(widthPixels = 800, heightPixels = 480),
-            videoInCar = videoInCar,
         ),
         identity = AirPlayIdentity.generate(),
         pairings = PairingStore(),

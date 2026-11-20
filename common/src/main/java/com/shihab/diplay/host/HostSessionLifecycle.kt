@@ -9,7 +9,6 @@ import com.shihab.diplay.AsyncDiagnosticLog
 import com.shihab.diplay.CarPlayConnectService
 import com.shihab.diplay.CarPlayMediaKeys
 import com.shihab.diplay.CarPlayVolumeTarget
-import com.shihab.diplay.CarPlayVideo
 import com.shihab.diplay.CarPlayViewAreas
 import com.shihab.diplay.DiagnosticRedactor
 import com.shihab.diplay.DiPlaySessionService
@@ -271,7 +270,6 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
             createSessionListener(generation),
             createStatusReporter(generation),
         )
-        if (snapshot.controller.videoInCarEnabled()) CarPlayVideo.attach(this, snapshot.controller)
         if (snapshot.controller.activeAirPlaySessionToken() != null) {
             CarPlayBackgroundSession.active = true
         }
@@ -378,7 +376,6 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
         next.reportEveryVideoFrame = wantsVideoFrameNotifications()
         resetSidePanel() // a new session starts without the side panel
         CarPlaySessionFactory.attachMediaKeys(this, next)
-        if (airPlayConfig.videoInCar) CarPlayVideo.attach(this, next)
         val display = CarPlaySessionDisplay(
             airPlayConfig.main.widthPixels, airPlayConfig.main.heightPixels,
             displayRotation(), hideTopBar, hideBottomBar, effectiveSize.width, effectiveSize.height,

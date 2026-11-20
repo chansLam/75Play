@@ -16,7 +16,7 @@ import com.shihab.diplay.compat.inputBufferCompat
 import com.shihab.diplay.compat.outputBufferCompat
 import java.io.Closeable
 import java.nio.ByteBuffer
-import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.TimeUnit
@@ -46,7 +46,7 @@ internal class AudioRenderer(
     // Keep absent framework types out of Dalvik's erased lambda/field casts on KitKat.
     private var trackAttributes: Any? = null
     private var mappedChannel: AudioChannel? = null
-    private val queue = LinkedBlockingQueue<AudioPacket>(MAX_QUEUED_PACKETS)
+    private val queue = ArrayBlockingQueue<AudioPacket>(MAX_QUEUED_PACKETS)
     @Volatile private var running = true
     @Volatile private var started = false
     private var codec: MediaCodec? = null

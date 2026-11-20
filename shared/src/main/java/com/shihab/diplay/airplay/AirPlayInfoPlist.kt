@@ -81,12 +81,6 @@ object AirPlayInfoPlist {
         if (config.hevc) info["hevcInfo"] = emptyMap<String, Any?>()
         // With the mainBuffered session feature the iPhone requires this key; an empty dictionary is accepted.
         if (config.bufferedAudioOutputEnabled) info["mainBufferedInfo"] = emptyMap<String, Any?>()
-        if (config.videoInCar) {
-            // The iPhone tears down a session that enables videoPlayback without this key.
-            val legacy = features(config)
-            info["videoPlaybackInfo"] = VideoInCar.info(legacy, VideoInCar.allowed)
-            info["playbackCapabilities"] = VideoInCar.playbackCapabilities()
-        }
         return info
     }
 

@@ -1351,7 +1351,6 @@ class CarPlayHostActivity : ComponentActivity() {
             model = normalizedModel(),
             oemLabel = AirPlayPersistence.defaultOemLabel(this),
             icons = listOf(loadAirPlayIcon()),
-            videoInCar = true,
             mainBufferedAudio = AirPlayPersistence.loadMainBufferedAudio(this),
         )
     }

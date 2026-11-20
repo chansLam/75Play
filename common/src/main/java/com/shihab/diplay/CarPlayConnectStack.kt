@@ -120,7 +120,6 @@ internal object CarPlayConnectStack {
         val built = CarPlayStackBuilt(
             CarPlaySessionFactory.buildHeadless(ctx, listener, onStage, onFailed),
         )
-        if (built.controller.videoInCarEnabled()) CarPlayVideo.attach(ctx, built.controller)
         return built
     }
 }

@@ -30,8 +30,6 @@ import com.shihab.diplay.airplay.AirPlayMediaHandler
 import com.shihab.diplay.airplay.AirPlaySession
 import com.shihab.diplay.airplay.AirPlaySessionListener
 import com.shihab.diplay.airplay.PairingStore
-import com.shihab.diplay.airplay.VideoInCar
-import com.shihab.diplay.airplay.VideoPlaybackDelivery
 import com.shihab.diplay.iap2.session.Iap2Session
 import com.shihab.diplay.mfi.RemoteMfiAuthenticationClient
 import com.shihab.diplay.mfi.LocalMfiAuthenticationClient
@@ -224,18 +222,6 @@ class CarPlayController(
     /** Told when an iAP2 Now Playing artwork transfer completes; may run on the link worker. */
     @Volatile var artworkListener: ((Int, ByteArray) -> Unit)? = null
 
-    /** Video in car; set before [start] to offer it to the iPhone (with AirPlayConfig.videoInCar). */
-    @Volatile var videoListener: CarPlayVideoListener? = null
-    @Volatile private var videoGate: VideoInCarGate? = null
-
-    /** Answers the iPhone on a video in car remote control session; a network write, any thread. */
-    fun sendVideoMessage(streamId: Long, message: Map<String, Any?>): Boolean =
-        activeSession?.sendRemoteControlMessage(streamId, message) ?: false
-
-    fun videoInCarEnabled(): Boolean = airPlayConfig.videoInCar
-
-    fun isVideoPlaybackAllowedWithoutVehicleStatus(): Boolean = vehicleStatusProvider == null
-
     @Volatile private var hotspot: WirelessHotspotManager? = null
     @Volatile private var wifiScanPause: WifiScanPause? = null
     @Volatile private var bonjour: CarPlayBonjour? = null
@@ -283,11 +269,6 @@ class CarPlayController(
             val replacement = activeSession !== session
             if (replacement) {
                 com.shihab.diplay.glance.CarPlayGlance.setConnected(true)
-                // The gear may have changed since /info.
-                if (videoListener != null) {
-                    val delivery = session.setVideoPlaybackAllowed(VideoInCar.allowed)
-                    debugLog("video in car session allowed=${VideoInCar.allowed} delivery=$delivery")
-                }
             }
             activeSession = session
             if (replacement) restoreDashboardContent(session)
@@ -323,7 +304,6 @@ class CarPlayController(
             if (activeSession === session) {
                 activeSession = null
                 com.shihab.diplay.glance.CarPlayGlance.setConnected(false)
-                videoListener?.onVideoSessionEnded()
                 synchronized(playbackStatus) {
                     val wasPlaying = playbackStatus.playing
                     playbackStatus.clearAll()?.let { it to wasPlaying }
@@ -354,15 +334,6 @@ class CarPlayController(
         override fun onHostUiRequested(session: AirPlaySession) {
             debugLog("CarPlay requested the car UI; notifying host for system app panel")
             uiListener?.onHostUiRequested(session)
-        }
-
-        override fun onRemoteControlMessage(session: AirPlaySession, streamId: Long, message: Map<String, Any?>) {
-            if (activeSession === session) videoListener?.onVideoMessage(streamId, message, session.host)
-        }
-
-        override fun onVideoPlaybackUiRequested(session: AirPlaySession) {
-            debugLog("CarPlay requested the car's video player")
-            if (activeSession === session) videoListener?.onVideoUiRequested()
         }
 
         override fun onCommand(session: AirPlaySession, type: String, params: Map<String, Any?>) {
@@ -440,21 +411,6 @@ class CarPlayController(
             if (closed) return
         }
         connectionDiagnostic("start transport=${config.transport}")
-        videoListener?.let { listener ->
-            videoGate = VideoInCarGate(
-                readParked = listener::readParked,
-                onChanged = { allowed ->
-                    val delivery = activeSession?.setVideoPlaybackAllowed(allowed)
-                        ?: VideoPlaybackDelivery.QUEUED
-                    debugLog("video in car allowed=$allowed delivery=$delivery")
-                    listener.onVideoAllowedChanged(allowed)
-                },
-                onObserved = { parked ->
-                    debugLog("video in car gear=${when (parked) { true -> "P"; false -> "not-P"; null -> "unknown" }}")
-                },
-                allowWhenUnknown = vehicleStatusProvider == null,
-            ).also { it.start() }
-        }
         startMfi()
     }
 
@@ -685,7 +641,6 @@ class CarPlayController(
         (hotspot as? ManualHotspotManager)?.close()
         val teardownStarted = System.nanoTime()
         connectionDiagnostic("teardown begin transport=${config.transport}")
-        videoGate?.close()
         com.shihab.diplay.glance.CarPlayGlance.setConnected(false)
         closeReceivers()
         availabilityPollGeneration.incrementAndGet()
@@ -2081,12 +2036,6 @@ class CarPlayController(
                 sessionListener.onDebugLog(message)
             }
 
-            // Passed on explicitly: without these the car's video player never opened over Wi-Fi.
-            override fun onRemoteControlMessage(session: AirPlaySession, streamId: Long, message: Map<String, Any?>) =
-                sessionListener.onRemoteControlMessage(session, streamId, message)
-
-            override fun onVideoPlaybackUiRequested(session: AirPlaySession) =
-                sessionListener.onVideoPlaybackUiRequested(session)
         }
 
     private fun onWirelessTunnelReady(generation: Int) =

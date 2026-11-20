@@ -164,10 +164,6 @@
     <string name="hotspot_error_long_name">Назва точки доступу має містити не більше 32 байтів</string>
     <string name="hotspot_error_invalid_character">Назва або пароль містять недопустимий символ</string>
     <string name="hotspot_error_password_length">Пароль точки доступу має містити від 8 до 63 символів</string>
-    <string name="video_back_to_carplay">Повернутися до CarPlay</string>
-    <string name="video_play">Відтворити</string>
-    <string name="video_pause">Пауза</string>
-    <string name="video_cannot_play">Це відео не можна відтворити на екрані автомобіля. Для захищеного відео, зокрема Apple TV+, потрібен ліцензований приймач.</string>
     <string name="navigation_widget_description">Наступний поворот, відстань, прибуття й пісня з CarPlay</string>
     <string name="navigation_widget_label">Навігація CarPlay</string>
     <string name="widget_distance_km">%1$d км</string>

@@ -121,12 +121,6 @@
             android:windowSoftInputMode="adjustResize">
         </activity>
 
-        <activity
-            android:name="com.shihab.diplay.CarPlayVideoActivity"
-            android:configChanges="density|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
-            android:exported="false"
-            android:theme="@style/Theme.Xcertplay" />
-
         <!-- CarPlay navigation widget, for launchers that host standard widgets. -->
         <receiver
             android:name="com.shihab.diplay.NavigationWidget"

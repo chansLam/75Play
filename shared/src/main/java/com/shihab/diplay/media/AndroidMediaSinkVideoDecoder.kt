@@ -104,7 +104,12 @@ internal class VideoDecoder(
                 return
             }
             stats.onReceived(count)
-            queue.offer(VideoJob.Frame(nalus, senderNanos = senderNanos, arrivalNanos = arrivalNanos, length = count))
+            queue.offer(VideoJob.Frame.obtain(
+                nalus,
+                senderNanos = senderNanos,
+                arrivalNanos = arrivalNanos,
+                length = count,
+            ))
         }
     }
 
@@ -194,6 +199,7 @@ internal class VideoDecoder(
                                 }
                             } finally {
                                 VideoFrameBuffers.give(job.nalus)
+                                job.recycle()
                             }
                         }
                         is VideoJob.SurfaceChanged -> changeSurface(job.surface)
@@ -238,7 +244,10 @@ internal class VideoDecoder(
             queue.drain().forEach { job ->
                 when (job) {
                     is VideoJob.DetachSurface -> job.request.complete(DetachOutcome.RELEASED)
-                    is VideoJob.Frame -> VideoFrameBuffers.give(job.nalus)
+                    is VideoJob.Frame -> {
+                        VideoFrameBuffers.give(job.nalus)
+                        job.recycle()
+                    }
                     else -> Unit
                 }
             }
@@ -722,24 +731,25 @@ internal class VideoDecoder(
     private fun queuedSlotOf(presentationUs: Long): Int =
         queuedPresentationUs.indices.firstOrNull { queuedPresentationUs[it] == presentationUs } ?: -1
 
-    private data class HeldOutput(
-        val index: Int,
-        val presentationUs: Long,
-        val flags: Int,
-        val size: Int,
-        val dequeuedNs: Long,
-    )
-
     private fun drainOutput(codec: MediaCodec) {
         val info = outputInfo
         // On KitKat, hold the newest ready buffer across a non-blocking dequeue. If another
         // output is already waiting, the older one is returned without rendering so the scanout
         // buffer is not overwritten. The hold is one dequeue, not a sleep.
-        var held: HeldOutput? = null
+        var heldIndex = -1
+        var heldPresentationUs = 0L
+        var heldFlags = 0
+        var heldSize = 0
+        var heldDequeuedNs = 0L
         fun releaseHeld(newerReady: Boolean): Boolean {
-            val frame = held ?: return false
-            held = null
-            return releaseOutput(codec, frame, newerReady)
+            if (heldIndex < 0) return false
+            val index = heldIndex
+            val presentationUs = heldPresentationUs
+            val flags = heldFlags
+            val size = heldSize
+            val dequeuedNs = heldDequeuedNs
+            heldIndex = -1
+            return releaseOutput(codec, index, presentationUs, flags, size, dequeuedNs, newerReady)
         }
         while (running) {
             val index = codec.dequeueOutputBuffer(info, 0)
@@ -750,20 +760,25 @@ internal class VideoDecoder(
                 }
                 index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> logOutputFormat(codec.outputFormat)
                 index >= 0 -> {
-                    val frame = HeldOutput(
-                        index,
-                        info.presentationTimeUs,
-                        info.flags,
-                        info.size,
-                        System.nanoTime(),
-                    )
                     if (collapseScanoutBursts) {
-                        if (held != null && releaseHeld(true)) {
-                            codec.releaseOutputBuffer(frame.index, false)
+                        if (heldIndex >= 0 && releaseHeld(true)) {
+                            codec.releaseOutputBuffer(index, false)
                             return
                         }
-                        held = frame
-                    } else if (releaseOutput(codec, frame, newerReady = false)) {
+                        heldIndex = index
+                        heldPresentationUs = info.presentationTimeUs
+                        heldFlags = info.flags
+                        heldSize = info.size
+                        heldDequeuedNs = System.nanoTime()
+                    } else if (releaseOutput(
+                            codec,
+                            index,
+                            info.presentationTimeUs,
+                            info.flags,
+                            info.size,
+                            System.nanoTime(),
+                            newerReady = false,
+                        )) {
                         return
                     }
                 }
@@ -777,19 +792,27 @@ internal class VideoDecoder(
     }
 
     /** @return true when the drain loop must stop (end of stream, or the worker was interrupted). */
-    private fun releaseOutput(codec: MediaCodec, frame: HeldOutput, newerReady: Boolean): Boolean {
+    private fun releaseOutput(
+        codec: MediaCodec,
+        index: Int,
+        presentationUs: Long,
+        flags: Int,
+        size: Int,
+        dequeuedNs: Long,
+        newerReady: Boolean,
+    ): Boolean {
         val render = outputSurface != null
         // Parked output goes to the offscreen consumer: it keeps the codec's state, but it is
         // not shown, so it is neither paced nor counted.
         val shown = render && outputSurface !== parking?.surface
-        val now = frame.dequeuedNs
-        val slot = queuedSlotOf(frame.presentationUs)
+        val now = dequeuedNs
+        val slot = queuedSlotOf(presentationUs)
         val queued = if (slot >= 0) queuedAtNanos[slot] else 0L
         val heldOverGap = queued in 1 until resumedAtNanos
         if (queued > 0 && !heldOverGap) stats.onDecodeLatency(now - queued)
         val delay = pacingDelay
         val paced = shown && delay != null && slot >= 0 && queuedPaced[slot]
-        val localNs = frame.presentationUs * 1000
+        val localNs = presentationUs * 1000
         val pauseHeld = paced && queuedBeforePause[slot]
         val targetNs = if (paced) {
             if (!heldOverGap && !pauseHeld) delay.onFrame(now - localNs)
@@ -808,7 +831,7 @@ internal class VideoDecoder(
                     Thread.sleep((ahead / 1_000_000L).coerceAtMost(20L))
                 } catch (_: InterruptedException) {
                     running = false
-                    codec.releaseOutputBuffer(frame.index, false)
+                    codec.releaseOutputBuffer(index, false)
                     return true
                 }
             }
@@ -829,7 +852,7 @@ internal class VideoDecoder(
             newerReady = newerReady,
             collapseBursts = collapseScanoutBursts,
         )
-        codec.releaseOutputBuffer(frame.index, if (shown) show else render)
+        codec.releaseOutputBuffer(index, if (shown) show else render)
         consecutiveInputWithoutOutput = 0
         stallRebuildTracker.onOutput()
         if (shown) lastOutputRenderedNs = now
@@ -837,9 +860,9 @@ internal class VideoDecoder(
         if (show && !renderedFrameLogged) {
             renderedFrameLogged = true
             report("first frame rendered")
-            AppLog.i(TAG, "video decoder rendered first frame bytes=${frame.size}")
+            AppLog.i(TAG, "video decoder rendered first frame bytes=$size")
         }
-        return frame.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
+        return flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
     }
 
     private fun logOutputFormat(format: MediaFormat) {

@@ -94,6 +94,51 @@ class AirPlayCryptoChachaTest {
         } catch (_: Exception) { }
     }
 
+    @Test fun softwareRangedOpenHonorsOffsetsAndClearsUnverifiedOutput() {
+        val state = platformState()
+        val saved = state.get()
+        state.set(null)
+        try {
+            val key = bytes(32)
+            val nonce = AirPlayCrypto.nonce64(42)
+            val aad = bytes(19)
+            val plain = bytes(701)
+            val sealed = AirPlayCrypto.chachaSealBouncyCastle(key, nonce, plain, aad)
+            val aadPacket = ByteArray(aad.size + 5).also { aad.copyInto(it, 5) }
+            val sealedPacket = ByteArray(sealed.size + 7).also { sealed.copyInto(it, 3) }
+            val destination = ByteArray(plain.size + 11) { 0x5a }
+
+            val written = AirPlayCrypto.chachaOpenRangeInto(
+                key,
+                nonce,
+                aadPacket,
+                5,
+                aad.size,
+                sealedPacket,
+                3,
+                sealed.size,
+                destination,
+                4,
+            )
+
+            assertEquals(plain.size, written)
+            assertArrayEquals(plain, destination.copyOfRange(4, 4 + plain.size))
+            assertTrue(destination.take(4).all { it == 0x5a.toByte() })
+            assertTrue(destination.drop(4 + plain.size).all { it == 0x5a.toByte() })
+            aadPacket[5] = aadPacket[5].inc()
+            try {
+                AirPlayCrypto.chachaOpenRangeInto(
+                    key, nonce, aadPacket, 5, aad.size, sealedPacket, 3, sealed.size, destination, 4,
+                )
+                fail("changed AAD accepted")
+            } catch (_: InvalidCipherTextException) {
+                assertArrayEquals(ByteArray(plain.size), destination.copyOfRange(4, 4 + plain.size))
+            }
+        } finally {
+            state.set(saved)
+        }
+    }
+
     @Test fun absentPlatformFallsBackWithoutAcceptingATamperedTag() {
         val state = platformState()
         val saved = state.get()

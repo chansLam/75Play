@@ -125,10 +125,15 @@ class ScreenStream(
     private fun onMessage(header: ByteArray, body: ByteArray, bodySize: Int, stats: StreamReceiveStats, arrivalNanos: Long) {
         when (header[OPCODE_OFFSET].toInt() and 0xff) {
             OP_VIDEO_FRAME -> {
-                val opened = if (bodySize >= ScreenCodec.TAG_SIZE) {
+                val payloadLength = if (bodySize >= ScreenCodec.TAG_SIZE) {
+                    bodySize - ScreenCodec.TAG_SIZE
+                } else {
+                    bodySize.coerceAtLeast(0)
+                }
+                val payload = if (bodySize >= ScreenCodec.TAG_SIZE) {
                     val start = System.nanoTime()
                     try {
-                        ScreenCodec.decryptFrame(key, frameCounter.get(), header, body, bodySize)
+                        ScreenCodec.decryptFrameInto(key, frameCounter.get(), header, body, bodySize)
                             .also {
                                 stats.decrypted(System.nanoTime() - start, bodySize)
                                 frameCounter.incrementAndGet()
@@ -147,10 +152,8 @@ class ScreenStream(
                         return
                     }
                 } else {
-                    val exact = body.copyOf(bodySize.coerceAtLeast(0))
-                    exact to exact.size
+                    body.copyOf(payloadLength)
                 }
-                val (payload, payloadLength) = opened
                 ScreenCodec.lengthPrefixedToAnnexB(payload, payloadLength)
                 if (firstFrameLogged.compareAndSet(false, true)) {
                     AppLog.i(
@@ -230,24 +233,23 @@ object ScreenCodec {
 
     private const val SENDER_TIME_OFFSET = 8
 
-    fun decryptFrame(
+    fun decryptFrameInto(
         key: ByteArray,
         counter: Long,
         header: ByteArray,
         body: ByteArray,
         bodyLength: Int = body.size,
-    ): Pair<ByteArray, Int> {
+    ): ByteArray {
         if (bodyLength < TAG_SIZE) {
-            val exact = body.copyOf(bodyLength.coerceAtLeast(0))
-            return exact to exact.size
+            return body.copyOf(bodyLength.coerceAtLeast(0))
         }
         val plainLength = bodyLength - TAG_SIZE
         val storage = VideoFrameBuffers.take(plainLength)
         return try {
-            val written = AirPlayCrypto.chachaOpenFrameInto(
+            AirPlayCrypto.chachaOpenFrameInto(
                 key, counter, header, body, bodyLength, storage,
             )
-            storage to written
+            storage
         } catch (error: Exception) {
             VideoFrameBuffers.give(storage)
             throw error

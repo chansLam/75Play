@@ -156,10 +156,6 @@
     <string name="hotspot_error_long_name">El nombre del punto de acceso no debe superar los 32 bytes</string>
     <string name="hotspot_error_invalid_character">El nombre o la contraseña contiene un carácter no válido</string>
     <string name="hotspot_error_password_length">La contraseña del punto de acceso debe tener entre 8 y 63 caracteres</string>
-    <string name="video_back_to_carplay">Volver a CarPlay</string>
-    <string name="video_play">Reproducir</string>
-    <string name="video_pause">Pausa</string>
-    <string name="video_cannot_play">Este vídeo no se puede reproducir en la pantalla del coche. El vídeo protegido, como Apple TV+, necesita un receptor con licencia.</string>
     <string name="navigation_widget_label">Navegación de CarPlay</string>
     <string name="navigation_widget_description">Próximo giro, distancia, llegada y canción de CarPlay</string>
     <string name="widget_not_connected">CarPlay no está conectado</string>

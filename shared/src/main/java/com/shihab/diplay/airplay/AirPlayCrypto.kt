@@ -50,6 +50,9 @@ object AirPlayCrypto {
     private val nativeNote = ThreadLocal<String?>()
     private val directInput = ThreadLocal<ByteBuffer?>()
     private val directOutput = ThreadLocal<ByteBuffer?>()
+    private val frameNonce = object : ThreadLocal<ByteArray>() {
+        override fun initialValue() = ByteArray(NONCE_SIZE)
+    }
 
     /** Implementation used by this thread's last successful operation, for diagnostics. */
     val chachaImplementation: String
@@ -232,12 +235,17 @@ object AirPlayCrypto {
             nativeNote.set("native")
             return written
         }
-        val plain = chachaOpenRange(key, nonce, aad, aadOffset, aadLength, sealed, sealedOffset, sealedLength)
-        if (destinationOffset < 0 || plain.size > destination.size - destinationOffset) {
-            throw BadPaddingException("ChaCha20-Poly1305 plaintext does not fit")
+        if (NativeChaCha.available) {
+            val plain = chachaOpenRange(key, nonce, aad, aadOffset, aadLength, sealed, sealedOffset, sealedLength)
+            if (destinationOffset < 0 || plain.size > destination.size - destinationOffset) {
+                throw BadPaddingException("ChaCha20-Poly1305 plaintext does not fit")
+            }
+            plain.copyInto(destination, destinationOffset)
+            return plain.size
         }
-        plain.copyInto(destination, destinationOffset)
-        return plain.size
+        return chachaOpenRangeDirect(
+            key, nonce, aad, aadOffset, aadLength, sealed, sealedOffset, sealedLength, destination, destinationOffset,
+        )
     }
 
     /**
@@ -269,11 +277,7 @@ object AirPlayCrypto {
         destination: ByteArray,
     ): Int {
         if (!NativeChaCha.available || length < 16) {
-            val sealed = if (length == ciphertext.size) ciphertext else ciphertext.copyOf(length)
-            val plain = chachaOpen(key, nonce, sealed, aad)
-            if (plain.size > destination.size) throw BadPaddingException("ChaCha20-Poly1305 plaintext does not fit")
-            plain.copyInto(destination)
-            return plain.size
+            return chachaOpenRangeDirect(key, nonce, aad, 0, aad.size, ciphertext, 0, length, destination, 0)
         }
         val input = retainedDirect(directInput, length)
         input.put(ciphertext, 0, length)
@@ -309,7 +313,56 @@ object AirPlayCrypto {
             }
             if (written == -2) throw BadPaddingException("ChaCha20-Poly1305 tag mismatch")
         }
-        return chachaOpenDirectInto(key, nonce64(counter), aad, ciphertext, length, destination)
+        return chachaOpenDirectInto(key, reusableNonce64(counter), aad, ciphertext, length, destination)
+    }
+
+    /** Opens a ranged packet directly into the caller's buffer on the non-native path. */
+    private fun chachaOpenRangeDirect(
+        key: ByteArray,
+        nonce: ByteArray,
+        aad: ByteArray,
+        aadOffset: Int,
+        aadLength: Int,
+        sealed: ByteArray,
+        sealedOffset: Int,
+        sealedLength: Int,
+        destination: ByteArray,
+        destinationOffset: Int,
+    ): Int {
+        val plainLength = sealedLength - 16
+        if (sealedLength < 16 || sealedOffset < 0 || sealedLength > sealed.size - sealedOffset ||
+            destinationOffset < 0 || plainLength > destination.size - destinationOffset ||
+            aadOffset < 0 || aadLength < 0 || aadLength > aad.size - aadOffset
+        ) {
+            throw BadPaddingException("ChaCha20-Poly1305 plaintext does not fit")
+        }
+
+        nativeNote.set(null)
+        val state = platformState.get()
+        if (state != null) {
+            try {
+                val cipher = state.cipher
+                cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "ChaCha20"), IvParameterSpec(nonce))
+                if (aadLength > 0) cipher.updateAAD(aad, aadOffset, aadLength)
+                val written = cipher.doFinal(sealed, sealedOffset, sealedLength, destination, destinationOffset)
+                state.implementation = cipher.provider.name
+                return written
+            } catch (failure: GeneralSecurityException) {
+                if (failure.javaClass.name == "javax.crypto.AEADBadTagException") throw failure
+            }
+        }
+        val cipher = ChaCha20Poly1305()
+        cipher.init(false, AEADParameters(KeyParameter(key), MAC_BITS, nonce))
+        if (aadLength > 0) cipher.processAADBytes(aad, aadOffset, aadLength)
+        val written = cipher.processBytes(sealed, sealedOffset, sealedLength, destination, destinationOffset)
+        val finalized = try {
+            cipher.doFinal(destination, destinationOffset + written)
+        } catch (error: org.bouncycastle.crypto.InvalidCipherTextException) {
+            destination.fill(0, destinationOffset, destinationOffset + plainLength)
+            throw error
+        }
+        state?.implementation = "BouncyCastle"
+        return written + finalized
     }
 
     private fun openNative(key: ByteArray, nonce: ByteArray, aad: ByteArray, sealed: ByteArray): ByteArray {
@@ -405,12 +458,18 @@ object AirPlayCrypto {
     /** 12-byte nonce: four zero bytes followed by an eight-byte little-endian counter. */
     fun nonce64(counter: Long): ByteArray {
         val nonce = ByteArray(NONCE_SIZE)
+        fillNonce64(nonce, counter)
+        return nonce
+    }
+
+    private fun reusableNonce64(counter: Long): ByteArray = frameNonce.get()!!.also { fillNonce64(it, counter) }
+
+    private fun fillNonce64(nonce: ByteArray, counter: Long) {
         var value = counter
         for (index in 4 until NONCE_SIZE) {
             nonce[index] = value.toByte()
             value = value ushr 8
         }
-        return nonce
     }
 
     /** 12-byte nonce from an eight-byte ASCII label placed after four zero bytes. */

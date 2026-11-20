@@ -33,10 +33,6 @@ interface AirPlaySessionListener {
     fun onDeviceInfo(session: AirPlaySession, info: AirPlayDeviceInfo) {}
     fun onHostUiRequested(session: AirPlaySession) {}
     fun onCommand(session: AirPlaySession, type: String, params: Map<String, Any?>) {}
-    /** Video in car: a playback message on a remote control session (X-Apple-StreamID). */
-    fun onRemoteControlMessage(session: AirPlaySession, streamId: Long, message: Map<String, Any?>) {}
-    /** Video in car: requestUI "videoplayback:", the iPhone asks the car to show its video player. */
-    fun onVideoPlaybackUiRequested(session: AirPlaySession) {}
     fun onDebugLog(message: String) {}
 }
 
@@ -140,18 +136,6 @@ class AirPlaySession(
         get() = (socket.remoteSocketAddress as? InetSocketAddress)?.address
     val controllerId: String? get() = pairVerify.verifiedControllerId
     val sharedSecret: ByteArray? get() = pairVerify.shared?.copyOf()
-    val videoInCar: Boolean get() = config.videoInCar
-    private val videoPlaybackAvailability = VideoPlaybackAvailability { allowed ->
-        sendCommand(
-            linkedMapOf(
-                "type" to "setVideoPlaybackAllowed",
-                "params" to linkedMapOf(
-                    "videoPlaybackAllowed" to allowed,
-                    "playbackStatus" to "video",
-                ),
-            ),
-        )
-    }
 
     fun syncedNtp(): BigInteger = ntp.syncedNtp()
 
@@ -310,24 +294,6 @@ class AirPlaySession(
     fun sendCommand(command: Map<String, Any?>): Boolean = synchronized(eventWriteLock) {
         sendCommandLocked(command)
     }
-
-    /**
-     * A message on a video in car remote control session, framed like the iPhone's own: POST /command
-     * with X-Apple-StreamID and {params: {data: bplist(message)}}.
-     */
-    fun sendRemoteControlMessage(streamId: Long, message: Map<String, Any?>): Boolean = synchronized(eventWriteLock) {
-        sendCommandLocked(
-            linkedMapOf("params" to linkedMapOf("data" to BplistCodec.encode(message))),
-            "X-Apple-StreamID: $streamId\r\n",
-        )
-    }
-
-    /**
-     * Video in car: retains whether video may play now and sends the latest value once SETUP has
-     * enabled video and the event channel is ready. An iPhone without the feature gets no command.
-     */
-    internal fun setVideoPlaybackAllowed(allowed: Boolean): VideoPlaybackDelivery =
-        videoPlaybackAvailability.setDesired(allowed)
 
     private fun sendCommandLocked(command: Map<String, Any?>, extraHeaders: String = ""): Boolean {
         val socket = eventSocket ?: return false
@@ -632,10 +598,6 @@ class AirPlaySession(
                         "audioFormats=${(info["audioFormats"] as? List<*>)?.size ?: 0} " +
                         "audioLatencies=${(info["audioLatencies"] as? List<*>)?.size ?: 0}",
                 )
-                debugLog(
-                    "airplay /info videoInCar=${config.videoInCar} " +
-                        "videoPlaybackAllowed=${if (config.videoInCar) VideoInCar.allowed else "not-offered"}",
-                )
                 debugLog("airplay /info displays=${info["displays"]}")
                 RtspMessage.Response(
                     headers = mapOf("Content-Type" to PLIST_CONTENT_TYPE),
@@ -728,9 +690,6 @@ class AirPlaySession(
             response["keepAlivePort"] = openKeepAlive()
         }
         val features = setupEnabledFeatures(config, dict["features"] as? List<*>)
-        val videoPlaybackEnabled = VideoInCar.FEATURE in features
-        val videoDelivery = videoPlaybackAvailability.setFeatureEnabled(videoPlaybackEnabled)
-        debugLog("airplay video playback negotiated=$videoPlaybackEnabled availability=$videoDelivery")
         response["enabledFeatures"] = features
         return RtspMessage.Response(
             headers = mapOf("Content-Type" to PLIST_CONTENT_TYPE),
@@ -802,16 +761,7 @@ class AirPlaySession(
         val type = string(body["type"])
         val params = asMap(body["params"]) ?: emptyMap()
         debugLog("airplay command type=$type keys=${params.keys.sorted()}")
-        val streamId = request.headers["x-apple-streamid"]?.toLongOrNull()
-        val data = params["data"] as? ByteArray
-        if (streamId != null && data != null) {
-            runCatching { asMap(BplistCodec.decode(data)) }.getOrNull()
-                ?.let { listener.onRemoteControlMessage(this, streamId, it) }
-            return RtspMessage.Response(status = 200)
-        }
-        if (type == "requestUI" && string(params["url"]) == VideoInCar.UI_URL) {
-            listener.onVideoPlaybackUiRequested(this)
-        } else if (type == "requestUI") {
+        if (type == "requestUI") {
             listener.onHostUiRequested(this)
         }
         listener.onCommand(this, type, params)
@@ -888,8 +838,6 @@ class AirPlaySession(
     }
 
     private fun teardown() {
-        videoPlaybackAvailability.setEventReady(false)
-        videoPlaybackAvailability.setFeatureEnabled(false)
         ntp.close()
         safeClose(keepAliveSocket)
         keepAliveSocket = null
@@ -941,8 +889,6 @@ class AirPlaySession(
             synchronized(eventWriteLock) {
                 sendPendingNightModeLocked()
             }
-            val videoDelivery = videoPlaybackAvailability.setEventReady(true)
-            debugLog("airplay video event ready availability=$videoDelivery")
             reapplyClusterContent()
             runEventRead(socket)
         } catch (error: Exception) {
@@ -995,7 +941,6 @@ class AirPlaySession(
             if (!closed.get()) AppLog.e(TAG, "airplay event read failed", error)
         } finally {
             debugLog("airplay event connection closed")
-            videoPlaybackAvailability.setEventReady(false)
             if (eventSocket === socket) eventSocket = null
             eventCipher = null
             safeClose(socket)
@@ -1040,7 +985,6 @@ internal fun setupEnabledFeatures(config: AirPlayConfig, proposed: List<*>?): Li
     features.add("iAPChannel")
     features.add("viewAreas")
     if (config.cluster != null) features.add("altScreen")
-    if (config.videoInCar && proposed.orEmpty().contains(VideoInCar.FEATURE)) features.add(VideoInCar.FEATURE)
     if (config.bufferedAudioOutputEnabled && proposed.orEmpty().contains(MAIN_BUFFERED_FEATURE)) features.add(MAIN_BUFFERED_FEATURE)
     return features
 }

@@ -327,12 +327,6 @@ internal object CarPlayMediaKeys {
         synchronized(lock) {
             if (suspended) return
         }
-        // While the car's video player is on screen the media keys drive it: a CarPlay play/pause
-        // would make the iPhone end the video session.
-        if (CarPlayVideo.onMediaKey(index)) {
-            AppLog.i(TAG, "media key $source -> car video player $index")
-            return
-        }
         val sent = synchronized(lock) { controller }?.sendMediaButton(index) ?: false
         AppLog.i(TAG, "media key $source -> CarPlay $index sent=$sent")
     }

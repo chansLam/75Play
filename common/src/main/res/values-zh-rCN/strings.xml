@@ -167,10 +167,6 @@
     <string name="hotspot_error_long_name">热点名称不能超过32字节</string>
     <string name="hotspot_error_invalid_character">名称或密码包含无效字符</string>
     <string name="hotspot_error_password_length">热点密码长度必须为8至63个字符</string>
-    <string name="video_back_to_carplay">返回 CarPlay</string>
-    <string name="video_play">播放</string>
-    <string name="video_pause">暂停</string>
-    <string name="video_cannot_play">此视频无法在车机屏幕上播放。受保护的视频（例如 Apple TV+）需要获得授权的接收器。</string>
     <string name="navigation_widget_label">CarPlay 导航</string>
     <string name="navigation_widget_description">来自 CarPlay 的下一个转弯、距离、到达时间和歌曲</string>
     <string name="widget_not_connected">CarPlay 未连接</string>

@@ -163,10 +163,6 @@
     <string name="hotspot_error_long_name">熱點名稱不能超過 32 個位元組</string>
     <string name="hotspot_error_invalid_character">名稱或密碼包含無效字元</string>
     <string name="hotspot_error_password_length">熱點密碼長度必須為 8 至 63 個字元</string>
-    <string name="video_back_to_carplay">返回 CarPlay</string>
-    <string name="video_play">播放</string>
-    <string name="video_pause">暫停</string>
-    <string name="video_cannot_play">此影片無法在車機螢幕上播放。受保護的影片（例如 Apple TV+）需要取得授權的接收器。</string>
     <string name="navigation_widget_label">CarPlay 導航</string>
     <string name="navigation_widget_description">來自 CarPlay 的下一個轉彎、距離、到達時間和歌曲</string>
     <string name="widget_not_connected">CarPlay 未連線</string>
