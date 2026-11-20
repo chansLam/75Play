@@ -1,0 +1,78 @@
+name: CI Flower APK
+
+on:
+  push:
+    branches:
+      - ci-flower-94ac03e
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch local commit from bundle
+        run: |
+          set -euo pipefail
+          curl -L --retry 3 -o "$RUNNER_TEMP/local.bundle" "https://aka.doubaocdn.com/s/ZHUfmNBUxU"
+          git bundle verify "$RUNNER_TEMP/local.bundle"
+          git fetch "$RUNNER_TEMP/local.bundle" HEAD:refs/heads/ci-build
+          git checkout ci-build
+          git log --oneline -2
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android SDK packages
+        run: |
+          set -euo pipefail
+          : "${ANDROID_HOME:?ANDROID_HOME is not set on the runner}"
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-37.0" "build-tools;36.0.0" "ndk;25.2.9519653"
+          if [[ -d "$ANDROID_HOME/platforms/android-37.0" && ! -e "$ANDROID_HOME/platforms/android-37" ]]; then
+            ln -sfn android-37.0 "$ANDROID_HOME/platforms/android-37"
+          fi
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> "$GITHUB_ENV"
+
+      - name: Prepare native libopus sources
+        run: python3 scripts/prepare-libopus.py
+
+      - name: Prepare native lwIP sources
+        run: python3 scripts/prepare-lwip.py
+
+      - name: Build debug APK
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew --no-daemon \
+            :shared:testDebugUnitTest \
+            :common:testDebugUnitTest \
+            :mobile:lintDebug \
+            :mobile:assembleDebug
+
+      - name: Publish CI release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          apk=$(find mobile/build/outputs/apk/debug -name '*.apk' | head -1)
+          test -n "$apk"
+          cp "$apk" 75Play-ci-94ac03e.apk
+          sha256sum 75Play-ci-94ac03e.apk | tee 75Play-ci-94ac03e.apk.sha256
+          gh release delete ci-94ac03e --yes 2>/dev/null || true
+          gh release create ci-94ac03e --prerelease \
+            --target "$(git rev-parse HEAD)" \
+            --title "75Play CI 94ac03e" \
+            --notes "CI debug APK built from 94ac03e (CarPlay startup/connection display fix)." \
+            75Play-ci-94ac03e.apk 75Play-ci-94ac03e.apk.sha256
