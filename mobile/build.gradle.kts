@@ -34,7 +34,7 @@ android {
         multiDexEnabled = true
         multiDexKeepProguard = file("multidex-config.pro")
         testInstrumentationRunner = "com.shihab.diplay.T3LegacyInstrumentation"
-        versionCode = 207
+        versionCode = 206
         versionName = "2.0.6-beta.2"
         ndk {
             // CS75 Plus car: armeabi-v7a. Override with -PnativeAbi=x86 for an emulator package.

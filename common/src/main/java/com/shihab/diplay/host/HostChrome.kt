@@ -27,6 +27,10 @@ internal class HostChrome(private val activity: CarPlayHostActivity) {
                 activity.launchHeadUnitApp(app)
             },
             onClose = ::closeSystemAppsMenu,
+            onClusterTest = {
+                closeSystemAppsMenu()
+                activity.testClusterFly()
+            },
         )
 
     fun replaceSystemAppsMenu(apps: List<CarAppCatalog.App>) {

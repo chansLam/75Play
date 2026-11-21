@@ -215,6 +215,9 @@
     <string name="app_launcher_title">Apps</string>
     <string name="app_launcher_popup_hint">Tap to open · Long-press to uninstall</string>
     <string name="app_launcher_close">Close</string>
+    <string name="cluster_test_button">Fly to cluster test</string>
+    <string name="cluster_test_card">Cluster display test</string>
+
     <string name="app_launcher_no_apps">No apps found</string>
     <string name="app_launcher_edit_title">Edit apps</string>
     <string name="app_launcher_done">Done</string>

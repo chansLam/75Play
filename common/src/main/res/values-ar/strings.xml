@@ -195,6 +195,9 @@
     <string name="app_launcher_title">التطبيقات</string>
     <string name="app_launcher_popup_hint">انقر للفتح · اضغط مطولاً لإلغاء التثبيت</string>
     <string name="app_launcher_close">إغلاق</string>
+    <string name="cluster_test_button">اختبار عرض لوحة العدادات</string>
+    <string name="cluster_test_card">اختبار شاشة لوحة العدادات</string>
+
     <string name="app_launcher_no_apps">لا توجد تطبيقات</string>
     <string name="app_launcher_edit_title">تعديل التطبيقات</string>
     <string name="app_launcher_done">تم</string>

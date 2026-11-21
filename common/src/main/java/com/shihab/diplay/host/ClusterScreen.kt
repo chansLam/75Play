@@ -17,6 +17,53 @@ internal object ClusterScreen {
     /** Shorter than this is not an instrument cluster (a status strip, a badge, the main panel). */
     const val MIN_SIDE_PX = 160
 
+    /**
+     * The 2.0T trim ships a round instrument panel; the 1.5T cluster has no mappable LCD. KitKat
+     * has no Display.FLAG_ROUND (API 23+), so two signals remain. The primary one is the same
+     * system property the decompiled AMap reads (IncallOfflineConfig.getCarType →
+     * Global.isSystemHighLevelType, which switches the cluster presentation layout on this exact
+     * platform): the Changan ROM publishes the trim on [CAR_TYPE_PROPERTY] and L4/L5 means the
+     * fully digital round cluster. The fallback is near-square reported metrics.
+     */
+    const val ROUND_TOLERANCE = 0.10
+
+    /** Changan ROM trim property; AMap's cluster-layout switch reads the same key. */
+    const val CAR_TYPE_PROPERTY = "persist.sys.cartype"
+
+    /** AMap's high-level-cluster values on the S401 platform. Anything else (or missing) is not. */
+    val HIGH_LEVEL_CAR_TYPES = setOf("CHANGAN_S401_L4", "CHANGAN_S401_L5")
+
+    /** Raw value of [CAR_TYPE_PROPERTY] via reflection, or null when absent. */
+    fun systemCarType(): String? = runCatching {
+        val get = Class.forName("android.os.SystemProperties").getMethod("get", String::class.java)
+        (get.invoke(null, CAR_TYPE_PROPERTY) as? String)?.trim()?.takeIf { it.isNotEmpty() }
+    }.getOrNull()
+
+    /** AMap-style high-level (round cluster) verdict from the ROM property; null when it is absent. */
+    fun highLevelClusterProperty(): Boolean? = systemCarType()?.let { it in HIGH_LEVEL_CAR_TYPES }
+
+    /** Likely the 2.0T round cluster panel: near-square reported metrics. */
+    fun squareLikely(candidate: ClusterCandidate?): Boolean {
+        candidate ?: return false
+        val longEdge = maxOf(candidate.widthPixels, candidate.heightPixels)
+        if (longEdge <= 0) return false
+        val shortEdge = minOf(candidate.widthPixels, candidate.heightPixels)
+        return (longEdge - shortEdge).toDouble() / longEdge <= ROUND_TOLERANCE
+    }
+
+    /**
+     * Combined round-cluster verdict. The ROM property wins when present (AMap parity); without
+     * it the square-metrics heuristic applies only to a usable non-centre panel. Returns null
+     * when neither signal can say anything (no property and no panel).
+     */
+    fun roundLikely(candidate: ClusterCandidate?, defaultDisplayId: Int?): Boolean? {
+        highLevelClusterProperty()?.let { return it }
+        if (candidate != null && candidate.displayId != defaultDisplayId && squareLikely(candidate)) {
+            return true
+        }
+        return null
+    }
+
     /** Long edge advertised to the iPhone. The view still fills the panel; the decoder stays bounded. */
     const val MAX_STREAM_LONG_EDGE = 1280
 

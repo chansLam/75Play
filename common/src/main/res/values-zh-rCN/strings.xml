@@ -215,6 +215,9 @@
     <string name="app_launcher_title">应用</string>
     <string name="app_launcher_popup_hint">点击打开 · 长按卸载</string>
     <string name="app_launcher_close">关闭</string>
+    <string name="cluster_test_button">飞屏测试</string>
+    <string name="cluster_test_card">仪表屏显示测试</string>
+
     <string name="app_launcher_no_apps">未找到应用</string>
     <string name="app_launcher_edit_title">编辑应用</string>
     <string name="app_launcher_done">完成</string>

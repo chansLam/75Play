@@ -195,6 +195,9 @@
     <string name="app_launcher_title">Приложения</string>
     <string name="app_launcher_popup_hint">Нажмите, чтобы открыть · Удерживайте, чтобы удалить</string>
     <string name="app_launcher_close">Закрыть</string>
+    <string name="cluster_test_button">Тест вывода на приборную панель</string>
+    <string name="cluster_test_card">Тест экрана приборной панели</string>
+
     <string name="app_launcher_no_apps">Приложения не найдены</string>
     <string name="app_launcher_edit_title">Изменить приложения</string>
     <string name="app_launcher_done">Готово</string>

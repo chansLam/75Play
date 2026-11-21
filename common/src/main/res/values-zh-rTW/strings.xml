@@ -210,6 +210,9 @@
     <string name="app_launcher_title">應用</string>
     <string name="app_launcher_popup_hint">點擊開啟 · 長按解除安裝</string>
     <string name="app_launcher_close">關閉</string>
+    <string name="cluster_test_button">飛屏測試</string>
+    <string name="cluster_test_card">儀表屏顯示測試</string>
+
     <string name="app_launcher_no_apps">找不到應用</string>
     <string name="app_launcher_edit_title">編輯應用</string>
     <string name="app_launcher_done">完成</string>

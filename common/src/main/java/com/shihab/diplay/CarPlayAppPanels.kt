@@ -40,6 +40,7 @@ object CarPlayAppPanels {
         apps: List<CarAppCatalog.App>,
         onLaunch: (CarAppCatalog.App) -> Unit,
         onClose: () -> Unit,
+        onClusterTest: (() -> Unit)? = null,
     ): View {
         val kitKat = realSdkInt() < 21
         // 车机弹层：大图标、少列。不按 SDK 把触控做小。
@@ -174,6 +175,42 @@ object CarPlayAppPanels {
             panel.addView(
                 grid,
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, gridH),
+            )
+        }
+
+        if (onClusterTest != null) {
+            panel.addView(
+                View(context).apply { setBackgroundColor(GlassColors.DIVIDER) },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, context.dp(1)).apply {
+                    topMargin = context.dp(14)
+                    bottomMargin = context.dp(12)
+                },
+            )
+            panel.addView(
+                TextView(context).apply {
+                    text = context.getString(R.string.cluster_test_button)
+                    setTextColor(GlassColors.INK)
+                    textSize = LayoutMetrics.settingsRowTextSize(context)
+                    typeface = Typeface.DEFAULT_BOLD
+                    gravity = Gravity.CENTER
+                    setPadding(context.dp(20), context.dp(12), context.dp(20), context.dp(12))
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.RECTANGLE
+                        cornerRadius = context.dp(10).toFloat()
+                        setColor(GlassColors.POPUP_CHIP_FILL)
+                    }
+                    isFocusable = true
+                    FocusSupport.attachStrokeOverlay(this, cornerRadiusDp = 10)
+                    setOnClickListener {
+                        onClose()
+                        onClusterTest()
+                    }
+                    contentDescription = context.getString(R.string.cluster_test_button)
+                },
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ),
             )
         }
 

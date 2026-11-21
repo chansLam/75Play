@@ -195,6 +195,9 @@
     <string name="app_launcher_title">Apps</string>
     <string name="app_launcher_popup_hint">Toca para abrir · Mantén pulsado para desinstalar</string>
     <string name="app_launcher_close">Cerrar</string>
+    <string name="cluster_test_button">Probar pantalla del cuadro de instrumentos</string>
+    <string name="cluster_test_card">Prueba de pantalla del cuadro de instrumentos</string>
+
     <string name="app_launcher_no_apps">No se encontraron apps</string>
     <string name="app_launcher_edit_title">Editar apps</string>
     <string name="app_launcher_done">Hecho</string>

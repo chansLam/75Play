@@ -32,7 +32,10 @@ internal object ClusterDisplays {
             lines += "Cluster probe defaultId=$defaultId displays=${all.size} category=${categoryIds.size}"
             if (manager == null) lines += "Cluster displays: DisplayManager missing"
             all.forEach { display ->
-                lines += "Cluster display ${describe(display)} category=${display.displayId in categoryIds}"
+                val c = candidate(display)
+                lines += "Cluster display ${describe(display)} " +
+                    "category=${display.displayId in categoryIds} " +
+                    "roundLikely=${ClusterScreen.roundLikely(c, defaultId)}"
             }
             val router = context.getSystemService(Context.MEDIA_ROUTER_SERVICE) as? MediaRouter
             val routerDisplay = if (router == null) {
@@ -50,6 +53,31 @@ internal object ClusterDisplays {
                 routerDisplay?.takeIf { it.displayId == pick.displayId }
                     ?: category.firstOrNull { it.displayId == pick.displayId }
             }
+            // 2.0T round-cluster verdict, echoed for the exported diagnostic report. Primary
+            // signal is the ROM car-type property (same key AMap reads to switch its cluster
+            // presentation layout); the square-metrics heuristic is the fallback.
+            val carType = ClusterScreen.systemCarType()
+            val roundVerdict = when {
+                carType != null -> {
+                    val high = ClusterScreen.highLevelClusterProperty() == true
+                    "cartype=\"$carType\" -> " + if (high) {
+                        "round cluster (2.0T high-level trim, AMap parity)"
+                    } else {
+                        "not the high-level trim (no round map cluster)"
+                    }
+                }
+                chosen != null -> if (ClusterScreen.squareLikely(chosen)) {
+                    "cartype missing; square panel likely (2.0T fallback): id=${chosen.displayId} " +
+                        "${chosen.widthPixels}x${chosen.heightPixels} edges near-equal"
+                } else {
+                    "cartype missing; not round-shaped: id=${chosen.displayId} " +
+                        "${chosen.widthPixels}x${chosen.heightPixels} (1.5T or auxiliary panel)"
+                }
+                category.map(::candidate).let { it.any { c -> c.displayId != defaultId } } ->
+                    "cartype missing; round cluster unknown: presentation displays exist but all were rejected"
+                else -> "cartype missing; round cluster unknown: no presentation display found (likely no 2.0T panel)"
+            }
+            lines += "Cluster round verdict: $roundVerdict"
             if (chosen == null || display == null) {
                 lines += "Cluster result: no alt stream"
                 Probe(null, lines)
@@ -73,6 +101,8 @@ internal object ClusterDisplays {
             return {}
         }
         val seen = HashMap<Int, String>()
+        val defaultId = (context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager)
+            ?.defaultDisplay?.displayId
         val listener = object : DisplayManager.DisplayListener {
             override fun onDisplayAdded(displayId: Int) {
                 val display = manager.getDisplay(displayId)
@@ -81,8 +111,10 @@ internal object ClusterDisplays {
                     return
                 }
                 val described = describe(display)
+                val round = ClusterScreen.roundLikely(candidate(display), defaultId)
                 seen[displayId] = described
-                emit("Cluster display added $described category=${inCategory(manager, displayId)}")
+                emit("Cluster display added $described " +
+                    "category=${inCategory(manager, displayId)} roundLikely=$round")
             }
 
             override fun onDisplayRemoved(displayId: Int) {

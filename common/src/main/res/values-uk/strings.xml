@@ -203,6 +203,9 @@
     <string name="app_launcher_title">Програми</string>
     <string name="app_launcher_popup_hint">Натисніть, щоб відкрити · Утримуйте, щоб видалити</string>
     <string name="app_launcher_close">Закрити</string>
+    <string name="cluster_test_button">Тест виводу на приладову панель</string>
+    <string name="cluster_test_card">Тест екрана приладової панелі</string>
+
     <string name="app_launcher_no_apps">Програми не знайдено</string>
     <string name="app_launcher_edit_title">Змінити програми</string>
     <string name="app_launcher_done">Готово</string>

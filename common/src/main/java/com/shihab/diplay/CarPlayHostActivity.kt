@@ -1746,22 +1746,88 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     /** Left swipe during route guidance. The window then stays up for this connection. */
-    internal fun requestClusterFly() {
+    internal fun requestClusterFly(force: Boolean = false) {
         if (clusterPresentation?.isShowing == true) {
             appendLog("Cluster fly ignored: already showing")
             return
         }
         if (clusterPanel == null) {
-            appendLog("Cluster fly ignored: no panel")
+            // Re-probe now so the log always carries the current display list before giving up;
+            // a 2.0T panel that appeared late shows up in these lines.
+            val probe = ClusterDisplays.probe(this)
+            probe.lines.forEach { appendLog(it) }
+            val found = probe.found
+            if (found == null) {
+                appendLog("Cluster fly ignored: no panel (see Cluster probe lines above)")
+                return
+            }
+            clusterPanel = found.candidate
+        }
+        val snapshot = CarPlayGlance.snapshot()
+        val maneuver = snapshot.maneuverType
+        if (maneuver == null && !force) {
+            appendLog(
+                "Cluster fly ignored: no route guidance connected=${snapshot.connected} " +
+                    "maneuver=null dist=${snapshot.distanceMeters}m road=\"${snapshot.road}\" " +
+                    "currentRoad=\"${snapshot.currentRoad}\"",
+            )
             return
         }
-        val maneuver = CarPlayGlance.snapshot().maneuverType
         if (maneuver == null) {
-            appendLog("Cluster fly ignored: no route guidance")
+            appendLog(
+                "Cluster fly forced without guidance connected=${snapshot.connected} " +
+                    "maneuver=null; showUI may be rejected by the iPhone",
+            )
+        }
+        appendLog("Cluster fly maneuver=$maneuver force=$force")
+        showClusterPresentation()
+    }
+
+    /**
+     * Fly test from the app popup. Runs a fresh display probe, shows a locally rendered test card
+     * on the panel for a few seconds (no iPhone stream involved: seeing the card proves the app
+     * can draw on the cluster display; a visible card without a map later means the alt stream or
+     * showUI is the broken link), then performs the real fly attempt with full logging.
+     */
+    internal fun testClusterFly() {
+        appendLog("Cluster TEST requested from app menu")
+        val probe = ClusterDisplays.probe(this)
+        probe.lines.forEach { appendLog(it) }
+        val found = probe.found
+        if (found == null) {
+            appendLog("Cluster TEST failed: no usable panel; see probe lines above")
             return
         }
-        appendLog("Cluster fly maneuver=$maneuver")
-        showClusterPresentation()
+        clusterPanel = found.candidate
+        val defaultId = (getSystemService(Context.WINDOW_SERVICE) as? android.view.WindowManager)
+            ?.defaultDisplay?.displayId
+        appendLog(
+            "Cluster TEST panel id=${found.candidate.displayId} " +
+                "${found.candidate.widthPixels}x${found.candidate.heightPixels} " +
+                "roundLikely=${ClusterScreen.roundLikely(found.candidate, defaultId)}; " +
+                "showing local test card for ${TEST_CARD_MILLIS / 1000}s",
+        )
+        val card = ClusterMapPresentation(
+            this,
+            found.display,
+            testOnly = true,
+            onSurface = { _, _, _ -> },
+            onSurfaceChanged = { _, _, _, _ -> },
+            onSurfaceGone = { },
+            onWindow = ::onClusterWindow,
+        )
+        try {
+            card.show()
+        } catch (error: Exception) {
+            appendLog("Cluster TEST card failed: ${ClusterDisplays.failureText(error)}")
+            return
+        }
+        appendLog("Cluster TEST card shown ${clusterWindowFacts(card)}")
+        mainHandler.postDelayed({
+            runCatching { card.dismiss() }
+            appendLog("Cluster TEST card dismissed; real fly attempt follows")
+            requestClusterFly(force = true)
+        }, TEST_CARD_MILLIS)
     }
 
     private fun showClusterPresentation() {
@@ -2066,6 +2132,8 @@ class CarPlayHostActivity : ComponentActivity() {
         const val TAG = "xcertplay"
         const val SCREEN_TYPE_MAIN = 110
         const val SCREEN_TYPE_ALT = 111
+        /** App-popup fly test: how long the local test card stays on the cluster panel. */
+        private const val TEST_CARD_MILLIS = 8_000L
         // On the teardown thread: bounded sequencing wait. Release notification retains ownership beyond
         // this budget when a codec is still busy.
         const val SINK_RELEASE_WAIT_MILLIS = 2_000L
