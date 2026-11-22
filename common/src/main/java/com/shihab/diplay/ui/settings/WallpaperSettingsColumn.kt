@@ -78,11 +78,16 @@ internal class WallpaperSettingsColumn(
         val ctx = requireContext()
         io.execute {
             val incoming = store.incomingFile()
-            val copied = ctx.contentResolver.openInputStream(uri)?.use {
-                WallpaperBitmaps.copyStream(it, incoming)
-            } == true
-            val bitmap = if (copied) WallpaperBitmaps.decodeFile(incoming) else null
-            val saved = bitmap != null && store.writeCustom(bitmap)
+            // A picker can hand back a URI this app cannot open (no persisted grant on KitKat,
+            // e.g. /Images/....HEIC). An uncaught open failure kills the process on this pool
+            // thread; fall through to the decode-failed dialog instead.
+            val copied = runCatching {
+                ctx.contentResolver.openInputStream(uri)?.use {
+                    WallpaperBitmaps.copyStream(it, incoming)
+                } == true
+            }.getOrDefault(false)
+            val bitmap = if (copied) runCatching { WallpaperBitmaps.decodeFile(incoming) }.getOrNull() else null
+            val saved = bitmap != null && runCatching { store.writeCustom(bitmap) }.getOrDefault(false)
             bitmap?.recycle()
             incoming.delete()
             val hostActivity = activity ?: return@execute

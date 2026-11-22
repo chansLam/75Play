@@ -270,6 +270,10 @@ internal class HostSessionLifecycle(private val host: CarPlayHostActivity) {
             createSessionListener(generation),
             createStatusReporter(generation),
         )
+        // A session adopted after it became active never re-fires onSessionActive on this UI's
+        // listener (attachUi only replays the status). Seed the identity, or the
+        // onVideoFrameRendered guard suppresses every uncover: black cover over live video.
+        activeAirPlaySession = snapshot.controller.currentActiveSession()
         if (snapshot.controller.activeAirPlaySessionToken() != null) {
             CarPlayBackgroundSession.active = true
         }

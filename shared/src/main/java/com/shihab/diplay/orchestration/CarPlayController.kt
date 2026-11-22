@@ -389,6 +389,12 @@ class CarPlayController(
     fun isClosed(): Boolean = closed
 
     /**
+     * The session this controller currently treats as active. A UI adopting an already-active
+     * session needs this to seed its own state: attachUi cannot replay onSessionActive.
+     */
+    fun currentActiveSession(): AirPlaySession? = if (closed) null else activeSession
+
+    /**
      * True once this controller has committed to USB, including the auto-detect path that runs
      * when wireless is the saved preference but an iPhone is plugged in.
      */
