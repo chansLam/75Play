@@ -87,10 +87,15 @@ internal class HostVideoSurfaces(
             }
             // Return false so TextureView leaves the SurfaceTexture to us until codecs leave;
             // releasing early while MediaCodec still outputs would crash KitKat.
+            val detachGeneration = owner.generation
             beginDetachAsync(surface, parkMain = bridge.smoothVideo()) { confirmed ->
-                owner.clear(surface)
-                runCatching { texture.release() }
-                bridge.log("Texture surface destroyed detachConfirmed=$confirmed")
+                if (owner.generation == detachGeneration) {
+                    owner.clear(surface)
+                    runCatching { texture.release() }
+                    bridge.log("Texture surface destroyed detachConfirmed=$confirmed")
+                } else {
+                    bridge.log("Texture surface destroyed; newer attach kept detachConfirmed=$confirmed")
+                }
             }
             return false
         }
@@ -124,9 +129,16 @@ internal class HostVideoSurfaces(
             // switches. The SurfaceHolder may invalidate the Surface after this returns; workers must
             // already have left (or be leaving) via the queued detach. Direct SurfaceView parks
             // the decoder so the rebuilt surface can take a keyframe instead of being released.
+            // If the surface is re-created (possibly the same object) before the wait settles, the
+            // newer attach owns it and this stale cleanup must not clear it.
+            val detachGeneration = owner.generation
             beginDetachAsync(surface, parkMain = true) { confirmed ->
-                owner.clear(surface)
-                bridge.log("SurfaceView video surface destroyed detachConfirmed=$confirmed")
+                if (owner.generation == detachGeneration) {
+                    owner.clear(surface)
+                    bridge.log("SurfaceView video surface destroyed detachConfirmed=$confirmed")
+                } else {
+                    bridge.log("SurfaceView video surface destroyed; newer attach kept detachConfirmed=$confirmed")
+                }
             }
         }
     }

@@ -45,7 +45,16 @@ internal class CarPlayVideoSurfaceOwner<T : Any>(
         private set
     private var owned = false
 
+    /**
+     * Bumped on every replace/clear. A destroy callback's async cleanup may only clear while no
+     * newer attach happened: KitKat can hand back the SAME Surface object on a quick recreate,
+     * and an identity check alone would let the stale cleanup tear down the live surface.
+     */
+    var generation = 0
+        private set
+
     fun replace(surface: T, releaseOnDetach: Boolean) {
+        generation++
         if (current === surface) return
         clear()
         current = surface
@@ -58,6 +67,7 @@ internal class CarPlayVideoSurfaceOwner<T : Any>(
     }
 
     fun clear() {
+        generation++
         val previous = current ?: return
         val releasePrevious = owned
         current = null

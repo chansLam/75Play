@@ -238,6 +238,9 @@ internal class VideoDecoder(
             AppLog.w(TAG, "video decoder worker interrupted", t)
         } finally {
             releaseDecoder()
+            // A silent worker exit leaves the host cover up with no further stats; say it once.
+            if (running) report("decoder worker exited unexpectedly")
+            else report("decoder worker exited")
             // The codec is gone, so nothing renders to any surface or to the parking consumer any more.
             parking?.close()
             parking = null
@@ -476,6 +479,9 @@ internal class VideoDecoder(
 
     private fun changeSurface(surface: Surface?) {
         if (outputSurface === surface) return
+        // Session-log the handoff itself: a recreated SurfaceView whose attach never reaches the
+        // worker shows up as a black screen with no decoder lines at all.
+        report(if (surface == null) "output surface detached" else "output surface attached valid=${surface.isValid}")
         outputSurface = surface
         surfaceAttachedAtNs = if (surface != null) System.nanoTime() else 0L
         if (surface != null) {

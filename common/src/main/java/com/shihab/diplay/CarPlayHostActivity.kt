@@ -313,7 +313,10 @@ class CarPlayHostActivity : ComponentActivity() {
                 hideVideoLoading()
             }
             override fun showVideoCover() {
-                videoCover?.visibility = View.VISIBLE
+                // A mid-session surface recreate must uncover on its next frame. Merely making the
+                // cover visible leaves it up forever: uncovering needs the per-frame notification,
+                // which is off while pictureVisible is still true (black cover over live video).
+                showVideoLoading()
             }
             override fun liveSink(): AndroidMediaSink? = sink
             override fun retiringSinks(): Collection<AndroidMediaSink> = retiringSinks
@@ -2055,17 +2058,21 @@ class CarPlayHostActivity : ComponentActivity() {
 
     /** Ask for another frame. The picture stays on the host surface; no spinner covers it. */
     internal fun showVideoLoading() {
+        val recovering = pictureVisible && videoCover?.visibility != View.VISIBLE
         notePicture(false)
         controller?.reportEveryVideoFrame = true
         videoCover?.visibility = View.VISIBLE
         loadingLayer?.visibility = View.GONE
+        if (recovering) appendLog("Video cover shown; waiting for the next decoded frame")
     }
 
     internal fun hideVideoLoading() {
+        val covered = videoCover?.visibility == View.VISIBLE
         notePicture(true)
         controller?.reportEveryVideoFrame = false
         videoCover?.visibility = View.GONE
         loadingLayer?.visibility = View.GONE
+        if (covered) appendLog("Video cover hidden; frame visible")
     }
 
     private fun notePicture(visible: Boolean) {
