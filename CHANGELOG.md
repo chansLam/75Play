@@ -6,6 +6,22 @@
 
 ---
 
+## 2.0.6-beta.3
+
+相对 2.0.6-beta.2 的测试版。请从 Releases 手动安装，应用内更新不推送测试版。
+
+### 修复
+
+- **出画面后黑屏（盖板未揭开）**：CarPlay 视频 SurfaceView 在会话中途销毁重建后，黑色起播盖板会一直盖在正在渲染的视频上（帧通知在已有画面时是关闭的，盖板再也等不到揭开时机）。现在 surface 重建会重新打开逐帧通知，下一帧渲染即揭开盖板。TextureView 路径不受影响。
+- **surface 清理竞态黑屏**：surface 销毁的异步清理可能落在快速重建之后，把刚附加的新 surface 再次解绑（KitKat 快速重建可能返回同一个 Surface 对象）。改为按代次（generation）作废旧清理，SurfaceView 与 TextureView 两条路径都覆盖。
+- **圆屏判定纠正**：1.5T 实测 `persist.sys.cartype=CHANGAN_S311_CARTYPE_7`，证明 S311 全配置都暴露 648x648 虚拟仪表屏（物理圆屏仅 2.0T 有）。方形面板判定不再覆盖车型属性：属性存在时未知车型码即非圆屏，属性缺失才回退方形判定。
+
+### 诊断
+
+- 新增黑屏定位日志：CarPlay 返回键触发、BACK/HOME 按键来源设备、CarPlay 停止时的前台 Activity、主页启动 intent、解码器 surface attach/detach、解码 worker 退出、盖板显示/隐藏转换。
+
+---
+
 ## 2.0.6-beta.2
 
 相对 2.0.6-beta 的测试版。请从 Releases 手动安装，应用内更新不推送测试版。
