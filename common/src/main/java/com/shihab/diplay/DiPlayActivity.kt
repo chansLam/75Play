@@ -158,6 +158,11 @@ class DiPlayActivity : FragmentActivity(), DiPlayHost {
         // 品牌启动页：暗色全屏背景图 + logo + “应用启动中，请稍后”，立即首帧显示；
         // 真实 UI 延迟到下一帧构建，避免 multidex/慢 CPU 启动期纯黑屏。
         showBrandSplash()
+        AsyncDiagnosticLog.append(
+            ActiveSessionLog.current,
+            "DiPlay onCreate intent=${intent.action} flags=0x${Integer.toHexString(intent.flags)} " +
+                "extras=${intent.extras?.keySet().orEmpty()} restoring=${savedInstanceState != null}",
+        )
         handler.post {
             if (isFinishing || isDestroyed) return@post
             // 主题恢复延迟到首帧之后，避免阻塞品牌页第一帧。

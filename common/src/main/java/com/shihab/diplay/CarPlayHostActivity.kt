@@ -31,6 +31,7 @@ import com.shihab.diplay.host.carPlayVideoSurfaceMode
 import com.shihab.diplay.session.smoothVideoDelayMillis
 
 import android.Manifest
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.content.BroadcastReceiver
@@ -498,6 +499,9 @@ class CarPlayHostActivity : ComponentActivity() {
                     } else if (systemAppsOpen) {
                         closeSystemAppsMenu()
                     } else {
+                        // Why the whole CarPlay screen went away is the single most common
+                        // field complaint; log the trigger (user back vs injected key) here.
+                        appendLog("Host back pressed; showing DiPlay home")
                         showDiPlayHome()
                     }
                 }
@@ -859,6 +863,16 @@ class CarPlayHostActivity : ComponentActivity() {
                 if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) controller?.endCall()
                 return true
             }
+            // Back/Home are the keys that end a CarPlay session on this unit; an injected or
+            // phantom press looks identical to a user one here, so keep both in the log.
+            KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_HOME -> {
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                    appendLog(
+                        "Host key ${KeyEvent.keyCodeToString(event.keyCode)} down " +
+                            "source=${event.device?.name ?: "virtual"}",
+                    )
+                }
+            }
         }
         return super.dispatchKeyEvent(event)
     }
@@ -896,6 +910,13 @@ class CarPlayHostActivity : ComponentActivity() {
         SwcCarPlayKeys.stop(this)
         CarPlayMediaKeys.suspend()
         logThemeState(ThemeModeDiagnostics.Source.STOP, resources.configuration)
+        // Name whatever activity is taking the screen when CarPlay leaves it; without this the
+        // field reports only say "black screen" and the trigger stays invisible.
+        runCatching {
+            val top = (getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager)
+                ?.getRunningTasks(1)?.firstOrNull()?.topActivity
+            appendLog("Host stopped; foreground=${top?.flattenToShortString() ?: "unknown"}")
+        }
         mainHandler.removeCallbacks(pollConfiguration)
         // Unified keep-alive for every way the UI can leave (back to shell, home key, launching
         // another head-unit app, recents): park here so the controller/USB/iAP2 link outlives the
