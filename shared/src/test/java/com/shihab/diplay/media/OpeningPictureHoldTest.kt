@@ -65,4 +65,40 @@ class OpeningPictureHoldTest {
         assertTrue(discardUnrenderedBacklog(renderedOnce = true, renderingNow = false, ageNs = 900_000_000L, maxAgeNs = 800_000_000L))
         assertFalse(discardUnrenderedBacklog(renderedOnce = true, renderingNow = true, ageNs = 900_000_000L, maxAgeNs = 800_000_000L))
     }
+
+    @Test fun returningSurfaceReplaysTheLatestCompleteChainWithoutConsumingIt() {
+        val replay = SurfacePictureReplay(maxFrames = 4)
+        replay.accept(isKeyframe = true, source = idr, length = idr.size)
+        replay.accept(isKeyframe = false, source = predicted, length = predicted.size)
+        val first = replay.snapshot()
+        val second = replay.snapshot()
+        assertEquals(listOf(idr.size, predicted.size), first.map { it.length })
+        assertEquals(first.map { it.length }, second.map { it.length })
+        assertEquals(0x65.toByte(), first[0].bytes[4])
+    }
+
+    @Test fun returningSurfaceDoesNotRetainPredictedFramesWithoutAnIdr() {
+        val replay = SurfacePictureReplay(maxFrames = 4)
+        replay.accept(isKeyframe = false, source = predicted, length = predicted.size)
+        assertTrue(replay.snapshot().isEmpty())
+    }
+
+    @Test fun anOverflowKeepsOnlyTheIdrUntilTheNextCompleteChain() {
+        val replay = SurfacePictureReplay(maxFrames = 2)
+        replay.accept(isKeyframe = true, source = idr, length = idr.size)
+        replay.accept(isKeyframe = false, source = predicted, length = predicted.size)
+        replay.accept(isKeyframe = false, source = byteArrayOf(0, 0, 0, 1, 0x41, 3), length = 6)
+        assertEquals(listOf(idr.size), replay.snapshot().map { it.length })
+        replay.accept(isKeyframe = true, source = idr, length = idr.size)
+        replay.accept(isKeyframe = false, source = predicted, length = predicted.size)
+        assertEquals(listOf(idr.size, predicted.size), replay.snapshot().map { it.length })
+    }
+
+    @Test fun anOversizedGopKeepsOnlyItsIdrWithinTheByteBudget() {
+        val replay = SurfacePictureReplay(maxFrames = 4, maxBytes = idr.size + predicted.size)
+        replay.accept(isKeyframe = true, source = idr, length = idr.size)
+        replay.accept(isKeyframe = false, source = predicted, length = predicted.size)
+        replay.accept(isKeyframe = false, source = predicted, length = predicted.size)
+        assertEquals(listOf(idr.size), replay.snapshot().map { it.length })
+    }
 }

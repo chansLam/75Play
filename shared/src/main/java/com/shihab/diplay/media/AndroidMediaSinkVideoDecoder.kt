@@ -88,6 +88,8 @@ internal class VideoDecoder(
     private var surfaceReattachNeedsKeyFrame = false
     /** Frames that arrived before the host had a surface. Worker thread only. */
     private val openingHold = OpeningPictureHold()
+    /** Latest complete GOP retained for fast local paint after a host SurfaceView is recreated. */
+    private val surfaceReplay = SurfacePictureReplay()
     private var replayingHold = false
     // The main screen keeps the historical log format; other screens are labelled.
     private val stats = VideoStats(statsLabel ?: if (streamType == MAIN_SCREEN_TYPE) "" else " stream=$streamType")
@@ -182,6 +184,7 @@ internal class VideoDecoder(
                                     // surface exists. Dropping it leaves a still screen black.
                                     holdWithoutSurface(job)
                                 } else {
+                                    rememberSurfaceReplay(job)
                                     val now = System.nanoTime()
                                     val rendering = lastOutputRenderedNs != 0L &&
                                         now - lastOutputRenderedNs < MIN_OUTPUT_STALL_NS
@@ -241,6 +244,7 @@ internal class VideoDecoder(
             AppLog.w(TAG, "video decoder worker interrupted", t)
         } finally {
             releaseDecoder()
+            surfaceReplay.clear()
             // A silent worker exit leaves the host cover up with no further stats; say it once.
             if (running) report("decoder worker exited unexpectedly")
             else report("decoder worker exited")
@@ -515,6 +519,9 @@ internal class VideoDecoder(
             AppLog.i(TAG, "video decoder detached from surface")
             return
         }
+        // configureDecoder replays the opening hold internally. Prefer frames that arrived while
+        // no surface existed; otherwise paint the persistent pre-detach GOP.
+        val openingChainPending = openingHold.hasCompleteChain()
         val codec = decoder
         if (codec != null) {
             try {
@@ -529,6 +536,7 @@ internal class VideoDecoder(
                 renderedFrameLogged = false
                 AppLog.i(TAG, "video decoder output surface updated")
                 replayOpeningHold()
+                if (!openingChainPending) replaySurfacePicture()
                 return
             } catch (error: Exception) {
                 AppLog.w(TAG, "video decoder output surface update failed; reconfiguring", error)
@@ -547,18 +555,27 @@ internal class VideoDecoder(
             }
         }
         replayOpeningHold()
+        if (!openingChainPending) replaySurfacePicture()
     }
 
-    private fun holdWithoutSurface(job: VideoJob.Frame) {
+    private fun isRandomAccess(job: VideoJob.Frame): Boolean {
         val count = job.length.coerceIn(0, job.nalus.size)
         val codec = lastConfig?.codec
-        val keyframe = if (codec != null) {
+        return if (codec != null) {
             MediaCodecSupport.isRandomAccess(job.nalus, codec, count)
         } else {
             MediaCodecSupport.isRandomAccess(job.nalus, VideoCodec.H264, count) ||
                 MediaCodecSupport.isRandomAccess(job.nalus, VideoCodec.H265, count)
         }
-        openingHold.accept(keyframe, job.nalus.copyOf(count), localTimeOf(job))
+    }
+
+    private fun rememberSurfaceReplay(job: VideoJob.Frame) {
+        surfaceReplay.accept(isRandomAccess(job), job.nalus, job.length)
+    }
+
+    private fun holdWithoutSurface(job: VideoJob.Frame) {
+        val count = job.length.coerceIn(0, job.nalus.size)
+        openingHold.accept(isRandomAccess(job), job.nalus.copyOf(count), localTimeOf(job))
         if (!loggedNoSurfaceFrames) {
             loggedNoSurfaceFrames = true
             report("frames held: waiting for the video surface")
@@ -574,7 +591,18 @@ internal class VideoDecoder(
         }
         replayingHold = true
         try {
-            for (frame in replay.frames) feed(frame.bytes, frame.bytes.size, frame.presentNs)
+            for (frame in replay.frames) {
+                feed(frame.bytes, frame.bytes.size, frame.presentNs)
+                // Also retain the opening chain for a second quick leave/re-enter before the
+                // iPhone sends another live frame.
+                lastConfig?.let { config ->
+                    surfaceReplay.accept(
+                        MediaCodecSupport.isRandomAccess(frame.bytes, config.codec),
+                        frame.bytes,
+                        frame.bytes.size,
+                    )
+                }
+            }
             if (replay.askKeyframe) {
                 // The held keyframe can paint the screen, but the frames after it were not a
                 // contiguous chain. Reject live predicted frames until the new IDR arrives.
@@ -586,6 +614,22 @@ internal class VideoDecoder(
                 holdInitialKeyFrameUntilNs = System.nanoTime() + INITIAL_PICTURE_GRACE_NS
                 report("opening picture missed; requested a keyframe")
             }
+        } finally {
+            replayingHold = false
+        }
+    }
+
+    /** Paint the last complete GOP immediately; the live keyframe request remains the update path. */
+    private fun replaySurfacePicture() {
+        if (replayingHold || outputSurface == null || lastConfig == null) return
+        val replay = surfaceReplay.snapshot()
+        if (replay.isEmpty()) return
+        report("replaying ${replay.size} cached frames on the returning surface")
+        replayingHold = true
+        try {
+            // Cached sender timestamps belong to the old surface. Present now instead of treating
+            // them as late on a paced SurfaceView.
+            for (frame in replay) feed(frame.bytes, frame.length, presentNs = 0L)
         } finally {
             replayingHold = false
         }

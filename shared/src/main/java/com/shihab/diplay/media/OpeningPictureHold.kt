@@ -55,6 +55,65 @@ internal class OpeningPictureHold(
         chainBroken = false
         return replay
     }
+
+    /** A complete held chain, including a lone IDR after overflow, can paint a returning surface. */
+    fun hasCompleteChain(): Boolean = frames.isNotEmpty()
+}
+
+/**
+ * Persistent compressed replay for a SurfaceView that is destroyed while returning to the shell.
+ * The latest GOP is retained across detach/attach, so KitKat can paint locally instead of waiting a
+ * network round trip for iOS to produce another IDR. Live frames replace it normally; replay itself
+ * does not write back into this buffer.
+ */
+internal class SurfacePictureReplay(
+    private val maxFrames: Int = 24,
+    private val maxBytes: Int = 3 * 1024 * 1024,
+) {
+    class Frame(val bytes: ByteArray, val length: Int)
+
+    private val frames = ArrayList<Frame>()
+    private var heldBytes = 0
+    private var chainBroken = false
+
+    fun accept(isKeyframe: Boolean, source: ByteArray, length: Int) {
+        val count = length.coerceIn(0, source.size)
+        if (isKeyframe) {
+            clear()
+            chainBroken = false
+        }
+        if (count == 0 || (frames.isEmpty() && !isKeyframe) || chainBroken) return
+        if (count > maxBytes) {
+            clear()
+            chainBroken = true
+            return
+        }
+        if (frames.size >= maxFrames || heldBytes + count > maxBytes) {
+            // An IDR alone paints the last known screen. Predicted frames beyond the cap cannot be
+            // replayed as a complete chain, so wait for the next IDR instead of retaining a partial GOP.
+            val anchor = frames.firstOrNull() ?: return
+            frames.drop(1).forEach { com.shihab.diplay.airplay.VideoFrameBuffers.give(it.bytes) }
+            frames.clear()
+            frames.add(anchor)
+            heldBytes = anchor.length
+            chainBroken = true
+            return
+        }
+        val copy = com.shihab.diplay.airplay.VideoFrameBuffers.take(count)
+        source.copyInto(copy, 0, 0, count)
+        frames.add(Frame(copy, count))
+        heldBytes += count
+    }
+
+    /** Non-consuming: another quick leave/re-enter before a new frame can replay the same picture. */
+    fun snapshot(): List<Frame> = ArrayList(frames)
+
+    fun clear() {
+        frames.forEach { com.shihab.diplay.airplay.VideoFrameBuffers.give(it.bytes) }
+        frames.clear()
+        heldBytes = 0
+        chainBroken = false
+    }
 }
 
 /**
