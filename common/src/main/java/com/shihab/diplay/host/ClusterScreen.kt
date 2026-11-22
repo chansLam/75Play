@@ -30,17 +30,21 @@ internal object ClusterScreen {
     /** Changan ROM trim property; AMap's cluster-layout switch reads the same key. */
     const val CAR_TYPE_PROPERTY = "persist.sys.cartype"
 
-    /** AMap's high-level-cluster values on the S401 platform. Anything else (or missing) is not. */
-    val HIGH_LEVEL_CAR_TYPES = setOf("CHANGAN_S401_L4", "CHANGAN_S401_L5")
+    /**
+     * AMap-parity high-level values. Observed so far: S401 L4/L5 (AMap's own switch) and
+     * CHANGAN_S311_CARTYPE_7 (OS_S311-WT, measured with a 648x648 round panel).
+     */
+    val HIGH_LEVEL_CAR_TYPES = setOf(
+        "CHANGAN_S401_L4",
+        "CHANGAN_S401_L5",
+        "CHANGAN_S311_CARTYPE_7",
+    )
 
     /** Raw value of [CAR_TYPE_PROPERTY] via reflection, or null when absent. */
     fun systemCarType(): String? = runCatching {
         val get = Class.forName("android.os.SystemProperties").getMethod("get", String::class.java)
         (get.invoke(null, CAR_TYPE_PROPERTY) as? String)?.trim()?.takeIf { it.isNotEmpty() }
     }.getOrNull()
-
-    /** AMap-style high-level (round cluster) verdict from the ROM property; null when it is absent. */
-    fun highLevelClusterProperty(): Boolean? = systemCarType()?.let { it in HIGH_LEVEL_CAR_TYPES }
 
     /** Likely the 2.0T round cluster panel: near-square reported metrics. */
     fun squareLikely(candidate: ClusterCandidate?): Boolean {
@@ -52,12 +56,13 @@ internal object ClusterScreen {
     }
 
     /**
-     * Combined round-cluster verdict. The ROM property wins when present (AMap parity); without
-     * it the square-metrics heuristic applies only to a usable non-centre panel. Returns null
-     * when neither signal can say anything (no property and no panel).
+     * Combined round-cluster verdict. A car-type code in the known high-level set wins; an
+     * unknown code does NOT assert "not round" (the S311 ROM publishes codes this list does not
+     * cover) and falls through to the panel heuristic. Returns null when neither signal can
+     * say anything (no property and no panel).
      */
     fun roundLikely(candidate: ClusterCandidate?, defaultDisplayId: Int?): Boolean? {
-        highLevelClusterProperty()?.let { return it }
+        if (systemCarType() in HIGH_LEVEL_CAR_TYPES) return true
         if (candidate != null && candidate.displayId != defaultDisplayId && squareLikely(candidate)) {
             return true
         }

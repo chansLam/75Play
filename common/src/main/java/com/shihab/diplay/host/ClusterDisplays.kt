@@ -55,17 +55,19 @@ internal object ClusterDisplays {
             }
             // 2.0T round-cluster verdict, echoed for the exported diagnostic report. Primary
             // signal is the ROM car-type property (same key AMap reads to switch its cluster
-            // presentation layout); the square-metrics heuristic is the fallback.
+            // presentation layout); the square-metrics heuristic covers unknown trims and a
+            // missing property.
             val carType = ClusterScreen.systemCarType()
+            val known = carType in ClusterScreen.HIGH_LEVEL_CAR_TYPES
             val roundVerdict = when {
-                carType != null -> {
-                    val high = ClusterScreen.highLevelClusterProperty() == true
-                    "cartype=\"$carType\" -> " + if (high) {
-                        "round cluster (2.0T high-level trim, AMap parity)"
-                    } else {
-                        "not the high-level trim (no round map cluster)"
-                    }
-                }
+                carType != null && known ->
+                    "cartype=\"$carType\" -> round cluster (high-level trim, AMap parity)"
+                carType != null && chosen != null ->
+                    "cartype=\"$carType\" (unknown trim); panel ${chosen.widthPixels}x${chosen.heightPixels} -> " +
+                        if (ClusterScreen.squareLikely(chosen)) "square panel, round cluster likely"
+                        else "not round-shaped"
+                carType != null ->
+                    "cartype=\"$carType\" (unknown trim); no panel"
                 chosen != null -> if (ClusterScreen.squareLikely(chosen)) {
                     "cartype missing; square panel likely (2.0T fallback): id=${chosen.displayId} " +
                         "${chosen.widthPixels}x${chosen.heightPixels} edges near-equal"
