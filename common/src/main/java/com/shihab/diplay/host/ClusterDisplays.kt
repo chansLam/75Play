@@ -53,21 +53,20 @@ internal object ClusterDisplays {
                 routerDisplay?.takeIf { it.displayId == pick.displayId }
                     ?: category.firstOrNull { it.displayId == pick.displayId }
             }
-            // 2.0T round-cluster verdict, echoed for the exported diagnostic report. Primary
-            // signal is the ROM car-type property (same key AMap reads to switch its cluster
-            // presentation layout); the square-metrics heuristic covers unknown trims and a
-            // missing property.
+            // 2.0T round-cluster verdict, echoed for the exported diagnostic report. The ROM
+            // car-type property (the same key AMap reads to switch its cluster presentation
+            // layout) is authoritative: on S311 the square panel is a virtual overlay present on
+            // every trim, so shape alone never proves the round cluster. The square heuristic is
+            // only a fallback for ROMs that do not publish the property.
             val carType = ClusterScreen.systemCarType()
-            val known = carType in ClusterScreen.HIGH_LEVEL_CAR_TYPES
             val roundVerdict = when {
-                carType != null && known ->
+                carType != null && carType in ClusterScreen.HIGH_LEVEL_CAR_TYPES ->
                     "cartype=\"$carType\" -> round cluster (high-level trim, AMap parity)"
                 carType != null && chosen != null ->
-                    "cartype=\"$carType\" (unknown trim); panel ${chosen.widthPixels}x${chosen.heightPixels} -> " +
-                        if (ClusterScreen.squareLikely(chosen)) "square panel, round cluster likely"
-                        else "not round-shaped"
+                    "cartype=\"$carType\" -> not the round cluster (code not in the high-level set; " +
+                        "panel ${chosen.widthPixels}x${chosen.heightPixels} is the virtual overlay)"
                 carType != null ->
-                    "cartype=\"$carType\" (unknown trim); no panel"
+                    "cartype=\"$carType\" -> not the round cluster (code not in the high-level set)"
                 chosen != null -> if (ClusterScreen.squareLikely(chosen)) {
                     "cartype missing; square panel likely (2.0T fallback): id=${chosen.displayId} " +
                         "${chosen.widthPixels}x${chosen.heightPixels} edges near-equal"

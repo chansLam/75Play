@@ -31,14 +31,14 @@ internal object ClusterScreen {
     const val CAR_TYPE_PROPERTY = "persist.sys.cartype"
 
     /**
-     * AMap-parity high-level values. Observed so far: S401 L4/L5 (AMap's own switch) and
-     * CHANGAN_S311_CARTYPE_7 (OS_S311-WT, measured with a 648x648 round panel).
+     * AMap-parity high-level values. Observed so far: S401 L4/L5 (AMap's own switch). The S311
+     * 1.5T measured CHANGAN_S311_CARTYPE_7 — and on S311 the 648x648 panel shows up as a
+     * presentation display on EVERY trim (a virtual overlay; the physical round LCD ships only
+     * with the 2.0T), so panel shape can never confirm the round cluster on this ROM. The
+     * property is authoritative; unknown codes mean "not the round cluster" until a 2.0T log
+     * reveals its value.
      */
-    val HIGH_LEVEL_CAR_TYPES = setOf(
-        "CHANGAN_S401_L4",
-        "CHANGAN_S401_L5",
-        "CHANGAN_S311_CARTYPE_7",
-    )
+    val HIGH_LEVEL_CAR_TYPES = setOf("CHANGAN_S401_L4", "CHANGAN_S401_L5")
 
     /** Raw value of [CAR_TYPE_PROPERTY] via reflection, or null when absent. */
     fun systemCarType(): String? = runCatching {
@@ -56,13 +56,14 @@ internal object ClusterScreen {
     }
 
     /**
-     * Combined round-cluster verdict. A car-type code in the known high-level set wins; an
-     * unknown code does NOT assert "not round" (the S311 ROM publishes codes this list does not
-     * cover) and falls through to the panel heuristic. Returns null when neither signal can
-     * say anything (no property and no panel).
+     * Combined round-cluster verdict. The ROM property wins when present and is authoritative:
+     * an unknown code means "not the round cluster" (on S311 the square panel is a virtual
+     * overlay present on every trim, so the shape heuristic must NOT override it). The square
+     * heuristic only applies when the property is missing entirely. Returns null when neither
+     * signal can say anything.
      */
     fun roundLikely(candidate: ClusterCandidate?, defaultDisplayId: Int?): Boolean? {
-        if (systemCarType() in HIGH_LEVEL_CAR_TYPES) return true
+        systemCarType()?.let { return it in HIGH_LEVEL_CAR_TYPES }
         if (candidate != null && candidate.displayId != defaultDisplayId && squareLikely(candidate)) {
             return true
         }
