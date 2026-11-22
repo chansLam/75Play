@@ -61,3 +61,11 @@ internal fun detachAction(current: Any?, leaving: Any, park: Boolean, hasDecoder
     park && hasDecoder -> DetachOutcome.PARKED
     else -> DetachOutcome.RELEASED
 }
+
+/**
+ * A reattached surface belongs to an established session, not a fresh SETUP whose opening IDR may
+ * still be in flight. Request a keyframe immediately; otherwise a still CarPlay screen stays covered
+ * until the opening grace and output-stall watchdog expire (several seconds on KitKat).
+ */
+internal fun needsImmediateKeyFrameOnAttach(returningAfterDetach: Boolean, openingPictureMissed: Boolean): Boolean =
+    returningAfterDetach || openingPictureMissed

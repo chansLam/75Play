@@ -83,6 +83,9 @@ internal class VideoDecoder(
     private var loggedNoSurfaceConfigure = false
     private var loggedNoSurfaceFrames = false
     private var surfaceAttachedAtNs = if (surface != null) System.nanoTime() else 0L
+    // A real detach means the next surface belongs to an established stream. Unlike initial SETUP,
+    // there is no opening IDR still in flight, so its keyframe request must not wait out the grace.
+    private var surfaceReattachNeedsKeyFrame = false
     /** Frames that arrived before the host had a surface. Worker thread only. */
     private val openingHold = OpeningPictureHold()
     private var replayingHold = false
@@ -473,12 +476,17 @@ internal class VideoDecoder(
             releaseDecoder()
             throw error
         } finally {
+            if (outcome == DetachOutcome.PARKED || outcome == DetachOutcome.RELEASED) {
+                surfaceReattachNeedsKeyFrame = true
+            }
             request.complete(outcome)
         }
     }
 
     private fun changeSurface(surface: Surface?) {
         if (outputSurface === surface) return
+        val returningAfterDetach = surface != null && surfaceReattachNeedsKeyFrame
+        if (surface != null) surfaceReattachNeedsKeyFrame = false
         // Session-log the handoff itself: a recreated SurfaceView whose attach never reaches the
         // worker shows up as a black screen with no decoder lines at all.
         report(if (surface == null) "output surface detached" else "output surface attached valid=${surface.isValid}")
@@ -492,7 +500,11 @@ internal class VideoDecoder(
         consecutiveInputWithoutOutput = 0
         // A picture that was already missed must ask now. Waiting out the grace assumes the
         // opening IDR is still on the wire; after it was held or lost, that wait is a black screen.
-        val askNow = surface != null && openingHold.needsKeyframeNow()
+        val askNow = surface != null && needsImmediateKeyFrameOnAttach(
+            returningAfterDetach = returningAfterDetach,
+            openingPictureMissed = openingHold.needsKeyframeNow(),
+        )
+        if (returningAfterDetach) report("returning surface needs an immediate keyframe")
         if (surface != null && !askNow) {
             holdInitialKeyFrameUntilNs = System.nanoTime() + INITIAL_PICTURE_GRACE_NS
         } else if (askNow) {

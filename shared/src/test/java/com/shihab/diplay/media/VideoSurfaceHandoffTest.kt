@@ -61,6 +61,12 @@ class VideoSurfaceHandoffTest {
         assertEquals(DetachOutcome.PARKED, request.outcome)
     }
 
+    @Test fun aReattachedSurfaceDoesNotWaitForTheOpeningKeyframeGrace() {
+        assertTrue(needsImmediateKeyFrameOnAttach(returningAfterDetach = true, openingPictureMissed = false))
+        assertTrue(needsImmediateKeyFrameOnAttach(returningAfterDetach = false, openingPictureMissed = true))
+        assertFalse(needsImmediateKeyFrameOnAttach(returningAfterDetach = false, openingPictureMissed = false))
+    }
+
     @Test fun theDecisionFollowsTheSurfaceTheCodecActuallyRendersTo() {
         val leaving = Any()
         val other = Any()
