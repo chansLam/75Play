@@ -6,6 +6,17 @@
 
 ---
 
+## 2.0.6-beta.5
+
+相对 2.0.6-beta.4 的测试版。请从 Releases 手动安装，应用内更新不推送测试版。
+
+### 修复
+
+- **返回壳层后重进 CarPlay 黑屏数秒**：CarPlay 静止页面不持续发帧，Surface 重建后原逻辑先等待 1 秒开场关键帧宽限，再等待解码阻塞 watchdog，实测约 2～4.4 秒才出画，滑动屏幕后手机发新帧才恢复。现在真实 detach 后的 Surface 重建会立即请求关键帧；初次连接仍保留原宽限，避免重置正在传输的开场 IDR。
+- 新增日志 `returning surface needs an immediate keyframe`，用于确认重进恢复路径已生效。
+
+---
+
 ## 2.0.6-beta.4
 
 相对 2.0.6-beta.3 的测试版。请从 Releases 手动安装，应用内更新不推送测试版。
